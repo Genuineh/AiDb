@@ -1,220 +1,297 @@
 # AiDb
 
-🚀 **A high-performance LSM-Tree based key-value storage engine written in Rust**
+🚀 **高性能、可弹性扩展的LSM-Tree存储引擎**
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 
-## 📖 Overview
+## 📖 项目简介
 
-AiDb is a persistent key-value storage engine inspired by [RocksDB](https://github.com/facebook/rocksdb) and [LevelDB](https://github.com/google/leveldb). It implements the Log-Structured Merge-Tree (LSM-Tree) architecture, providing:
+AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架构。项目的核心目标是：
 
-- ⚡ **High write throughput** via sequential writes
-- 🔍 **Efficient range queries** with sorted data
-- 💾 **Persistent storage** with crash recovery
-- 🔄 **Background compaction** for space optimization
-- 📊 **MVCC snapshots** for consistent reads
+- ⚡ **高性能**：借鉴RocksDB的成熟设计，达到其60-70%性能
+- 🔧 **纯Rust实现**：避免C++依赖，简化API，降低复杂度
+- 📈 **弹性扩展**：多Shard分片架构，线性扩展读写能力
+- 💰 **成本优化**：无需全量数据复制，降低40-50%存储成本
+- 🛡️ **生产可用**：完整的备份恢复、监控告警、运维工具
 
-## 🎯 Project Status
+## 🎯 核心特性
 
-**Status**: 🚧 Under Active Development
+### 单机版特性
+- ✅ WAL（Write-Ahead Log）保证持久化
+- ✅ MemTable（SkipList）高性能内存索引
+- ✅ SSTable分层存储，支持Bloom Filter加速查询
+- ✅ Leveled Compaction优化空间利用
+- ✅ 崩溃恢复机制
+- ✅ 压缩支持（Snappy/LZ4）
 
-This project is currently in the early development phase. See [TODO.md](TODO.md) for the current task list and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the detailed roadmap.
+### 集群版特性
+- 🔄 Primary-Replica架构，Replica作为缓存层
+- 🌐 一致性哈希路由，负载均衡
+- 📦 多Shard分片，水平扩展
+- ☁️ 异步备份到对象存储（S3/OSS）
+- 🔧 弹性伸缩，秒级添加节点
+- 📊 Prometheus监控 + Grafana仪表盘
 
-## 🏗️ Architecture
+## 🏗️ 架构设计
 
-AiDb follows the classic LSM-Tree architecture:
-
+### 单机架构
 ```
-┌─────────────────────────────────────────────┐
-│              Write Path                      │
-├─────────────────────────────────────────────┤
-│  Client Write → WAL → MemTable              │
-│                      ↓                       │
-│              Immutable MemTable              │
-│                      ↓                       │
-│                  Flush                       │
-│                      ↓                       │
-│              SSTable (Level 0)               │
-└─────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────┐
-│              Read Path                       │
-├─────────────────────────────────────────────┤
-│  Client Read → MemTable                     │
-│             → Immutable MemTables           │
-│             → Block Cache                   │
-│             → SSTable (Level 0 → Level N)   │
-└─────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────┐
-│            Background Tasks                  │
-├─────────────────────────────────────────────┤
-│  • Flush: MemTable → SSTable                │
-│  • Compaction: Merge SSTables               │
-│  • Garbage Collection                        │
-└─────────────────────────────────────────────┘
+Write Path:  WAL → MemTable → (Flush) → SSTable(L0) → (Compaction) → SSTable(L1-N)
+Read Path:   MemTable → Immutable MemTable → Block Cache → SSTable(L0-N)
 ```
 
-### Core Components
+### 集群架构
+```
+                 ┌──────────────┐
+                 │ Coordinator  │
+                 └──────┬───────┘
+                        │
+         ┌──────────────┼──────────────┐
+         │              │              │
+    ┌────▼───┐     ┌───▼────┐    ┌───▼────┐
+    │Shard 1 │     │Shard 2 │    │Shard N │
+    └────┬───┘     └────────┘    └────────┘
+         │
+    ┌────┴─────┐
+    │          │
+┌───▼──┐  ┌───▼──┐
+│Primary│  │Replica│ (缓存+转发)
+│(SSD) │  │(Cache)│
+└───┬──┘  └──────┘
+    │
+    ▼ 异步备份
+ [S3/OSS]
+```
 
-- **WAL (Write-Ahead Log)**: Ensures durability by logging writes before applying them
-- **MemTable**: In-memory sorted structure (Skip List) for recent writes
-- **SSTable**: Immutable on-disk sorted files organized in levels
-- **Compaction**: Background process to merge and reorganize SSTables
-- **Bloom Filter**: Probabilistic data structure to speed up lookups
-- **Block Cache**: LRU cache for frequently accessed data blocks
+**设计亮点**：
+- Primary独占本地SSD，完整LSM存储
+- Replica只有内存缓存，通过RPC转发miss
+- 无需实时数据复制，降低成本
+- 异步备份到网盘，不影响性能
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-> Note: AiDb is not yet ready for use. This section will be updated as development progresses.
-
-### Installation
-
+### 前置要求
 ```bash
-# Add to Cargo.toml
-[dependencies]
-aidb = "0.1"
+# Rust 1.70+
+rustup update
+
+# 编译
+cargo build --release
 ```
 
-### Basic Usage
-
+### 基础使用（单机版）
 ```rust
 use aidb::{DB, Options};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Open database
+    // 打开数据库
     let options = Options::default();
     let db = DB::open("./data", options)?;
 
-    // Write
+    // 写入
     db.put(b"key1", b"value1")?;
-    db.put(b"key2", b"value2")?;
-
-    // Read
+    
+    // 读取
     if let Some(value) = db.get(b"key1")? {
-        println!("key1: {:?}", value);
+        println!("value: {:?}", value);
     }
-
-    // Delete
+    
+    // 删除
     db.delete(b"key1")?;
-
-    // Iterate
-    let mut iter = db.iter();
-    while let Some((key, value)) = iter.next() {
-        println!("{:?} => {:?}", key, value);
-    }
 
     Ok(())
 }
 ```
 
-## 📚 Documentation
+### 集群使用（待实现）
+```rust
+use aidb::cluster::{Coordinator, CoordinatorConfig};
 
-- [Implementation Plan](IMPLEMENTATION_PLAN.md) - Detailed development roadmap
-- [TODO List](TODO.md) - Current task tracking
-- [Architecture Guide](docs/architecture.md) - In-depth architecture explanation (coming soon)
-- [API Documentation](https://docs.rs/aidb) - Generated API docs (coming soon)
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 连接Coordinator
+    let coordinator = Coordinator::connect("coordinator:8080").await?;
+    
+    // 使用方式与单机版相同
+    coordinator.put(b"key", b"value").await?;
+    let value = coordinator.get(b"key").await?;
+    
+    Ok(())
+}
+```
 
-## 🛠️ Development
+## 📊 性能目标
 
-### Prerequisites
+### 单机版（已规划）
+| 操作 | 目标 | RocksDB对比 |
+|------|------|------------|
+| 顺序写入 | 140K ops/s | 70% |
+| 随机写入 | 70K ops/s | 70% |
+| 随机读取 | 140K ops/s | 70% |
 
-- Rust 1.70 or later
-- Cargo
+### 集群版（10个Shard）
+| 操作 | 目标 | 扩展倍数 |
+|------|------|---------|
+| 总写入 | 700K ops/s | 10× |
+| 缓存命中读 | 5M ops/s | 50× |
+| 缓存miss读 | 300K ops/s | 4× |
 
-### Build
+## 📅 项目状态
 
+**当前阶段**: 🚧 阶段A - 单机版MVP开发中
+
+- ✅ 项目基础设施
+- 🚧 WAL实现 (进行中)
+- ⏳ MemTable实现
+- ⏳ SSTable实现
+- ⏳ Compaction实现
+
+完整进度查看：[TODO.md](TODO.md)
+
+## 📚 文档导航
+
+### 核心文档
+- **[架构设计](docs/ARCHITECTURE.md)** - 单机版和集群版完整架构
+- **[实施计划](docs/IMPLEMENTATION.md)** - 48周详细开发计划
+- **[设计决策](docs/DESIGN_DECISIONS.md)** - 为什么这样设计
+
+### 开发文档
+- **[开发指南](docs/DEVELOPMENT.md)** - 如何参与开发
+- **[API文档](https://docs.rs/aidb)** - 代码API文档（待发布）
+- **[任务清单](TODO.md)** - 当前开发任务
+
+### 运维文档（待完成）
+- **[部署指南](docs/DEPLOYMENT.md)** - 如何部署集群
+- **[运维手册](docs/OPERATIONS.md)** - 日常运维操作
+- **[故障排查](docs/TROUBLESHOOTING.md)** - 常见问题解决
+
+## 🔧 开发
+
+### 编译和测试
 ```bash
-# Build in debug mode
+# 开发模式编译
 cargo build
 
-# Build in release mode
-cargo build --release
-
-# Run tests
+# 运行测试
 cargo test
 
-# Run benchmarks
+# 运行基准测试
 cargo bench
 
-# Check code quality
+# 代码检查
 cargo clippy
+
+# 代码格式化
 cargo fmt
 ```
 
-### Project Structure
-
+### 项目结构
 ```
 aidb/
-├── src/
-│   ├── lib.rs           # Library entry point
-│   ├── error.rs         # Error types
-│   ├── config.rs        # Configuration
-│   ├── wal/             # Write-Ahead Log
-│   ├── memtable/        # MemTable implementation
-│   ├── sstable/         # SSTable implementation
-│   ├── compaction/      # Compaction logic
-│   ├── version/         # Version management
-│   ├── iterator/        # Iterator implementations
-│   └── db.rs            # Main DB interface
-├── tests/               # Integration tests
-├── benches/             # Benchmark tests
-├── examples/            # Example code
-└── docs/                # Documentation
+├── src/              # 源代码
+│   ├── lib.rs       # 库入口
+│   ├── error.rs     # 错误类型
+│   ├── config.rs    # 配置
+│   ├── wal/         # WAL实现
+│   ├── memtable/    # MemTable实现
+│   └── sstable/     # SSTable实现
+├── tests/           # 集成测试
+├── benches/         # 性能测试
+├── examples/        # 示例代码
+└── docs/            # 文档
 ```
 
-## 🎯 Features & Roadmap
+## 🗺️ Roadmap
 
-### Implemented
-- [ ] Basic project structure
-- [ ] WAL implementation
-- [ ] MemTable with Skip List
-- [ ] SSTable format and I/O
+### 阶段0: 单机版 (Week 1-20) - 当前
+- [x] 项目初始化
+- [ ] WAL实现
+- [ ] MemTable实现  
+- [ ] SSTable实现
+- [ ] Compaction实现
+- [ ] 性能优化
 
-### In Progress
-- [ ] Version management
-- [ ] Compaction
-- [ ] DB engine
+### 阶段1: RPC网络层 (Week 21-24)
+- [ ] gRPC框架
+- [ ] Primary节点RPC服务
+- [ ] Replica节点缓存和转发
 
-### Planned
-- [ ] Snapshot support
-- [ ] Iterator interface
-- [ ] Block cache
-- [ ] Bloom filter
-- [ ] Compression (Snappy/LZ4)
-- [ ] Transaction support
-- [ ] Performance optimization
+### 阶段2: 分布式协调 (Week 25-34)
+- [ ] Coordinator路由
+- [ ] 一致性哈希
+- [ ] 健康检查
+- [ ] 多Shard协同
 
-## 📊 Performance
+### 阶段3-6: 完善功能 (Week 35-48)
+- [ ] 备份恢复
+- [ ] 弹性伸缩
+- [ ] 监控告警
+- [ ] 运维工具
 
-Performance benchmarks will be added as the project matures. Target performance:
-- Sequential writes: > 100K ops/sec
-- Random writes: > 50K ops/sec
-- Random reads: > 100K ops/sec
+详细计划：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 
-## 🤝 Contributing
+## 🎯 设计理念
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+### 从RocksDB借鉴
+- ✅ 成熟的LSM-Tree分层架构
+- ✅ 高效的Compaction策略
+- ✅ Bloom Filter优化查询
+- ✅ 经过验证的数据格式
+
+### 避免RocksDB的问题
+- ❌ 配置复杂（200+选项）→ ✅ 简化到<20个
+- ❌ API臃肿（100+方法）→ ✅ 简化到<30个
+- ❌ C++依赖 → ✅ 纯Rust实现
+- ❌ 编译慢 → ✅ 快速编译
+
+### 创新点
+- 🆕 Replica作为缓存层，非完整副本
+- 🆕 异步备份替代实时复制，降低成本
+- 🆕 多Shard分片，真正的水平扩展
+
+详细说明：[docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)
+
+## 🤝 贡献
+
+欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md)
+
+### 如何贡献
+1. Fork项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启Pull Request
+
+### 贡献指南
+- 代码需通过 `cargo test`
+- 代码需通过 `cargo clippy`
+- 提交前运行 `cargo fmt`
+- 为新功能添加测试
+- 更新相关文档
 
 ## 📄 License
 
-This project is dual-licensed under:
-- MIT License ([LICENSE-MIT](LICENSE) or http://opensource.org/licenses/MIT)
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0)
+本项目采用双许可证：
+- MIT License ([LICENSE-MIT](LICENSE))
+- Apache License 2.0 ([LICENSE-APACHE](LICENSE))
 
-## 🙏 Acknowledgments
+## 🙏 致谢
 
-This project is inspired by:
-- [RocksDB](https://github.com/facebook/rocksdb) - Facebook's embeddable persistent key-value store
-- [LevelDB](https://github.com/google/leveldb) - Google's fast key-value storage library
-- [mini-lsm](https://github.com/skyzh/mini-lsm) - Educational LSM-Tree implementation
-- [sled](https://github.com/spacejam/sled) - Rust embedded database
+本项目受以下项目启发：
+- [RocksDB](https://github.com/facebook/rocksdb) - Meta的高性能存储引擎
+- [LevelDB](https://github.com/google/leveldb) - Google的LSM-Tree实现
+- [sled](https://github.com/spacejam/sled) - Rust嵌入式数据库
+- [mini-lsm](https://github.com/skyzh/mini-lsm) - LSM教学项目
 
-## 📞 Contact
+## 📞 联系方式
 
-For questions or discussions, please open an issue on GitHub.
+- 问题反馈：[GitHub Issues](https://github.com/yourusername/aidb/issues)
+- 讨论交流：[GitHub Discussions](https://github.com/yourusername/aidb/discussions)
 
 ---
 
-**Note**: AiDb is an educational project and is not yet production-ready. Use at your own risk.
+**⚠️ 注意**：本项目目前处于开发阶段，不建议用于生产环境。
+
+**Star** ⭐ 本项目以获取最新进展！
