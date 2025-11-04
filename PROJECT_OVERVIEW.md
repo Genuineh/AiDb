@@ -1,9 +1,9 @@
-# AiKv 项目概览
+# AiDb 项目概览
 
 ## 📁 项目结构
 
 ```
-aikv/
+aidb/
 ├── Cargo.toml              # Rust项目配置文件
 ├── README.md               # 项目说明文档
 ├── LICENSE                 # 开源许可证
@@ -268,8 +268,8 @@ data/
 # 设置日志级别
 RUST_LOG=debug cargo run --example basic
 
-# 只显示aikv的日志
-RUST_LOG=aikv=debug cargo run --example basic
+# 只显示aidb的日志
+RUST_LOG=aidb=debug cargo run --example basic
 ```
 
 ### 性能分析

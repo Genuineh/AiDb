@@ -1,11 +1,11 @@
 [package]
-name = "aikv"
+name = "aidb"
 version = "0.1.0"
 edition = "2021"
-authors = ["AiKv Contributors"]
+authors = ["AiDb Contributors"]
 description = "A high-performance LSM-Tree based key-value storage engine written in Rust"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/aikv"
+repository = "https://github.com/yourusername/aidb"
 keywords = ["database", "storage", "lsm-tree", "kv-store", "rocksdb"]
 categories = ["database-implementations", "data-structures"]
 

@@ -1,12 +1,12 @@
-//! Error types for AiKv storage engine.
+//! Error types for AiDb storage engine.
 
 use std::fmt;
 use std::io;
 
-/// The result type used throughout AiKv.
+/// The result type used throughout AiDb.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// The error type for AiKv operations.
+/// The error type for AiDb operations.
 #[derive(Debug)]
 pub enum Error {
     /// An I/O error occurred.

@@ -1,4 +1,4 @@
-# AiKv
+# AiDb
 
 🚀 **A high-performance LSM-Tree based key-value storage engine written in Rust**
 
@@ -7,7 +7,7 @@
 
 ## 📖 Overview
 
-AiKv is a persistent key-value storage engine inspired by [RocksDB](https://github.com/facebook/rocksdb) and [LevelDB](https://github.com/google/leveldb). It implements the Log-Structured Merge-Tree (LSM-Tree) architecture, providing:
+AiDb is a persistent key-value storage engine inspired by [RocksDB](https://github.com/facebook/rocksdb) and [LevelDB](https://github.com/google/leveldb). It implements the Log-Structured Merge-Tree (LSM-Tree) architecture, providing:
 
 - ⚡ **High write throughput** via sequential writes
 - 🔍 **Efficient range queries** with sorted data
@@ -23,7 +23,7 @@ This project is currently in the early development phase. See [TODO.md](TODO.md)
 
 ## 🏗️ Architecture
 
-AiKv follows the classic LSM-Tree architecture:
+AiDb follows the classic LSM-Tree architecture:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -67,20 +67,20 @@ AiKv follows the classic LSM-Tree architecture:
 
 ## 🚀 Quick Start
 
-> Note: AiKv is not yet ready for use. This section will be updated as development progresses.
+> Note: AiDb is not yet ready for use. This section will be updated as development progresses.
 
 ### Installation
 
 ```bash
 # Add to Cargo.toml
 [dependencies]
-aikv = "0.1"
+aidb = "0.1"
 ```
 
 ### Basic Usage
 
 ```rust
-use aikv::{DB, Options};
+use aidb::{DB, Options};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open database
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [Implementation Plan](IMPLEMENTATION_PLAN.md) - Detailed development roadmap
 - [TODO List](TODO.md) - Current task tracking
 - [Architecture Guide](docs/architecture.md) - In-depth architecture explanation (coming soon)
-- [API Documentation](https://docs.rs/aikv) - Generated API docs (coming soon)
+- [API Documentation](https://docs.rs/aidb) - Generated API docs (coming soon)
 
 ## 🛠️ Development
 
@@ -146,7 +146,7 @@ cargo fmt
 ### Project Structure
 
 ```
-aikv/
+aidb/
 ├── src/
 │   ├── lib.rs           # Library entry point
 │   ├── error.rs         # Error types
@@ -217,4 +217,4 @@ For questions or discussions, please open an issue on GitHub.
 
 ---
 
-**Note**: AiKv is an educational project and is not yet production-ready. Use at your own risk.
+**Note**: AiDb is an educational project and is not yet production-ready. Use at your own risk.

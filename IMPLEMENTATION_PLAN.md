@@ -1,4 +1,4 @@
-# AiKv 存储引擎实施计划
+# AiDb 存储引擎实施计划
 
 ## 项目概述
 构建一个基于LSM-Tree架构的高性能KV存储引擎（类似RocksDB），使用Rust语言实现。
@@ -32,7 +32,7 @@ crossbeam = "0.8"
 
 **目录结构**:
 ```
-aikv/
+aidb/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs

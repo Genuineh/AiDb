@@ -1,4 +1,4 @@
-# AiKv 开发任务清单
+# AiDb 开发任务清单
 
 > 本清单用于跟踪开发进度，AI agent应按顺序完成各项任务
 
@@ -19,7 +19,7 @@
 
 #### 1.1 初始化Rust项目
 - [ ] 创建Cargo工作空间（根目录Cargo.toml）
-- [ ] 创建aikv库项目（src/lib.rs）
+- [ ] 创建aidb库项目（src/lib.rs）
 - [ ] 配置基础依赖包
 - [ ] 创建项目目录结构（src/, tests/, benches/, examples/）
 - [ ] 创建.gitignore文件
@@ -255,7 +255,7 @@
 
 ### 阶段十四：工具
 
-- [ ] 创建src/bin/aikv-tool.rs（命令行工具）
+- [ ] 创建src/bin/aidb-tool.rs（命令行工具）
 - [ ] 实现数据导入导出
 - [ ] 实现数据库检查（fsck）
 - [ ] 实现性能分析

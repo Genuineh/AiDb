@@ -1,4 +1,4 @@
-//! Basic usage example for AiKv
+//! Basic usage example for AiDb
 //!
 //! This example demonstrates the fundamental operations:
 //! - Opening a database
@@ -6,7 +6,7 @@
 //! - Reading values
 //! - Deleting keys
 
-use aikv::{DB, Options};
+use aidb::{DB, Options};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logger

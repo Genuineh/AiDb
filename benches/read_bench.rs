@@ -1,4 +1,4 @@
-// Read performance benchmarks for AiKv
+// Read performance benchmarks for AiDb
 // TODO: Implement benchmarks once DB is functional
 
 use criterion::{criterion_group, criterion_main, Criterion};

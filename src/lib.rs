@@ -1,6 +1,6 @@
-//! # AiKv - A High-Performance LSM-Tree Storage Engine
+//! # AiDb - A High-Performance LSM-Tree Storage Engine
 //!
-//! AiKv is a persistent key-value storage engine inspired by RocksDB and LevelDB.
+//! AiDb is a persistent key-value storage engine inspired by RocksDB and LevelDB.
 //! It implements the Log-Structured Merge-Tree (LSM-Tree) architecture for high
 //! write throughput and efficient range queries.
 //!
@@ -18,9 +18,9 @@
 //! ## Example Usage
 //!
 //! ```rust,no_run
-//! use aikv::{DB, Options};
+//! use aidb::{DB, Options};
 //!
-//! # fn main() -> Result<(), aikv::Error> {
+//! # fn main() -> Result<(), aidb::Error> {
 //! // Open or create a database
 //! let options = Options::default();
 //! let db = DB::open("./data", options)?;
@@ -85,9 +85,9 @@ impl DB {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use aikv::{DB, Options};
+    /// use aidb::{DB, Options};
     ///
-    /// # fn main() -> Result<(), aikv::Error> {
+    /// # fn main() -> Result<(), aidb::Error> {
     /// let options = Options::default();
     /// let db = DB::open("./my_database", options)?;
     /// # Ok(())
@@ -119,8 +119,8 @@ impl DB {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use aikv::{DB, Options};
-    /// # fn main() -> Result<(), aikv::Error> {
+    /// # use aidb::{DB, Options};
+    /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = DB::open("./data", Options::default())?;
     /// db.put(b"key", b"value")?;
     /// # Ok(())
@@ -150,8 +150,8 @@ impl DB {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use aikv::{DB, Options};
-    /// # fn main() -> Result<(), aikv::Error> {
+    /// # use aidb::{DB, Options};
+    /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = DB::open("./data", Options::default())?;
     /// if let Some(value) = db.get(b"key")? {
     ///     println!("Found: {:?}", value);
@@ -184,8 +184,8 @@ impl DB {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use aikv::{DB, Options};
-    /// # fn main() -> Result<(), aikv::Error> {
+    /// # use aidb::{DB, Options};
+    /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = DB::open("./data", Options::default())?;
     /// db.delete(b"key")?;
     /// # Ok(())

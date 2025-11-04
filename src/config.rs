@@ -1,4 +1,4 @@
-//! Configuration options for AiKv storage engine.
+//! Configuration options for AiDb storage engine.
 
 /// Configuration options for opening a database.
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl Default for Options {
     }
 }
 
-/// Compression algorithms supported by AiKv.
+/// Compression algorithms supported by AiDb.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionType {
     /// No compression.
