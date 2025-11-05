@@ -279,10 +279,14 @@ jobs:
           echo "Docs Only: ${{ needs.changes.outputs.docs_only }}"
           echo ""
           
-          # 检查changes job
-          if [ "${{ needs.changes.result }}" != "success" ]; then
+          # 检查changes job - 如果跳过（draft PR）则认为成功
+          if [ "${{ needs.changes.result }}" == "failure" ]; then
             echo "❌ Changes detection failed"
             exit 1
+          elif [ "${{ needs.changes.result }}" == "skipped" ]; then
+            echo "⏭️  CI skipped (draft PR or no trigger match)"
+            echo "✅ CI check passed (skipped)"
+            exit 0
           fi
           
           # 如果有代码变更，检查代码相关的jobs
@@ -290,12 +294,37 @@ jobs:
             echo "📊 Code Changes Detected - Checking all code jobs..."
             
             failed=0
-            [ "${{ needs.test.result }}" == "failure" ] && echo "❌ Tests failed" && failed=1
-            [ "${{ needs.clippy.result }}" == "failure" ] && echo "❌ Clippy failed" && failed=1
-            [ "${{ needs.fmt.result }}" == "failure" ] && echo "❌ Format check failed" && failed=1
-            [ "${{ needs.build.result }}" == "failure" ] && echo "❌ Build failed" && failed=1
-            [ "${{ needs.bench.result }}" == "failure" ] && echo "❌ Benchmark check failed" && failed=1
-            [ "${{ needs.coverage.result }}" == "failure" ] && echo "❌ Coverage failed" && failed=1
+            
+            # 检查每个job的结果，只有明确失败才算失败（跳过不算失败）
+            if [ "${{ needs.test.result }}" == "failure" ]; then
+              echo "❌ Tests failed"
+              failed=1
+            fi
+            
+            if [ "${{ needs.clippy.result }}" == "failure" ]; then
+              echo "❌ Clippy failed"
+              failed=1
+            fi
+            
+            if [ "${{ needs.fmt.result }}" == "failure" ]; then
+              echo "❌ Format check failed"
+              failed=1
+            fi
+            
+            if [ "${{ needs.build.result }}" == "failure" ]; then
+              echo "❌ Build failed"
+              failed=1
+            fi
+            
+            if [ "${{ needs.bench.result }}" == "failure" ]; then
+              echo "❌ Benchmark check failed"
+              failed=1
+            fi
+            
+            if [ "${{ needs.coverage.result }}" == "failure" ]; then
+              echo "❌ Coverage failed"
+              failed=1
+            fi
             
             if [ $failed -eq 1 ]; then
               echo ""
