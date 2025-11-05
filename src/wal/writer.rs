@@ -27,9 +27,9 @@ impl WALWriter {
             .create(true)
             .append(true)
             .open(&path)
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
-        let file_size = file.metadata().map_err(|e| Error::Io(e))?.len();
+        let file_size = file.metadata().map_err(Error::Io)?.len();
         let writer = BufWriter::new(file);
 
         Ok(Self {
@@ -76,7 +76,7 @@ impl WALWriter {
             let encoded = record.encode();
 
             // Write to file
-            self.writer.write_all(&encoded).map_err(|e| Error::Io(e))?;
+            self.writer.write_all(&encoded).map_err(Error::Io)?;
 
             self.file_size += encoded.len() as u64;
             offset += chunk_size;
@@ -89,8 +89,8 @@ impl WALWriter {
     ///
     /// Ensures all buffered data is written and fsync'd to persistent storage.
     pub fn sync(&mut self) -> Result<()> {
-        self.writer.flush().map_err(|e| Error::Io(e))?;
-        self.writer.get_ref().sync_all().map_err(|e| Error::Io(e))?;
+        self.writer.flush().map_err(Error::Io)?;
+        self.writer.get_ref().sync_all().map_err(Error::Io)?;
         Ok(())
     }
 

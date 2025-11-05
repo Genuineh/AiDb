@@ -37,7 +37,7 @@ fn basic_usage() -> Result<(), Box<dyn Error>> {
         println!("Writing entries to WAL...");
         let mut wal = WAL::open(wal_path)?;
 
-        let entries = vec![
+        let entries = [
             b"user:1:name:Alice".to_vec(),
             b"user:1:email:alice@example.com".to_vec(),
             b"user:2:name:Bob".to_vec(),

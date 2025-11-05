@@ -17,7 +17,7 @@ pub struct WALReader {
 impl WALReader {
     /// Open a WAL file for reading
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path).map_err(|e| Error::Io(e))?;
+        let file = File::open(path).map_err(Error::Io)?;
         let reader = BufReader::new(file);
 
         Ok(Self {
@@ -112,7 +112,7 @@ impl WALReader {
         if length > 0 {
             self.reader
                 .read_exact(&mut buffer[HEADER_SIZE..])
-                .map_err(|e| Error::Io(e))?;
+                .map_err(Error::Io)?;
         }
 
         self.position += total_size as u64;
@@ -130,7 +130,7 @@ impl WALReader {
     pub fn seek(&mut self, pos: u64) -> Result<()> {
         self.reader
             .seek(SeekFrom::Start(pos))
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
         self.position = pos;
         Ok(())
     }
