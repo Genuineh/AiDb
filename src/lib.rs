@@ -101,7 +101,9 @@ impl DB {
         // 3. Recover from WAL if needed
         // 4. Initialize MemTable
         // 5. Load existing SSTables
-        Err(Error::NotImplemented("DB::open not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "DB::open not yet implemented".to_string(),
+        ))
     }
 
     /// Inserts a key-value pair into the database.
@@ -133,7 +135,9 @@ impl DB {
         // 2. Insert into MemTable
         // 3. Check if MemTable is full
         // 4. Trigger flush if needed
-        Err(Error::NotImplemented("DB::put not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "DB::put not yet implemented".to_string(),
+        ))
     }
 
     /// Retrieves the value associated with a key.
@@ -166,7 +170,9 @@ impl DB {
         // 2. Check Immutable MemTables
         // 3. Check Block Cache
         // 4. Search SSTables from Level 0 to Level N
-        Err(Error::NotImplemented("DB::get not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "DB::get not yet implemented".to_string(),
+        ))
     }
 
     /// Deletes a key from the database.
@@ -196,7 +202,9 @@ impl DB {
         // TODO: Implement delete operation
         // 1. Write tombstone to WAL
         // 2. Insert tombstone into MemTable
-        Err(Error::NotImplemented("DB::delete not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "DB::delete not yet implemented".to_string(),
+        ))
     }
 
     /// Closes the database, ensuring all data is flushed to disk.
@@ -209,7 +217,9 @@ impl DB {
         // 1. Flush MemTable
         // 2. Sync WAL
         // 3. Write final Manifest entry
-        Err(Error::NotImplemented("DB::close not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "DB::close not yet implemented".to_string(),
+        ))
     }
 }
 

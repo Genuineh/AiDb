@@ -71,13 +71,13 @@ impl Default for Options {
         Self {
             create_if_missing: true,
             error_if_exists: false,
-            memtable_size: 4 * 1024 * 1024,           // 4MB
+            memtable_size: 4 * 1024 * 1024, // 4MB
             level0_compaction_threshold: 4,
             level_size_multiplier: 10,
-            base_level_size: 10 * 1024 * 1024,        // 10MB
+            base_level_size: 10 * 1024 * 1024, // 10MB
             max_levels: 7,
-            block_size: 4 * 1024,                     // 4KB
-            block_cache_size: 8 * 1024 * 1024,        // 8MB
+            block_size: 4 * 1024,              // 4KB
+            block_cache_size: 8 * 1024 * 1024, // 8MB
             use_bloom_filter: true,
             bloom_filter_fp_rate: 0.01,
             compression: CompressionType::Snappy,
@@ -93,11 +93,11 @@ impl Default for Options {
 pub enum CompressionType {
     /// No compression.
     None,
-    
+
     /// Snappy compression (fast, moderate compression ratio).
     #[cfg(feature = "snappy")]
     Snappy,
-    
+
     /// LZ4 compression (very fast, lower compression ratio).
     #[cfg(feature = "lz4-compression")]
     Lz4,
@@ -107,7 +107,7 @@ impl Default for CompressionType {
     fn default() -> Self {
         #[cfg(feature = "snappy")]
         return CompressionType::Snappy;
-        
+
         #[cfg(not(feature = "snappy"))]
         CompressionType::None
     }
@@ -193,7 +193,7 @@ mod tests {
             .memtable_size(8 * 1024 * 1024)
             .block_size(8 * 1024)
             .use_wal(false);
-        
+
         assert_eq!(opts.memtable_size, 8 * 1024 * 1024);
         assert_eq!(opts.block_size, 8 * 1024);
         assert!(!opts.use_wal);

@@ -11,25 +11,25 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     /// An I/O error occurred.
     Io(io::Error),
-    
+
     /// Data corruption was detected.
     Corruption(String),
-    
+
     /// The requested key was not found.
     NotFound(String),
-    
+
     /// An invalid argument was provided.
     InvalidArgument(String),
-    
+
     /// A feature or function is not yet implemented.
     NotImplemented(String),
-    
+
     /// The database is in an invalid state.
     InvalidState(String),
-    
+
     /// A serialization or deserialization error occurred.
     Serialization(String),
-    
+
     /// A checksum mismatch was detected.
     ChecksumMismatch {
         /// The expected checksum value.
@@ -37,10 +37,10 @@ pub enum Error {
         /// The actual checksum value.
         actual: u32,
     },
-    
+
     /// The database or file is already in use.
     AlreadyExists(String),
-    
+
     /// An internal error occurred.
     Internal(String),
 }
@@ -50,17 +50,17 @@ impl Error {
     pub fn corruption(msg: impl Into<String>) -> Self {
         Error::Corruption(msg.into())
     }
-    
+
     /// Creates a new not found error.
     pub fn not_found(msg: impl Into<String>) -> Self {
         Error::NotFound(msg.into())
     }
-    
+
     /// Creates a new invalid argument error.
     pub fn invalid_argument(msg: impl Into<String>) -> Self {
         Error::InvalidArgument(msg.into())
     }
-    
+
     /// Creates a new internal error.
     pub fn internal(msg: impl Into<String>) -> Self {
         Error::Internal(msg.into())
@@ -78,7 +78,11 @@ impl fmt::Display for Error {
             Error::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
             Error::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             Error::ChecksumMismatch { expected, actual } => {
-                write!(f, "Checksum mismatch: expected {:#x}, got {:#x}", expected, actual)
+                write!(
+                    f,
+                    "Checksum mismatch: expected {:#x}, got {:#x}",
+                    expected, actual
+                )
             }
             Error::AlreadyExists(msg) => write!(f, "Already exists: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),

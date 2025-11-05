@@ -2,8 +2,11 @@
 
 🚀 **高性能、可弹性扩展的LSM-Tree存储引擎**
 
+[![CI](https://github.com/yourusername/aidb/workflows/CI/badge.svg)](https://github.com/yourusername/aidb/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/yourusername/aidb/workflows/Security%20Audit/badge.svg)](https://github.com/yourusername/aidb/actions/workflows/security.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![Crates.io](https://img.shields.io/crates/v/aidb.svg)](https://crates.io/crates/aidb)
 
 ## 📖 项目简介
 
@@ -159,6 +162,7 @@ async fn main() -> Result<()> {
 
 ### 开发文档
 - **[开发指南](docs/DEVELOPMENT.md)** - 如何参与开发
+- **[CI/CD 流程](docs/CICD.md)** - 持续集成和发布流程
 - **[API文档](https://docs.rs/aidb)** - 代码API文档（待发布）
 - **[任务清单](TODO.md)** - 当前开发任务
 

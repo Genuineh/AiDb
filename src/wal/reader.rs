@@ -237,11 +237,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path();
 
-        let test_data = vec![
-            b"entry1".to_vec(),
-            b"entry2".to_vec(),
-            b"entry3".to_vec(),
-        ];
+        let test_data = vec![b"entry1".to_vec(), b"entry2".to_vec(), b"entry3".to_vec()];
 
         // Write records
         {

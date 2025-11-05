@@ -41,9 +41,17 @@
 
 4. **测试**
    ```bash
+   # 运行所有测试
    cargo test
-   cargo clippy
+   
+   # 代码检查
+   cargo clippy --all-targets --all-features -- -D warnings
+   
+   # 格式化
    cargo fmt
+   
+   # 确保能编译
+   cargo build --all-features
    ```
 
 5. **提交**
@@ -57,6 +65,11 @@
    git push origin feature/your-feature-name
    # 在GitHub上创建Pull Request
    ```
+
+7. **CI/CD 检查**
+   - PR创建后，GitHub Actions会自动运行CI测试
+   - 确保所有检查通过（测试、lint、格式化）
+   - 查看[CI/CD文档](docs/CICD.md)了解详情
 
 ## 代码规范
 
@@ -101,11 +114,13 @@ Closes #123
 
 ### PR要求
 
-- [ ] 所有测试通过
-- [ ] Clippy无警告
-- [ ] 代码已格式化
+- [ ] 所有测试通过 (`cargo test`)
+- [ ] Clippy无警告 (`cargo clippy -- -D warnings`)
+- [ ] 代码已格式化 (`cargo fmt`)
 - [ ] 文档已更新
 - [ ] 添加了测试
+- [ ] CI检查全部通过
+- [ ] 更新了 CHANGELOG.md (如适用)
 
 ## 开发流程
 
