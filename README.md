@@ -19,11 +19,11 @@ AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架�
 
 ### 单机版特性
 - ✅ WAL（Write-Ahead Log）保证持久化
-- ✅ MemTable（SkipList）高性能内存索引
-- ✅ SSTable分层存储，支持Bloom Filter加速查询
-- ✅ Leveled Compaction优化空间利用
-- ✅ 崩溃恢复机制
-- ✅ 压缩支持（Snappy/LZ4）
+- ⏳ MemTable（SkipList）高性能内存索引
+- ⏳ SSTable分层存储，支持Bloom Filter加速查询
+- ⏳ Leveled Compaction优化空间利用
+- ⏳ 崩溃恢复机制
+- ⏳ 压缩支持（Snappy/LZ4）
 
 ### 集群版特性
 - 🔄 Primary-Replica架构，Replica作为缓存层
@@ -143,8 +143,8 @@ async fn main() -> Result<()> {
 **当前阶段**: 🚧 阶段A - 单机版MVP开发中
 
 - ✅ 项目基础设施
-- 🚧 WAL实现 (进行中)
-- ⏳ MemTable实现
+- ✅ WAL实现（已完成）
+- 🚧 MemTable实现（进行中）
 - ⏳ SSTable实现
 - ⏳ Compaction实现
 
@@ -207,7 +207,7 @@ aidb/
 
 ### 阶段0: 单机版 (Week 1-20) - 当前
 - [x] 项目初始化
-- [ ] WAL实现
+- [x] WAL实现
 - [ ] MemTable实现  
 - [ ] SSTable实现
 - [ ] Compaction实现
