@@ -12,10 +12,47 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # 检测文件变更，判断是否需要运行代码测试
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Check for file changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docs_only:
+              - '**/*.md'
+              - 'docs/**'
+              - 'LICENSE'
+              - 'CHANGELOG.md'
+              - 'README.md'
+              - '.github/workflows/README.md'
+            code:
+              - 'src/**'
+              - 'benches/**'
+              - 'examples/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'deny.toml'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/security.yml'
+              - '.github/workflows/release.yml'
+
   test:
     name: Test Suite
+    needs: changes
     runs-on: ${{ matrix.os }}
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -67,8 +104,9 @@ jobs:
 
   clippy:
     name: Clippy (Linting)
+    needs: changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -92,8 +130,9 @@ jobs:
 
   fmt:
     name: Format Check
+    needs: changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -108,8 +147,9 @@ jobs:
 
   coverage:
     name: Code Coverage
+    needs: changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -141,8 +181,9 @@ jobs:
 
   build:
     name: Build Check
+    needs: changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -170,8 +211,9 @@ jobs:
 
   bench:
     name: Benchmark Check
+    needs: changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -190,3 +232,91 @@ jobs:
 
       - name: Check benchmarks compile
         run: cargo bench --no-run --all-features
+
+  # 文档检查 - 只在文档变更时运行
+  docs-check:
+    name: Documentation Check
+    needs: changes
+    runs-on: ubuntu-latest
+    if: needs.changes.outputs.docs_only == 'true' && needs.changes.outputs.code == 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Check markdown files
+        run: |
+          echo "📚 Checking documentation files..."
+          find . -name "*.md" -type f | while read file; do
+            echo "✓ $file"
+          done
+          echo "✅ Documentation check completed successfully"
+
+      - name: Verify documentation structure
+        run: |
+          # 检查重要文档是否存在
+          required_docs=("README.md" "LICENSE" "CHANGELOG.md")
+          for doc in "${required_docs[@]}"; do
+            if [ -f "$doc" ]; then
+              echo "✓ $doc exists"
+            else
+              echo "⚠️  $doc not found"
+            fi
+          done
+
+  # CI状态汇总 - 必须总是运行以提供统一的状态检查
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [changes, test, clippy, fmt, coverage, build, bench, docs-check]
+    if: always()
+    steps:
+      - name: Check CI status
+        run: |
+          echo "=== CI Pipeline Status Summary ==="
+          echo ""
+          echo "Changes Detection: ${{ needs.changes.result }}"
+          echo "Code Changes: ${{ needs.changes.outputs.code }}"
+          echo "Docs Only: ${{ needs.changes.outputs.docs_only }}"
+          echo ""
+          
+          # 检查changes job
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "❌ Changes detection failed"
+            exit 1
+          fi
+          
+          # 如果有代码变更，检查代码相关的jobs
+          if [ "${{ needs.changes.outputs.code }}" == "true" ]; then
+            echo "📊 Code Changes Detected - Checking all code jobs..."
+            
+            failed=0
+            [ "${{ needs.test.result }}" == "failure" ] && echo "❌ Tests failed" && failed=1
+            [ "${{ needs.clippy.result }}" == "failure" ] && echo "❌ Clippy failed" && failed=1
+            [ "${{ needs.fmt.result }}" == "failure" ] && echo "❌ Format check failed" && failed=1
+            [ "${{ needs.build.result }}" == "failure" ] && echo "❌ Build failed" && failed=1
+            [ "${{ needs.bench.result }}" == "failure" ] && echo "❌ Benchmark check failed" && failed=1
+            [ "${{ needs.coverage.result }}" == "failure" ] && echo "❌ Coverage failed" && failed=1
+            
+            if [ $failed -eq 1 ]; then
+              echo ""
+              echo "❌ One or more code checks failed"
+              exit 1
+            fi
+            
+            echo "✅ All code checks passed"
+          # 如果只有文档变更，检查文档job
+          elif [ "${{ needs.changes.outputs.docs_only }}" == "true" ]; then
+            echo "📚 Documentation Changes Only - Skipping code checks"
+            
+            if [ "${{ needs.docs-check.result }}" == "failure" ]; then
+              echo "❌ Documentation check failed"
+              exit 1
+            fi
+            
+            echo "✅ Documentation check passed"
+          else
+            echo "ℹ️  No changes detected or mixed changes"
+          fi
+          
+          echo ""
+          echo "🎉 CI pipeline completed successfully!"

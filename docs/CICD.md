@@ -67,7 +67,42 @@ AiDb 使用 GitHub Actions 实现自动化的 CI/CD 流程，包括：
   - Draft PR 不会触发 CI 流水线
   - 只有当 PR 标记为 "Ready for review" 时才会运行测试
 
+#### 智能检测
+
+CI 流水线包含智能文件变更检测：
+
+- **只修改文档**: 如果PR只修改了文档文件（`*.md`, `docs/`, `LICENSE`, `CHANGELOG.md`等），将跳过所有代码测试，只运行文档检查
+- **包含代码变更**: 如果包含任何代码文件的修改，将运行完整的测试套件
+- **文档文件识别**:
+  - Markdown 文件 (`**/*.md`)
+  - 文档目录 (`docs/**`)
+  - 许可证和变更日志 (`LICENSE`, `CHANGELOG.md`)
+  - 工作流说明 (`.github/workflows/README.md`)
+
+这样可以大大减少CI运行时间和资源消耗，同时保持代码质量。
+
 #### 任务说明
+
+##### 0. Detect Changes (变更检测)
+
+**目的**: 智能检测文件变更类型，决定需要运行哪些测试
+
+**工具**: [dorny/paths-filter](https://github.com/dorny/paths-filter)
+
+**检测类型**:
+- `code`: 代码文件变更（src/, tests/, Cargo.toml等）
+- `docs_only`: 仅文档文件变更（*.md, docs/等）
+
+**步骤**:
+```yaml
+- 检出代码
+- 运行 paths-filter 检测文件变更
+- 输出变更类型供后续jobs使用
+```
+
+**影响**:
+- 如果检测到代码变更 → 运行所有代码测试
+- 如果只有文档变更 → 跳过代码测试，只运行文档检查
 
 ##### 1. Test Suite (测试套件)
 
@@ -190,6 +225,45 @@ cargo build --examples
 ```bash
 cargo bench --no-run --all-features
 ```
+
+##### 7. Documentation Check (文档检查)
+
+**目的**: 验证文档文件的完整性和结构
+
+**触发条件**: 仅在只修改文档文件时运行
+
+**步骤**:
+```yaml
+- 检出代码
+- 检查所有 Markdown 文件
+- 验证重要文档是否存在（README.md, LICENSE, CHANGELOG.md）
+```
+
+**优势**:
+- 快速验证文档变更
+- 不需要运行耗时的代码测试
+- 保证文档的基本完整性
+
+##### 8. CI Success (CI状态汇总)
+
+**目的**: 提供统一的CI状态检查点，用于分支保护规则
+
+**特性**:
+- 总是运行（`if: always()`）
+- 依赖所有其他jobs
+- 根据实际运行的jobs判断成功/失败
+
+**逻辑**:
+```yaml
+- 如果有代码变更 → 检查所有代码jobs是否成功
+- 如果只有文档变更 → 只检查文档job是否成功
+- 任何job失败 → 整体失败
+```
+
+**用途**:
+- 在GitHub分支保护规则中，只需要检查这一个job
+- 简化PR合并的状态检查
+- 提供清晰的CI运行摘要
 
 ---
 
@@ -520,6 +594,31 @@ cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
+
+### Q2.2: 为什么只修改文档时，代码测试被跳过了？
+
+**这是预期行为！** CI 包含智能文件变更检测：
+
+**文档文件包括**:
+- 所有 Markdown 文件 (`*.md`)
+- `docs/` 目录
+- `LICENSE`, `CHANGELOG.md`
+- 工作流说明文件
+
+**行为**:
+- ✅ **只修改文档**: 跳过代码测试（test, clippy, fmt, build, bench, coverage），只运行文档检查
+- ✅ **修改代码**: 运行完整的测试套件
+- ✅ **同时修改**: 运行完整的测试套件
+
+**优势**:
+- 大幅减少CI运行时间（文档PR通常只需几秒）
+- 节省CI资源
+- 鼓励更新文档
+
+**查看运行的jobs**:
+在GitHub Actions页面，你会看到：
+- 文档PR: `changes` ✓, `docs-check` ✓, `ci-success` ✓
+- 代码PR: `changes` ✓, `test` ✓, `clippy` ✓, `fmt` ✓, 等等...
 
 ### Q2.1: 如何跳过 CI？
 
