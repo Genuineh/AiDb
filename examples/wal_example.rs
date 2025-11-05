@@ -6,7 +6,7 @@
 //! - Recover data from WAL
 //! - Handle large entries that get fragmented
 
-use aidb::wal::{WAL, WALReader, WALWriter};
+use aidb::wal::{WALReader, WALWriter, WAL};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -89,7 +89,11 @@ fn large_data_example() -> Result<(), Box<dyn Error>> {
         let mut writer = WALWriter::new(wal_path)?;
         writer.append(&large_data)?;
         writer.sync()?;
-        println!("Written {} bytes (file size: {} bytes)", large_data.len(), writer.file_size());
+        println!(
+            "Written {} bytes (file size: {} bytes)",
+            large_data.len(),
+            writer.file_size()
+        );
     }
 
     // Recover large entry

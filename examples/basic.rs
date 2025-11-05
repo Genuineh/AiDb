@@ -6,7 +6,7 @@
 //! - Reading values
 //! - Deleting keys
 
-use aidb::{DB, Options};
+use aidb::{Options, DB};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logger
@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Configure database options
     let options = Options::default()
-        .memtable_size(4 * 1024 * 1024)  // 4MB
+        .memtable_size(4 * 1024 * 1024) // 4MB
         .use_wal(true);
 
     // Open database (will be created if it doesn't exist)

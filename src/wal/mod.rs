@@ -30,8 +30,8 @@
 //! # }
 //! ```
 
-pub mod record;
 pub mod reader;
+pub mod record;
 pub mod writer;
 
 pub use reader::WALReader;
