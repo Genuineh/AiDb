@@ -1,306 +1,254 @@
 # AiDb 开发任务清单
 
-> 本清单用于跟踪开发进度，AI agent应按顺序完成各项任务
+> 本清单跟踪所有开发任务。更新时间：2025-11-04
 
-## 📋 当前阶段：阶段一 - 项目基础设施搭建
+## 📋 当前Sprint
+
+**阶段A (MVP)** - Week 1-6
+
+### 🚀 本周任务 (Week 1)
+
+- [x] 项目初始化
+- [x] 基础架构设计
+- [ ] WAL实现 ⭐ **当前任务**
 
 ---
 
 ## ✅ 已完成
 
-- [x] 创建实施计划文档
-- [x] 创建任务清单
+### 项目基础
+- [x] Cargo工作空间配置
+- [x] 项目目录结构
+- [x] 错误类型定义 (error.rs)
+- [x] 配置结构 (config.rs)
+- [x] 基础文档结构
+- [x] 架构设计文档
+- [x] 实施计划文档
 
 ---
 
-## 🚀 待办任务
+## 📅 待办任务
 
-### 阶段一：项目基础设施搭建
+### 阶段A: MVP (Week 1-6)
 
-#### 1.1 初始化Rust项目
-- [ ] 创建Cargo工作空间（根目录Cargo.toml）
-- [ ] 创建aidb库项目（src/lib.rs）
-- [ ] 配置基础依赖包
-- [ ] 创建项目目录结构（src/, tests/, benches/, examples/）
-- [ ] 创建.gitignore文件
-- [ ] 更新README.md（项目介绍、快速开始）
+#### Week 1-2: WAL + MemTable
 
-#### 1.2 核心数据类型定义
-- [ ] 实现src/error.rs（Error和Result类型）
-- [ ] 实现src/config.rs（Config配置结构）
-- [ ] 实现src/types.rs（Key/Value基础类型）
-- [ ] 实现src/key.rs（InternalKey格式）
-- [ ] 编写单元测试：测试序列化和反序列化
+**WAL实现** (Day 3-5)
+- [ ] 定义Record格式
+- [ ] 实现CRC32校验
+- [ ] 实现WALWriter
+- [ ] 实现WALReader
+- [ ] 实现追加写入
+- [ ] 实现fsync
+- [ ] 实现恢复功能
+- [ ] WAL单元测试
 
----
-
-### 阶段二：WAL实现
-
-#### 2.1 日志格式设计
-- [ ] 创建src/wal/目录
-- [ ] 实现src/wal/format.rs（定义Record格式）
-- [ ] 实现CRC32校验函数
-- [ ] 编写单元测试：Record编码解码
-
-#### 2.2 WAL核心功能
-- [ ] 实现src/wal/writer.rs（WALWriter）
-- [ ] 实现src/wal/reader.rs（WALReader）
-- [ ] 实现src/wal/mod.rs（WAL主接口）
-- [ ] 实现日志追加写入
-- [ ] 实现日志fsync
-- [ ] 实现日志恢复功能
-- [ ] 编写集成测试：写入-崩溃-恢复测试
-
----
-
-### 阶段三：MemTable实现
-
-#### 3.1 SkipList实现
-- [ ] 创建src/memtable/目录
-- [ ] 实现src/memtable/skiplist.rs（并发SkipList）
-- [ ] 实现SkipList的put方法
-- [ ] 实现SkipList的get方法
-- [ ] 实现SkipList的迭代器
-- [ ] 编写单元测试：并发读写测试
-
-#### 3.2 MemTable封装
-- [ ] 实现src/memtable/mod.rs（MemTable接口）
-- [ ] 实现插入、查询、删除操作
+**MemTable实现** (Day 6-9)
+- [ ] 集成crossbeam-skiplist
+- [ ] 实现Put操作
+- [ ] 实现Get操作
+- [ ] 实现Delete操作（墓碑）
+- [ ] 实现Iterator
 - [ ] 实现大小统计
-- [ ] 实现转换为Immutable状态
-- [ ] 编写测试：基本操作测试
+- [ ] 并发读写测试
 
----
+**SSTable基础** (Day 10-14)
+- [ ] 设计Block格式
+- [ ] 实现BlockBuilder
+- [ ] 实现BlockReader
+- [ ] 实现SSTableBuilder
+- [ ] 实现SSTableReader
+- [ ] 实现Index Block
+- [ ] 实现Footer
+- [ ] SSTable测试
 
-### 阶段四：SSTable实现
+#### Week 3-4: DB引擎整合
 
-#### 4.1 Block格式
-- [ ] 创建src/sstable/目录
-- [ ] 实现src/sstable/block.rs（Block结构）
-- [ ] 实现Block编码器
-- [ ] 实现Block解码器
-- [ ] 实现Block迭代器
-- [ ] 编写测试：Block读写测试
+**DB核心逻辑** (Day 15-18)
+- [ ] 实现DB::open()
+- [ ] 实现DB::put()
+- [ ] 实现DB::get()
+- [ ] 实现DB::delete()
+- [ ] 写入路径集成
+- [ ] 读取路径集成
+- [ ] 基础集成测试
 
-#### 4.2 SSTable Builder
-- [ ] 实现src/sstable/builder.rs（SSTableBuilder）
-- [ ] 实现数据块写入
-- [ ] 实现索引块构建
-- [ ] 实现Footer写入
-- [ ] 实现完整SSTable生成
-- [ ] 编写测试：构建SSTable测试
+**Flush实现** (Day 19-21)
+- [ ] MemTable→SSTable转换
+- [ ] Immutable MemTable管理
+- [ ] 后台Flush线程
+- [ ] WAL轮转
+- [ ] Flush触发条件
+- [ ] Flush测试
 
-#### 4.3 SSTable Reader
-- [ ] 实现src/sstable/reader.rs（SSTableReader）
-- [ ] 实现打开SSTable文件
-- [ ] 实现读取Footer和Index
-- [ ] 实现按Key查询
-- [ ] 实现数据块读取
-- [ ] 编写测试：读取SSTable测试
+**测试和修复** (Day 22-28)
+- [ ] 端到端测试
+- [ ] 崩溃恢复测试
+- [ ] 并发测试
+- [ ] 压力测试
+- [ ] Bug修复
+- [ ] 性能初测
 
----
+### 阶段B: 性能优化 (Week 7-14)
 
-### 阶段五：Bloom Filter
+#### Week 7-8: Compaction
+- [ ] Level 0 Compaction
+- [ ] Level N Compaction
+- [ ] 文件选择策略
+- [ ] 多路归并实现
+- [ ] 后台Compaction线程
+- [ ] Version管理
+- [ ] Manifest实现
+- [ ] Compaction测试
 
-- [ ] 创建src/filter/目录
-- [ ] 实现src/filter/bloom.rs（Bloom Filter）
-- [ ] 实现多哈希函数
-- [ ] 实现插入和查询操作
-- [ ] 集成到SSTable Builder
-- [ ] 集成到SSTable Reader
-- [ ] 编写测试：误判率测试
+#### Week 9-10: Bloom Filter
+- [ ] BloomFilter数据结构
+- [ ] 哈希函数实现
+- [ ] 插入和查询
+- [ ] 集成到SSTableBuilder
+- [ ] 集成到SSTableReader
+- [ ] 误判率测试
 
----
-
-### 阶段六：版本管理
-
-#### 6.1 Version实现
-- [ ] 创建src/version/目录
-- [ ] 实现src/version/mod.rs（Version结构）
-- [ ] 实现多层级SSTable管理
-- [ ] 实现Version查询操作
-- [ ] 编写测试：多层查询测试
-
-#### 6.2 VersionEdit和Manifest
-- [ ] 实现src/version/edit.rs（VersionEdit）
-- [ ] 实现VersionEdit序列化
-- [ ] 实现src/manifest.rs（Manifest日志）
-- [ ] 实现Manifest写入和读取
-- [ ] 实现Version恢复
-- [ ] 编写测试：恢复测试
-
----
-
-### 阶段七：Compaction
-
-#### 7.1 Compaction策略
-- [ ] 创建src/compaction/目录
-- [ ] 实现src/compaction/picker.rs（文件选择器）
-- [ ] 实现Level 0触发条件
-- [ ] 实现Level N触发条件
-- [ ] 实现文件选择算法
-- [ ] 编写测试：选择器测试
-
-#### 7.2 Compaction执行
-- [ ] 实现src/compaction/mod.rs（Compaction主逻辑）
-- [ ] 实现多路归并迭代器
-- [ ] 实现Key合并逻辑
-- [ ] 实现新SSTable生成
-- [ ] 实现后台线程执行
-- [ ] 编写测试：Compaction正确性测试
-
----
-
-### 阶段八：DB引擎
-
-#### 8.1 DB结构
-- [ ] 创建src/db.rs
-- [ ] 定义DB主结构
-- [ ] 实现Open函数
-- [ ] 实现Close函数
-- [ ] 实现Recovery恢复逻辑
-
-#### 8.2 写入路径
-- [ ] 实现Put操作（WAL + MemTable）
-- [ ] 实现Delete操作
-- [ ] 实现WriteBatch批量写入
-- [ ] 实现MemTable切换逻辑
-- [ ] 触发后台Flush
-- [ ] 编写测试：写入测试
-
-#### 8.3 读取路径
-- [ ] 实现Get操作（多层查询）
-- [ ] 实现MultiGet批量读取
-- [ ] 实现范围扫描（Scan）
-- [ ] 编写测试：读取测试
-
-#### 8.4 Flush操作
-- [ ] 实现MemTable Flush到SSTable
-- [ ] 更新Version
-- [ ] 删除旧WAL
-- [ ] 触发Compaction检查
-- [ ] 编写测试：Flush测试
-
----
-
-### 阶段九：迭代器
-
-- [ ] 创建src/iterator/目录
-- [ ] 定义Iterator trait
-- [ ] 实现MemTable Iterator
-- [ ] 实现SSTable Iterator
-- [ ] 实现MergingIterator
-- [ ] 实现DB Iterator
-- [ ] 支持Seek操作
-- [ ] 编写测试：迭代器测试
-
----
-
-### 阶段十：高级特性
-
-#### 10.1 Snapshot
-- [ ] 实现src/snapshot.rs
-- [ ] 基于Sequence Number实现
-- [ ] 实现快照读取
-- [ ] 编写测试：快照隔离测试
-
-#### 10.2 压缩
-- [ ] 创建src/compress.rs
-- [ ] 集成Snappy压缩
-- [ ] 在SSTable中支持压缩
-- [ ] 编写测试：压缩解压测试
-
----
-
-### 阶段十一：缓存优化
-
-- [ ] 创建src/cache/目录
-- [ ] 实现src/cache/lru.rs（LRU缓存）
-- [ ] 实现Block Cache
-- [ ] 实现Table Cache
+#### Week 11-12: Block Cache
+- [ ] LRU Cache实现
 - [ ] 集成到读取路径
-- [ ] 编写测试：缓存命中测试
+- [ ] 缓存统计
+- [ ] 缓存大小配置
+- [ ] 性能测试
 
----
+#### Week 13-14: 压缩和优化
+- [ ] Snappy压缩集成
+- [ ] WriteBatch实现
+- [ ] 批量写入优化
+- [ ] 并发优化
+- [ ] 读写分离
+- [ ] 完整基准测试
+- [ ] 性能报告
 
-### 阶段十二：测试
+### 阶段C: 生产就绪 (Week 15-20)
 
-#### 12.1 单元测试
-- [ ] 补充所有模块单元测试
+#### Week 15-16: 高级功能
+- [ ] Snapshot实现
+- [ ] MVCC支持
+- [ ] Iterator完整实现
+- [ ] 范围查询
+- [ ] 配置优化
+
+#### Week 17-18: 测试完善
+- [ ] 单元测试覆盖率>80%
+- [ ] 集成测试套件
+- [ ] 压力测试
+- [ ] 故障注入测试
 - [ ] 边界条件测试
-- [ ] 错误处理测试
 
-#### 12.2 集成测试
-- [ ] tests/integration_test.rs（完整读写流程）
-- [ ] tests/crash_recovery_test.rs（崩溃恢复）
-- [ ] tests/concurrency_test.rs（并发测试）
-
-#### 12.3 基准测试
-- [ ] benches/write_bench.rs（写入性能）
-- [ ] benches/read_bench.rs（读取性能）
-- [ ] benches/compaction_bench.rs（Compaction性能）
+#### Week 19-20: 文档和发布
+- [ ] API文档完善
+- [ ] 代码示例
+- [ ] 使用指南
+- [ ] 最佳实践文档
+- [ ] 性能调优文档
+- [ ] 发布v0.1.0
 
 ---
 
-### 阶段十三：文档
+### 阶段1: RPC网络层 (Week 21-24)
 
-- [ ] 完善所有公共API的Rustdoc
-- [ ] 创建examples/basic.rs（基础示例）
-- [ ] 创建examples/batch.rs（批量操作示例）
-- [ ] 创建examples/iterator.rs（迭代器示例）
-- [ ] 更新README.md（完整使用文档）
-- [ ] 创建docs/architecture.md（架构文档）
+#### Week 21: RPC框架
+- [ ] Protobuf接口定义
+- [ ] tonic/gRPC集成
+- [ ] RPC服务端实现
+- [ ] RPC客户端实现
+- [ ] 连接池
+- [ ] 超时和重试
+
+#### Week 22: Primary节点
+- [ ] PrimaryNode结构
+- [ ] RPC服务集成
+- [ ] 健康检查端点
+- [ ] 统计信息
+- [ ] 测试
+
+#### Week 23: Replica节点
+- [ ] ReplicaNode结构
+- [ ] LRU缓存实现
+- [ ] RPC客户端集成
+- [ ] 缓存miss转发
+- [ ] 预热策略
+- [ ] 测试
+
+#### Week 24: 网络优化
+- [ ] 连接池优化
+- [ ] 批量请求
+- [ ] 压缩传输
+- [ ] 性能测试
 
 ---
 
-### 阶段十四：工具
+### 阶段2: Coordinator (Week 25-28)
 
-- [ ] 创建src/bin/aidb-tool.rs（命令行工具）
-- [ ] 实现数据导入导出
-- [ ] 实现数据库检查（fsck）
-- [ ] 实现性能分析
-- [ ] 实现统计信息收集
+#### Week 25: 一致性哈希
+- [ ] 哈希环实现
+- [ ] 虚拟节点
+- [ ] 节点增删
+- [ ] 均衡性测试
+
+#### Week 26: Coordinator核心
+- [ ] 路由实现
+- [ ] Shard注册
+- [ ] 负载均衡
+- [ ] 转发逻辑
+- [ ] 测试
+
+#### Week 27-28: 健康检查
+- [ ] 定期检测
+- [ ] 故障处理
+- [ ] 自动剔除
+- [ ] 告警集成
+
+---
+
+### 阶段3-6: 后续功能 (Week 29-48)
+
+详见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 
 ---
 
 ## 📊 进度统计
 
-- **总任务数**: ~120
-- **已完成**: 2
-- **进行中**: 0
-- **待开始**: 118
-- **完成度**: 1.7%
+- **总任务数**: ~150
+- **已完成**: 7
+- **进行中**: 1
+- **待开始**: 142
+- **完成度**: 5%
 
 ---
 
-## 🎯 当前优先级
+## 🎯 里程碑
 
-**P0 - 立即执行**:
-1. 初始化Rust项目结构
-2. 实现核心数据类型
-
-**P1 - 高优先级**:
-3. 实现WAL
-4. 实现MemTable
-
-**P2 - 中优先级**:
-5. 实现SSTable
-6. 实现版本管理
-
-**P3 - 低优先级**:
-7. 高级特性
-8. 文档和工具
+- [ ] M1: MVP可运行 (Week 6)
+- [ ] M2: 单机性能达标 (Week 14)
+- [ ] M3: 单机生产就绪 (Week 20)
+- [ ] M4: RPC通信完成 (Week 24)
+- [ ] M5: 集群路由完成 (Week 28)
+- [ ] M6: 多Shard运行 (Week 34)
+- [ ] M7: 备份恢复完成 (Week 40)
+- [ ] M8: 生产就绪 (Week 48)
 
 ---
 
-## 💡 AI Agent使用说明
+## 📝 Notes
 
-1. **按顺序执行**: 严格按照阶段顺序完成任务
-2. **验证测试**: 每完成一个任务，立即运行相关测试
-3. **保持可编译**: 确保代码始终可以通过`cargo build`
-4. **代码质量**: 定期运行`cargo clippy`和`cargo fmt`
-5. **更新清单**: 完成任务后，标记为已完成并更新进度
+### 优先级说明
+- P0: 阻塞性任务，必须立即完成
+- P1: 高优先级，本周完成
+- P2: 中优先级，本月完成
+- P3: 低优先级，可延后
+
+### 任务状态
+- [ ] 未开始
+- [x] 已完成
+- ⭐ 当前任务
 
 ---
 
-*最后更新: 2025-11-04*
+*定期更新，保持同步*
