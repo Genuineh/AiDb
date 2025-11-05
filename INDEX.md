@@ -26,6 +26,14 @@
   - 避免RocksDB什么问题
   - 详细的技术对比
 
+### 实现文档
+
+- **[docs/WAL_IMPLEMENTATION.md](docs/WAL_IMPLEMENTATION.md)** ✅
+  - WAL架构设计
+  - Record格式详解
+  - Writer和Reader实现
+  - 使用示例和最佳实践
+
 ### 实施和开发
 
 - **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** 
@@ -67,7 +75,7 @@ aidb/
 │   ├── lib.rs            # 库入口
 │   ├── error.rs          # 错误定义
 │   ├── config.rs         # 配置
-│   ├── wal/              # WAL模块（待实现）
+│   ├── wal/              # WAL模块 ✅
 │   ├── memtable/         # MemTable模块（待实现）
 │   └── sstable/          # SSTable模块（待实现）
 │
@@ -80,6 +88,7 @@ aidb/
     ├── IMPLEMENTATION.md  # 实施计划 ⭐ 开发路线
     ├── DESIGN_DECISIONS.md # 设计决策
     ├── DEVELOPMENT.md     # 开发指南 ⭐ 参与开发
+    ├── WAL_IMPLEMENTATION.md # WAL实现 ✅
     │
     └── archive/           # 历史文档
         ├── README.md
@@ -178,12 +187,13 @@ aidb/
 
 | 文档 | 最后更新 |
 |------|---------|
-| README.md | 2025-11-04 |
+| README.md | 2025-11-05 |
 | docs/ARCHITECTURE.md | 2025-11-04 |
-| docs/IMPLEMENTATION.md | 2025-11-04 |
+| docs/IMPLEMENTATION.md | 2025-11-05 |
 | docs/DESIGN_DECISIONS.md | 2025-11-04 |
 | docs/DEVELOPMENT.md | 2025-11-04 |
-| TODO.md | 2025-11-04 |
+| docs/WAL_IMPLEMENTATION.md | 2025-11-05 ✅ |
+| TODO.md | 2025-11-05 |
 
 ---
 

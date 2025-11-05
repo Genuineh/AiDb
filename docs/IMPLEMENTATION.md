@@ -83,23 +83,22 @@
 - [x] 配置依赖
 - [x] 设置测试框架
 
-**Day 3-5**: WAL实现
+**Day 3-5**: WAL实现 ✅
 ```rust
 // src/wal/mod.rs
 pub struct WAL {
-    file: File,
-    writer: BufWriter<File>,
+    writer: WALWriter,
 }
 
 // Record格式
 [checksum: u32][length: u16][type: u8][data: bytes]
 
 任务：
-- [ ] Record编码/解码
-- [ ] CRC32校验
-- [ ] 追加写入
-- [ ] fsync支持
-- [ ] 单元测试
+- [x] Record编码/解码
+- [x] CRC32校验
+- [x] 追加写入
+- [x] fsync支持
+- [x] 单元测试
 ```
 
 **Day 6-9**: MemTable实现

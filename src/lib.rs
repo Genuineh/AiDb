@@ -46,6 +46,7 @@
 // Module declarations
 pub mod config;
 pub mod error;
+pub mod wal;
 
 // Re-exports
 pub use config::Options;
