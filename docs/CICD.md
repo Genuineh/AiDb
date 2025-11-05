@@ -61,8 +61,11 @@ AiDb 使用 GitHub Actions 实现自动化的 CI/CD 流程，包括：
 
 #### 触发条件
 
-- Push 到任意分支
-- Pull Request 到 `main` 分支
+- Push 到 `main` 分支
+- Pull Request 到 `main` 分支 (仅在 ready for review 时运行)
+  - 支持的事件类型: `opened`, `synchronize`, `reopened`, `ready_for_review`
+  - Draft PR 不会触发 CI 流水线
+  - 只有当 PR 标记为 "Ready for review" 时才会运行测试
 
 #### 任务说明
 
@@ -497,14 +500,37 @@ updates:
    ```
 3. 修复问题后重新提交
 
-### Q2: 如何跳过 CI？
+### Q2: 在功能分支上 CI 不运行是正常的吗？
+
+**是的！** 从最新配置开始，CI 流水线只在以下情况运行：
+- Push 到 `main` 分支
+- Pull Request 标记为 "Ready for review"
+
+**工作流程**:
+1. 在功能分支上开发时，push 不会触发 CI（节省资源）
+2. 创建 PR 到 `main` 分支时:
+   - 如果是 Draft PR，CI 不会运行
+   - 当标记为 "Ready for review" 时，CI 才开始运行
+3. PR 合并到 `main` 后，会再次运行完整的 CI
+
+**如需在功能分支测试**:
+```bash
+# 本地运行所有检查
+cargo test --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+```
+
+### Q2.1: 如何跳过 CI？
 
 在 commit message 中添加 `[skip ci]` 或 `[ci skip]`:
 ```bash
 git commit -m "docs: update README [skip ci]"
 ```
 
-**注意**: 谨慎使用，可能违反分支保护规则
+**注意**: 
+- 谨慎使用，可能违反分支保护规则
+- 在当前配置下，功能分支的 push 已经不触发 CI
 
 ### Q3: 如何本地测试 Release 构建？
 

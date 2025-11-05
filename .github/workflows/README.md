@@ -5,8 +5,13 @@
 ## 📋 工作流列表
 
 ### 1. CI Pipeline (`ci.yml`)
-**触发条件**: Push 到任意分支，PR 到 main
+**触发条件**: Push 到 main 分支，PR 到 main (仅在 ready for review 时)
 **用途**: 持续集成，确保代码质量
+
+**注意**: 
+- 功能分支的 push 不会触发 CI
+- Draft PR 不会触发 CI
+- 只有当 PR 标记为 "Ready for review" 时才会运行
 
 包含的任务：
 - ✅ 测试 (多平台、多版本)
