@@ -143,56 +143,84 @@ fn test_recovery_with_wal_corruption() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
 
-    // Session 1: Create valid data
+    // Session 1: Write data but crash before flush (so data is only in WAL)
     {
         let db = DB::open(&path, Options::default()).unwrap();
 
+        // Write data that will only be in WAL (not flushed to SSTable)
         for i in 0..50 {
-            let key = format!("valid_key_{}", i);
-            db.put(key.as_bytes(), b"valid_value").unwrap();
+            let key = format!("wal_key_{}", i);
+            db.put(key.as_bytes(), b"wal_value").unwrap();
         }
 
-        // Properly close
-        drop(db);
+        // Simulate crash (don't flush, don't close properly)
+        simulate_crash(db);
     }
 
     // Corrupt the WAL file by truncating it
-    let wal_dir = path.join("wal");
-    if let Ok(entries) = fs::read_dir(&wal_dir) {
+    // WAL files are in the database root directory (path), not in a subdirectory
+    let mut corrupted = false;
+    if let Ok(entries) = fs::read_dir(&path) {
         for entry in entries.flatten() {
             let file_path = entry.path();
-            if file_path.extension().and_then(|s| s.to_str()) == Some("wal") {
+            // WAL files end with .log (e.g., 000001.log)
+            if file_path.extension().and_then(|s| s.to_str()) == Some("log") {
                 // Truncate the file to simulate corruption
                 if let Ok(metadata) = fs::metadata(&file_path) {
                     let size = metadata.len();
-                    if size > 10 {
+                    if size > 100 {
+                        println!(
+                            "Corrupting WAL file: {:?} (truncating from {} to {} bytes)",
+                            file_path,
+                            size,
+                            size / 2
+                        );
+                        // Truncate to half size, which should corrupt some entries
                         fs::write(&file_path, vec![0u8; (size / 2) as usize]).ok();
+                        corrupted = true;
                     }
                 }
             }
         }
     }
 
+    assert!(corrupted, "WAL file should have been found and corrupted");
+
     // Session 2: Recovery should handle corruption gracefully
     {
         let db_result = DB::open(&path, Options::default());
 
         // Database should either:
-        // 1. Open successfully and recover valid entries
+        // 1. Open successfully and recover valid entries (up to corruption point)
         // 2. Return an error indicating corruption
         match db_result {
             Ok(db) => {
-                // If opened, valid data should still be accessible
-                // (depends on where corruption occurred)
-                println!("Database recovered despite corruption");
+                // If opened, some data may be lost due to corruption
+                println!("Database opened after WAL corruption");
 
-                // Try to access data
-                let result = db.get(b"valid_key_0");
-                println!("Sample read result: {:?}", result);
+                // Some keys might be recovered (before corruption point)
+                // Some keys might be lost (after corruption point)
+                let mut recovered = 0;
+                let mut lost = 0;
+
+                for i in 0..50 {
+                    let key = format!("wal_key_{}", i);
+                    if db.get(key.as_bytes()).unwrap().is_some() {
+                        recovered += 1;
+                    } else {
+                        lost += 1;
+                    }
+                }
+
+                println!("Recovered {} keys, lost {} keys due to WAL corruption", recovered, lost);
+
+                // We expect some data loss due to corruption
+                // (exact amount depends on where corruption occurred)
+                assert!(lost > 0, "Some data should be lost due to WAL corruption");
             }
             Err(e) => {
-                // Corruption detected
-                println!("Expected error on corrupted WAL: {:?}", e);
+                // Corruption detected and database refused to open
+                println!("Database correctly detected WAL corruption: {:?}", e);
             }
         }
     }
