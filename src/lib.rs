@@ -154,11 +154,7 @@ impl DB {
 
         // Step 3: Open or create WAL
         let wal_path = path.join(wal::wal_filename(1));
-        let wal = if options.use_wal {
-            WAL::open(&wal_path)?
-        } else {
-            WAL::open(&wal_path)?
-        };
+        let wal = WAL::open(&wal_path)?;
 
         // Step 4: Recover from WAL if it exists and has data
         let recovered_entries = if wal_path.exists() && wal.size() > 0 {
@@ -501,7 +497,7 @@ mod tests {
 
         // Second session: verify recovery
         {
-            let db = DB::open(&db_path, Options::default()).unwrap();
+            let _db = DB::open(&db_path, Options::default()).unwrap();
             // Note: Currently recovery from WAL is not fully implemented
             // This test will be enhanced in future
         }
