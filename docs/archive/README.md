@@ -20,6 +20,13 @@
 - **PLAN_ADJUSTMENT_SUMMARY.md** - 计划调整说明
 - **PROJECT_OVERVIEW.md** - 项目概览（旧版）
 
+### 开发过程总结文档
+- **WAL_COMPLETION_SUMMARY.md** - WAL实现完成总结（2025-11-05）
+- **CICD_SETUP_SUMMARY.md** - CI/CD流水线设置完成总结
+- **CI_CD_OPTIMIZATION_SUMMARY.md** - CI/CD流水线优化总结
+- **CI_WORKFLOW_DIAGRAM.md** - CI工作流程图
+- **SETUP_CHECKLIST.md** - GitHub Actions配置检查清单
+
 ## 当前有效文档
 
 请查看根目录和docs/目录下的文档：
