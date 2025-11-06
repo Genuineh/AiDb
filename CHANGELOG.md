@@ -21,10 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependabot configuration for automated dependency updates
 - PR and Issue templates for better workflow management
 - Comprehensive CI/CD documentation
+- Flush functionality implementation
+  - MemTable freeze mechanism
+  - Automatic flush when MemTable is full
+  - Manual flush API
+  - WAL rotation after flush
+  - Data persistence and recovery
+- 5 additional tests for empty SSTable prevention (total: 96 tests)
+- Example program demonstrating tombstone flush behavior
 
 ### Changed
 - Updated README with CI badges
 - Enhanced documentation structure
+- Improved README with flush functionality documentation
+
+### Fixed
+- **Empty SSTable Prevention**: Fixed bug where `flush_memtable_to_sstable()` was creating empty SSTable files when MemTable contained only tombstones or filtered entries
+  - Now properly checks `entry_count` before creating SSTable
+  - Abandons builder and removes incomplete files when no entries to flush
+  - Prevents wasted disk space and improves read performance
+  - Added comprehensive test coverage (5 new tests)
+  - See `BUG_FIX_EMPTY_SSTABLE.md` for details
 
 ## [0.1.0] - 2024-01-XX
 

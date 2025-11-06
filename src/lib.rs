@@ -499,6 +499,26 @@ impl DB {
             last_user_key = Some(user_key.to_vec());
         }
 
+        // Check if we have any entries to flush
+        if entry_count == 0 {
+            // No entries to flush - abandon the builder and clean up
+            log::info!(
+                "MemTable contains no entries to flush (only tombstones or duplicates), skipping SSTable creation"
+            );
+            
+            // Abandon the builder (don't write footer)
+            builder.abandon()?;
+            
+            // Remove the incomplete SSTable file
+            if sstable_path.exists() {
+                std::fs::remove_file(&sstable_path)?;
+            }
+            
+            // Return a special value to indicate no file was created
+            // (we still consumed the file number, which is fine)
+            return Ok(0);
+        }
+
         // Finish building the SSTable
         let file_size = builder.finish()?;
 
@@ -1009,5 +1029,181 @@ mod tests {
                 assert!(value.is_some(), "All concurrent writes should succeed");
             }
         }
+    }
+
+    // ===== Bug Fix Tests: Empty SSTable Prevention =====
+
+    #[test]
+    fn test_flush_only_tombstones_no_sstable() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write and then delete keys (only tombstones remain)
+        for i in 0..50 {
+            let key = format!("key{}", i);
+            db.put(key.as_bytes(), b"value").unwrap();
+            db.delete(key.as_bytes()).unwrap();
+        }
+
+        // Get initial SSTable count
+        let initial_sstable_count = {
+            let sstables = db.sstables.read();
+            sstables[0].len()
+        };
+
+        // Flush should not create an SSTable (only tombstones)
+        db.flush().unwrap();
+
+        // Verify no new SSTable was created
+        let final_sstable_count = {
+            let sstables = db.sstables.read();
+            sstables[0].len()
+        };
+
+        assert_eq!(
+            initial_sstable_count, final_sstable_count,
+            "No SSTable should be created when MemTable contains only tombstones"
+        );
+
+        // Verify no SSTable files exist
+        let sst_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("sst"))
+            .collect();
+
+        assert_eq!(
+            sst_files.len(),
+            initial_sstable_count,
+            "No SSTable files should be created on disk"
+        );
+    }
+
+    #[test]
+    fn test_flush_mixed_tombstones_and_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write some values
+        for i in 0..25 {
+            let key = format!("keep{}", i);
+            db.put(key.as_bytes(), b"value").unwrap();
+        }
+
+        // Write and delete other keys (tombstones)
+        for i in 0..25 {
+            let key = format!("delete{}", i);
+            db.put(key.as_bytes(), b"value").unwrap();
+            db.delete(key.as_bytes()).unwrap();
+        }
+
+        // Flush should create an SSTable (has valid entries)
+        db.flush().unwrap();
+
+        // Verify SSTable was created
+        let sstable_count = {
+            let sstables = db.sstables.read();
+            sstables[0].len()
+        };
+
+        assert_eq!(
+            sstable_count, 1,
+            "One SSTable should be created when MemTable has valid entries"
+        );
+
+        // Verify only valid keys are readable
+        for i in 0..25 {
+            let keep_key = format!("keep{}", i);
+            let delete_key = format!("delete{}", i);
+
+            assert!(
+                db.get(keep_key.as_bytes()).unwrap().is_some(),
+                "Valid entries should be in SSTable"
+            );
+            assert!(
+                db.get(delete_key.as_bytes()).unwrap().is_none(),
+                "Deleted entries should not be in SSTable"
+            );
+        }
+    }
+
+    #[test]
+    fn test_flush_empty_memtable_no_sstable() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Flush empty MemTable
+        db.flush().unwrap();
+
+        // Verify no SSTable was created
+        let sstable_count = {
+            let sstables = db.sstables.read();
+            sstables[0].len()
+        };
+
+        assert_eq!(
+            sstable_count, 0,
+            "No SSTable should be created for empty MemTable"
+        );
+    }
+
+    #[test]
+    fn test_flush_duplicate_overwrites() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write the same key multiple times
+        for i in 0..100 {
+            db.put(b"same_key", format!("value{}", i).as_bytes())
+                .unwrap();
+        }
+
+        // Flush should create SSTable with only one entry
+        db.flush().unwrap();
+
+        // Verify SSTable was created
+        let sstable_count = {
+            let sstables = db.sstables.read();
+            sstables[0].len()
+        };
+
+        assert_eq!(sstable_count, 1, "One SSTable should be created");
+
+        // Verify we get the latest value
+        let value = db.get(b"same_key").unwrap();
+        assert_eq!(value, Some(b"value99".to_vec()));
+    }
+
+    #[test]
+    fn test_no_orphan_sstable_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+
+            // Create a MemTable with only tombstones
+            for i in 0..10 {
+                let key = format!("key{}", i);
+                db.put(key.as_bytes(), b"value").unwrap();
+                db.delete(key.as_bytes()).unwrap();
+            }
+
+            db.flush().unwrap();
+            db.close().unwrap();
+        }
+
+        // Check for any .sst files
+        let sst_files: Vec<_> = std::fs::read_dir(&db_path)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("sst"))
+            .collect();
+
+        assert_eq!(
+            sst_files.len(),
+            0,
+            "No orphan SSTable files should exist after flushing only tombstones"
+        );
     }
 }
