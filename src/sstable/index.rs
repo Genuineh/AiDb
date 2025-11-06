@@ -70,7 +70,7 @@ impl IndexBlock {
 
             // Skip to the restart point
             for _ in 0..mid {
-                if !iter.next() {
+                if !iter.advance() {
                     break;
                 }
             }
@@ -99,7 +99,7 @@ impl IndexBlock {
 
         // Skip to the starting position
         for _ in 0..left {
-            if !iter.next() {
+            if !iter.advance() {
                 return Ok(None);
             }
         }
@@ -107,7 +107,7 @@ impl IndexBlock {
         // Find the first entry >= key
         let mut last_handle: Option<BlockHandle> = None;
         loop {
-            if !iter.next() {
+            if !iter.advance() {
                 break;
             }
 
@@ -139,7 +139,7 @@ impl IndexBlock {
         let mut count = 0;
         let mut iter = self.block.iter();
         iter.seek_to_first();
-        while iter.next() {
+        while iter.advance() {
             count += 1;
         }
         count
@@ -209,8 +209,8 @@ impl IndexIterator {
     }
 
     /// Move to the next entry
-    pub fn next(&mut self) -> bool {
-        self.iter.next()
+    pub fn advance(&mut self) -> bool {
+        self.iter.advance()
     }
 
     /// Check if the iterator is valid
@@ -329,18 +329,18 @@ mod tests {
         iter.seek_to_first();
 
         // First entry
-        assert!(iter.next());
+        assert!(iter.advance());
         let entry = iter.entry().unwrap();
         assert_eq!(entry.key, b"apple");
         assert_eq!(entry.handle.offset, 0);
 
         // Second entry
-        assert!(iter.next());
+        assert!(iter.advance());
         let entry = iter.entry().unwrap();
         assert_eq!(entry.key, b"banana");
         assert_eq!(entry.handle.offset, 100);
 
         // No more entries
-        assert!(!iter.next());
+        assert!(!iter.advance());
     }
 }

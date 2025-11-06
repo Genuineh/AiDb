@@ -27,6 +27,7 @@ use std::sync::Arc;
 pub struct SSTableReader {
     file: Arc<File>,
     index_block: IndexBlock,
+    #[allow(dead_code)]
     footer: Footer,
     file_size: u64,
 }
@@ -74,7 +75,7 @@ impl SSTableReader {
         let mut iter = block.iter();
         iter.seek_to_first();
 
-        while iter.next() {
+        while iter.advance() {
             if iter.key() == key {
                 return Ok(Some(iter.value().to_vec()));
             }
@@ -140,7 +141,7 @@ impl SSTableReader {
     /// Read block data using an Arc<File> (for concurrent access)
     fn read_block_with_handle(file: &Arc<File>, handle: &BlockHandle) -> Result<Bytes> {
         // Clone the file descriptor for this read operation
-        let mut file_clone = file.try_clone().map_err(|e| Error::Io(e))?;
+        let mut file_clone = file.try_clone().map_err(Error::Io)?;
 
         Self::read_block_data(&mut file_clone, handle)
     }
@@ -159,8 +160,8 @@ impl SSTableReader {
     pub fn smallest_key(&self) -> Result<Option<Vec<u8>>> {
         let mut iter = self.index_block.iter();
         iter.seek_to_first();
-
-        if !iter.next() {
+        
+        if !iter.advance() {
             return Ok(None);
         }
 
@@ -174,7 +175,7 @@ impl SSTableReader {
         let mut block_iter = block.iter();
         block_iter.seek_to_first();
 
-        if !block_iter.next() {
+        if !block_iter.advance() {
             return Ok(None);
         }
 
@@ -187,7 +188,7 @@ impl SSTableReader {
         iter.seek_to_first();
 
         let mut last_entry = None;
-        while iter.next() {
+        while iter.advance() {
             last_entry = Some(iter.entry()?);
         }
 
@@ -221,7 +222,7 @@ impl SSTableIterator {
         let mut index_iter = reader.index_block.iter();
         index_iter.seek_to_first();
 
-        while index_iter.next() {
+        while index_iter.advance() {
             if let Ok(entry) = index_iter.entry() {
                 entries.push((entry.key, entry.handle));
             }
@@ -265,9 +266,9 @@ impl SSTableIterator {
     }
 
     /// Move to the next entry
-    pub fn next(&mut self) -> Result<bool> {
+    pub fn advance(&mut self) -> Result<bool> {
         if let Some(ref mut iter) = self.current_block_iter {
-            if iter.next() {
+            if iter.advance() {
                 return Ok(true);
             }
         }
@@ -277,7 +278,7 @@ impl SSTableIterator {
         self.load_current_block()?;
 
         if let Some(ref mut iter) = self.current_block_iter {
-            Ok(iter.next())
+            Ok(iter.advance())
         } else {
             Ok(false)
         }
@@ -419,7 +420,7 @@ mod tests {
         iter.seek_to_first().unwrap();
 
         let mut collected = Vec::new();
-        while iter.next().unwrap() {
+        while iter.advance().unwrap() {
             if iter.valid() {
                 collected.push((iter.key().to_vec(), iter.value().to_vec()));
             }

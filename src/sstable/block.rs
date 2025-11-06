@@ -95,8 +95,7 @@ pub struct BlockBuilder {
 impl BlockBuilder {
     /// Create a new BlockBuilder
     pub fn new(block_restart_interval: usize) -> Self {
-        let mut restarts = Vec::new();
-        restarts.push(0); // First restart point at offset 0
+        let restarts = vec![0]; // First restart point at offset 0
 
         Self {
             buffer: BytesMut::new(),
@@ -218,7 +217,7 @@ impl BlockIterator {
     }
 
     /// Move to the next entry
-    pub fn next(&mut self) -> bool {
+    pub fn advance(&mut self) -> bool {
         if !self.valid {
             return false;
         }
@@ -333,25 +332,25 @@ mod tests {
         iter.seek_to_first();
 
         // First entry
-        assert!(iter.next());
+        assert!(iter.advance());
         assert!(iter.valid());
         assert_eq!(iter.key(), b"apple");
         assert_eq!(iter.value(), b"red");
 
         // Second entry
-        assert!(iter.next());
+        assert!(iter.advance());
         assert!(iter.valid());
         assert_eq!(iter.key(), b"banana");
         assert_eq!(iter.value(), b"yellow");
 
         // Third entry
-        assert!(iter.next());
+        assert!(iter.advance());
         assert!(iter.valid());
         assert_eq!(iter.key(), b"cherry");
         assert_eq!(iter.value(), b"red");
 
         // No more entries
-        assert!(!iter.next());
+        assert!(!iter.advance());
         assert!(!iter.valid());
     }
 

@@ -37,7 +37,7 @@ fn main() -> Result<()> {
         ];
 
         for (key, value) in &entries {
-            builder.add(*key, *value)?;
+            builder.add(key, value)?;
         }
 
         let file_size = builder.finish()?;
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
         let keys_to_lookup: Vec<&[u8]> = vec![b"banana", b"fig", b"mango"];
 
         for key in &keys_to_lookup {
-            match reader.get(*key)? {
+            match reader.get(key)? {
                 Some(value) => {
                     println!(
                         "     '{}' -> '{}'",
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
         iter.seek_to_first()?;
 
         let mut count = 0;
-        while iter.next()? {
+        while iter.advance()? {
             if iter.valid() {
                 let key = String::from_utf8_lossy(iter.key());
                 let value = String::from_utf8_lossy(iter.value());
