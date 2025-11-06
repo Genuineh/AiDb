@@ -54,11 +54,7 @@ impl Block {
             return Err(Error::corruption("Invalid restart offset"));
         }
 
-        Ok(Self {
-            data,
-            restart_offset,
-            num_restarts,
-        })
+        Ok(Self { data, restart_offset, num_restarts })
     }
 
     /// Get the number of restart points
@@ -112,10 +108,7 @@ impl BlockBuilder {
 
         // Keys must be added in sorted order
         if !self.last_key.is_empty() {
-            assert!(
-                key > self.last_key.as_slice(),
-                "Keys must be added in sorted order"
-            );
+            assert!(key > self.last_key.as_slice(), "Keys must be added in sorted order");
         }
 
         let mut shared = 0;

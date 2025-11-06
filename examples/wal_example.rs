@@ -89,11 +89,7 @@ fn large_data_example() -> Result<(), Box<dyn Error>> {
         let mut writer = WALWriter::new(wal_path)?;
         writer.append(&large_data)?;
         writer.sync()?;
-        println!(
-            "Written {} bytes (file size: {} bytes)",
-            large_data.len(),
-            writer.file_size()
-        );
+        println!("Written {} bytes (file size: {} bytes)", large_data.len(), writer.file_size());
     }
 
     // Recover large entry

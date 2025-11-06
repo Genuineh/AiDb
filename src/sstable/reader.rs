@@ -51,12 +51,7 @@ impl SSTableReader {
         let index_data = Self::read_block_data(&mut file, &footer.index_handle)?;
         let index_block = IndexBlock::new(index_data)?;
 
-        Ok(Self {
-            file: Arc::new(file),
-            index_block,
-            footer,
-            file_size,
-        })
+        Ok(Self { file: Arc::new(file), index_block, footer, file_size })
     }
 
     /// Get the value for a key
@@ -286,10 +281,7 @@ impl SSTableIterator {
 
     /// Check if the iterator is valid
     pub fn valid(&self) -> bool {
-        self.current_block_iter
-            .as_ref()
-            .map(|i| i.valid())
-            .unwrap_or(false)
+        self.current_block_iter.as_ref().map(|i| i.valid()).unwrap_or(false)
     }
 
     /// Get the current key
@@ -358,11 +350,8 @@ mod tests {
 
     #[test]
     fn test_sstable_reader_smallest_largest() {
-        let entries = vec![
-            (b"apple" as &[u8], b"1" as &[u8]),
-            (b"banana", b"2"),
-            (b"cherry", b"3"),
-        ];
+        let entries =
+            vec![(b"apple" as &[u8], b"1" as &[u8]), (b"banana", b"2"), (b"cherry", b"3")];
 
         let temp_file = create_test_sstable(&entries);
         let reader = SSTableReader::open(temp_file.path()).unwrap();
@@ -391,18 +380,9 @@ mod tests {
         assert!(reader.num_blocks() > 1);
 
         // Test random access
-        assert_eq!(
-            reader.get(b"key00000500").unwrap(),
-            Some(b"value00000500".to_vec())
-        );
-        assert_eq!(
-            reader.get(b"key00000000").unwrap(),
-            Some(b"value00000000".to_vec())
-        );
-        assert_eq!(
-            reader.get(b"key00000999").unwrap(),
-            Some(b"value00000999".to_vec())
-        );
+        assert_eq!(reader.get(b"key00000500").unwrap(), Some(b"value00000500".to_vec()));
+        assert_eq!(reader.get(b"key00000000").unwrap(), Some(b"value00000000".to_vec()));
+        assert_eq!(reader.get(b"key00000999").unwrap(), Some(b"value00000999".to_vec()));
     }
 
     #[test]
@@ -439,10 +419,7 @@ mod tests {
         let temp_file = create_test_sstable(&entries);
 
         // Corrupt the file by modifying a byte
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .open(temp_file.path())
-            .unwrap();
+        let mut file = std::fs::OpenOptions::new().write(true).open(temp_file.path()).unwrap();
 
         use std::io::{Seek, SeekFrom, Write};
         file.seek(SeekFrom::Start(10)).unwrap();

@@ -70,11 +70,7 @@ impl MemTable {
     /// let memtable = MemTable::new(100);
     /// ```
     pub fn new(start_sequence: u64) -> Self {
-        Self {
-            data: Arc::new(SkipMap::new()),
-            size: AtomicUsize::new(0),
-            start_sequence,
-        }
+        Self { data: Arc::new(SkipMap::new()), size: AtomicUsize::new(0), start_sequence }
     }
 
     /// Inserts a key-value pair into the MemTable.
@@ -293,10 +289,9 @@ impl Iterator for MemTableIterator {
     type Item = MemTableEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|entry| MemTableEntry {
-            key: entry.key().clone(),
-            value: entry.value().clone(),
-        })
+        self.iter
+            .next()
+            .map(|entry| MemTableEntry { key: entry.key().clone(), value: entry.value().clone() })
     }
 }
 

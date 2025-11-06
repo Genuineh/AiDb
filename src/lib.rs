@@ -148,10 +148,7 @@ impl DB {
                 )));
             }
         } else if options.error_if_exists {
-            return Err(Error::AlreadyExists(format!(
-                "Database already exists: {:?}",
-                path
-            )));
+            return Err(Error::AlreadyExists(format!("Database already exists: {:?}", path)));
         }
 
         // Step 2: Initialize sequence number
@@ -435,10 +432,7 @@ impl DB {
         let old_memtable = std::mem::replace(&mut *memtable, MemTable::new(current_seq + 1));
         immutable.push(Arc::new(old_memtable));
 
-        log::info!(
-            "MemTable frozen, {} immutable memtables waiting for flush",
-            immutable.len()
-        );
+        log::info!("MemTable frozen, {} immutable memtables waiting for flush", immutable.len());
 
         Ok(())
     }
@@ -796,10 +790,7 @@ mod tests {
 
         // Check that SSTable was created
         let sstables = db.sstables.read();
-        assert!(
-            !sstables[0].is_empty(),
-            "Level 0 should have SSTables after flush"
-        );
+        assert!(!sstables[0].is_empty(), "Level 0 should have SSTables after flush");
     }
 
     #[test]
@@ -904,10 +895,7 @@ mod tests {
 
         // Verify no SSTables were created
         let sstables = db.sstables.read();
-        assert!(
-            sstables[0].is_empty(),
-            "No SSTables should be created for empty memtable"
-        );
+        assert!(sstables[0].is_empty(), "No SSTables should be created for empty memtable");
     }
 
     #[test]
@@ -1141,10 +1129,7 @@ mod tests {
             sstables[0].len()
         };
 
-        assert_eq!(
-            sstable_count, 0,
-            "No SSTable should be created for empty MemTable"
-        );
+        assert_eq!(sstable_count, 0, "No SSTable should be created for empty MemTable");
     }
 
     #[test]
@@ -1154,8 +1139,7 @@ mod tests {
 
         // Write the same key multiple times
         for i in 0..100 {
-            db.put(b"same_key", format!("value{}", i).as_bytes())
-                .unwrap();
+            db.put(b"same_key", format!("value{}", i).as_bytes()).unwrap();
         }
 
         // Flush should create SSTable with only one entry

@@ -160,9 +160,7 @@ impl IndexBlockBuilder {
     /// Create a new IndexBlockBuilder
     pub fn new() -> Self {
         // Index blocks use a larger restart interval since they're typically smaller
-        Self {
-            builder: BlockBuilder::new(1),
-        }
+        Self { builder: BlockBuilder::new(1) }
     }
 
     /// Add an index entry
@@ -250,18 +248,9 @@ mod tests {
         let mut builder = IndexBlockBuilder::new();
         assert!(builder.is_empty());
 
-        builder.add_entry(&IndexEntry::new(
-            b"apple".to_vec(),
-            BlockHandle::new(0, 100),
-        ));
-        builder.add_entry(&IndexEntry::new(
-            b"banana".to_vec(),
-            BlockHandle::new(100, 150),
-        ));
-        builder.add_entry(&IndexEntry::new(
-            b"cherry".to_vec(),
-            BlockHandle::new(250, 200),
-        ));
+        builder.add_entry(&IndexEntry::new(b"apple".to_vec(), BlockHandle::new(0, 100)));
+        builder.add_entry(&IndexEntry::new(b"banana".to_vec(), BlockHandle::new(100, 150)));
+        builder.add_entry(&IndexEntry::new(b"cherry".to_vec(), BlockHandle::new(250, 200)));
 
         let data = builder.finish();
         assert!(!data.is_empty());
@@ -273,18 +262,9 @@ mod tests {
     #[test]
     fn test_index_block_find() {
         let mut builder = IndexBlockBuilder::new();
-        builder.add_entry(&IndexEntry::new(
-            b"apple".to_vec(),
-            BlockHandle::new(0, 100),
-        ));
-        builder.add_entry(&IndexEntry::new(
-            b"banana".to_vec(),
-            BlockHandle::new(100, 150),
-        ));
-        builder.add_entry(&IndexEntry::new(
-            b"cherry".to_vec(),
-            BlockHandle::new(250, 200),
-        ));
+        builder.add_entry(&IndexEntry::new(b"apple".to_vec(), BlockHandle::new(0, 100)));
+        builder.add_entry(&IndexEntry::new(b"banana".to_vec(), BlockHandle::new(100, 150)));
+        builder.add_entry(&IndexEntry::new(b"cherry".to_vec(), BlockHandle::new(250, 200)));
 
         let data = builder.finish();
         let index = IndexBlock::new(data).unwrap();
@@ -313,14 +293,8 @@ mod tests {
     #[test]
     fn test_index_iterator() {
         let mut builder = IndexBlockBuilder::new();
-        builder.add_entry(&IndexEntry::new(
-            b"apple".to_vec(),
-            BlockHandle::new(0, 100),
-        ));
-        builder.add_entry(&IndexEntry::new(
-            b"banana".to_vec(),
-            BlockHandle::new(100, 150),
-        ));
+        builder.add_entry(&IndexEntry::new(b"apple".to_vec(), BlockHandle::new(0, 100)));
+        builder.add_entry(&IndexEntry::new(b"banana".to_vec(), BlockHandle::new(100, 150)));
 
         let data = builder.finish();
         let index = IndexBlock::new(data).unwrap();

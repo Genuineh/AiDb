@@ -49,10 +49,7 @@ fn main() -> Result<(), aidb::Error> {
 
         // Read data from SSTable
         if let Some(value) = db.get(b"user:42")? {
-            println!(
-                "   ✓ Successfully read from SSTable: {:?}",
-                String::from_utf8_lossy(&value)
-            );
+            println!("   ✓ Successfully read from SSTable: {:?}", String::from_utf8_lossy(&value));
         }
 
         db.close()?;
