@@ -128,9 +128,7 @@ impl WALReader {
 
     /// Seek to a specific position in the WAL
     pub fn seek(&mut self, pos: u64) -> Result<()> {
-        self.reader
-            .seek(SeekFrom::Start(pos))
-            .map_err(Error::Io)?;
+        self.reader.seek(SeekFrom::Start(pos)).map_err(Error::Io)?;
         self.position = pos;
         Ok(())
     }
