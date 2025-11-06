@@ -128,7 +128,7 @@ impl DB {
     /// ```
     pub fn open<P: AsRef<std::path::Path>>(path: P, options: Options) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        
+
         // Validate options
         options.validate()?;
 
@@ -169,7 +169,7 @@ impl DB {
 
         // Step 5: Initialize MemTable with recovered data
         let memtable = MemTable::new(sequence + 1);
-        
+
         for _entry in recovered_entries {
             // Parse the entry (format: "key:value" or "delete:key")
             // For now, we'll enhance this in the put/delete implementation
@@ -223,7 +223,7 @@ impl DB {
         // Step 2: Write to WAL first (for durability)
         if self.options.use_wal {
             let mut wal = self.wal.write();
-            
+
             // Encode the entry as: "put:key_len:key:value"
             let mut entry = Vec::new();
             entry.extend_from_slice(b"put:");
@@ -232,9 +232,9 @@ impl DB {
             entry.extend_from_slice(key);
             entry.extend_from_slice(b":");
             entry.extend_from_slice(value);
-            
+
             wal.append(&entry)?;
-            
+
             if self.options.sync_wal {
                 wal.sync()?;
             }
@@ -255,7 +255,10 @@ impl DB {
         if memtable_size >= self.options.memtable_size {
             // TODO: Trigger flush (will be implemented in the Flush phase)
             // For now, we'll just log that it's full
-            log::warn!("MemTable is full ({} bytes), flush not yet implemented", memtable_size);
+            log::warn!(
+                "MemTable is full ({} bytes), flush not yet implemented",
+                memtable_size
+            );
         }
 
         Ok(())
@@ -353,16 +356,16 @@ impl DB {
         // Step 2: Write tombstone to WAL
         if self.options.use_wal {
             let mut wal = self.wal.write();
-            
+
             // Encode the entry as: "del:key_len:key"
             let mut entry = Vec::new();
             entry.extend_from_slice(b"del:");
             entry.extend_from_slice(&(key.len() as u32).to_le_bytes());
             entry.extend_from_slice(b":");
             entry.extend_from_slice(key);
-            
+
             wal.append(&entry)?;
-            
+
             if self.options.sync_wal {
                 wal.sync()?;
             }
@@ -391,7 +394,7 @@ impl DB {
 
         // TODO: Step 2: Flush MemTable to SSTable (will be implemented in Flush phase)
         // TODO: Step 3: Write final Manifest entry
-        
+
         Ok(())
     }
 }
@@ -477,7 +480,7 @@ mod tests {
     fn test_db_close() {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        
+
         db.put(b"key1", b"value1").unwrap();
         let result = db.close();
         assert!(result.is_ok());
@@ -507,7 +510,7 @@ mod tests {
     #[test]
     fn test_db_error_if_exists() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create the database first
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
         db.close().unwrap();
@@ -517,7 +520,7 @@ mod tests {
         let options = Options::default().create_if_missing(false);
         let mut options = options;
         options.error_if_exists = true;
-        
+
         let result = DB::open(temp_dir.path(), options);
         assert!(result.is_err());
     }
