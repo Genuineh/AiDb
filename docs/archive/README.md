@@ -21,6 +21,7 @@
 - **PROJECT_OVERVIEW.md** - 项目概览（旧版）
 
 ### 开发过程总结文档
+- **DOCUMENT_ORGANIZATION_SUMMARY.md** - 文档整理归档总结（2025-11-06）
 - **WAL_COMPLETION_SUMMARY.md** - WAL实现完成总结（2025-11-05）
 - **CICD_SETUP_SUMMARY.md** - CI/CD流水线设置完成总结
 - **CI_CD_OPTIMIZATION_SUMMARY.md** - CI/CD流水线优化总结
