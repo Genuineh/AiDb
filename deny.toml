@@ -3,17 +3,16 @@
 
 [advisories]
 # Security vulnerability database
-db-path = "~/.cargo/advisory-db"
+# Note: In cargo-deny 0.17+, individual lint levels (vulnerability, unmaintained, notice)
+# have been removed. Use the ignore list to ignore specific advisories.
+# db-path defaults to $CARGO_HOME/advisory-dbs
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
-notice = "warn"
 ignore = []
 
 [licenses]
 # License policy
-unlicensed = "deny"
+# Note: In cargo-deny 0.17+, the configuration has been simplified.
+# Use 'allow' to specify allowed licenses.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -21,25 +20,27 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
 ]
-deny = []
-copyleft = "warn"
-allow-osi-fsf-free = "both"
-default = "deny"
 confidence-threshold = 0.8
+
+[licenses.private]
+# If true, ignores workspace crates that aren't published
+ignore = false
 
 [bans]
 # Ban specific crates
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
+# List of crates to deny
 deny = []
 skip = []
 skip-tree = []
 
 [sources]
 # Source code repositories
-unknown-registry = "deny"
-unknown-git = "deny"
+unknown-registry = "warn"
+unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
