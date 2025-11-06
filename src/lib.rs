@@ -154,13 +154,31 @@ impl DB {
         // Step 2: Initialize sequence number
         let mut sequence = 0u64;
 
-        // Step 3: Open or create WAL
-        let wal_path = path.join(wal::wal_filename(1));
-        let wal = WAL::open(&wal_path)?;
+        // Step 3: Find and open the latest WAL file
+        let mut wal_number = 1u64;
+        let mut latest_wal_path = path.join(wal::wal_filename(1));
+
+        // Scan for the latest WAL file
+        if path.exists() {
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                for entry in entries.flatten() {
+                    if let Some(filename) = entry.file_name().to_str() {
+                        if let Some(num) = wal::parse_wal_filename(filename) {
+                            if num >= wal_number {
+                                wal_number = num;
+                                latest_wal_path = entry.path();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let wal = WAL::open(&latest_wal_path)?;
 
         // Step 4: Recover from WAL if it exists and has data
-        let recovered_entries = if wal_path.exists() && wal.size() > 0 {
-            WAL::recover(&wal_path)?
+        let recovered_entries = if latest_wal_path.exists() && wal.size() > 0 {
+            WAL::recover(&latest_wal_path)?
         } else {
             Vec::new()
         };
@@ -168,10 +186,78 @@ impl DB {
         // Step 5: Initialize MemTable with recovered data
         let memtable = MemTable::new(sequence + 1);
 
-        for _entry in recovered_entries {
-            // Parse the entry (format: "key:value" or "delete:key")
-            // For now, we'll enhance this in the put/delete implementation
+        for entry in recovered_entries {
             sequence += 1;
+
+            // Parse WAL entry format
+            if entry.starts_with(b"put:") {
+                // Format: "put:key_len:key:value"
+                let entry = &entry[4..]; // Skip "put:"
+
+                // Read key length
+                if entry.len() < 4 {
+                    log::warn!("Invalid WAL entry: too short");
+                    continue;
+                }
+
+                let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
+                let entry = &entry[4..]; // Skip key_len
+
+                if entry.is_empty() || entry[0] != b':' {
+                    log::warn!("Invalid WAL entry: missing separator");
+                    continue;
+                }
+
+                let entry = &entry[1..]; // Skip ':'
+
+                if entry.len() < key_len + 1 {
+                    log::warn!("Invalid WAL entry: key too short");
+                    continue;
+                }
+
+                let key = &entry[..key_len];
+                let entry = &entry[key_len..];
+
+                if entry.is_empty() || entry[0] != b':' {
+                    log::warn!("Invalid WAL entry: missing value separator");
+                    continue;
+                }
+
+                let value = &entry[1..];
+
+                // Insert into memtable
+                memtable.put(key, value, sequence);
+            } else if entry.starts_with(b"del:") {
+                // Format: "del:key_len:key"
+                let entry = &entry[4..]; // Skip "del:"
+
+                if entry.len() < 4 {
+                    log::warn!("Invalid WAL entry: too short");
+                    continue;
+                }
+
+                let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
+                let entry = &entry[4..]; // Skip key_len
+
+                if entry.is_empty() || entry[0] != b':' {
+                    log::warn!("Invalid WAL entry: missing separator");
+                    continue;
+                }
+
+                let entry = &entry[1..]; // Skip ':'
+
+                if entry.len() < key_len {
+                    log::warn!("Invalid WAL entry: key too short");
+                    continue;
+                }
+
+                let key = &entry[..key_len];
+
+                // Insert tombstone into memtable
+                memtable.delete(key, sequence);
+            } else {
+                log::warn!("Unknown WAL entry type");
+            }
         }
 
         // Step 6: Load existing SSTables
@@ -220,7 +306,7 @@ impl DB {
             sstables: Arc::new(RwLock::new(sstables)),
             sequence: Arc::new(AtomicU64::new(sequence)),
             next_file_number: Arc::new(AtomicU64::new(2)), // Start from 2 (1 is for WAL)
-            wal_file_number: Arc::new(AtomicU64::new(1)),
+            wal_file_number: Arc::new(AtomicU64::new(wal_number)),
         })
     }
 
@@ -634,6 +720,23 @@ impl DB {
         log::info!("Database closed successfully");
 
         Ok(())
+    }
+}
+
+impl Drop for DB {
+    fn drop(&mut self) {
+        // Attempt to flush and close cleanly
+        // Ignore errors during drop as we can't propagate them
+        if let Err(e) = self.flush() {
+            eprintln!("Error flushing database during drop: {}", e);
+        }
+
+        if self.options.use_wal {
+            let mut wal = self.wal.write();
+            if let Err(e) = wal.sync() {
+                eprintln!("Error syncing WAL during drop: {}", e);
+            }
+        }
     }
 }
 
