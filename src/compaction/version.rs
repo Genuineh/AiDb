@@ -16,14 +16,24 @@ use std::sync::Arc;
 pub enum VersionEdit {
     /// Add a new SSTable file
     AddFile {
+        /// Level where the file is added
         level: usize,
+        /// File number identifier
         file_number: u64,
+        /// Size of the file in bytes
         file_size: u64,
+        /// Smallest key in the file
         smallest_key: Vec<u8>,
+        /// Largest key in the file
         largest_key: Vec<u8>,
     },
     /// Delete an SSTable file
-    DeleteFile { level: usize, file_number: u64 },
+    DeleteFile {
+        /// Level where the file is located
+        level: usize,
+        /// File number to delete
+        file_number: u64,
+    },
     /// Set the next file number
     SetNextFileNumber(u64),
     /// Set the sequence number
@@ -40,9 +50,13 @@ pub struct Version {
 /// Metadata for an SSTable file
 #[derive(Debug, Clone)]
 pub struct FileMetaData {
+    /// File number identifier
     pub file_number: u64,
+    /// Size of the file in bytes
     pub file_size: u64,
+    /// Smallest key in the file
     pub smallest_key: Vec<u8>,
+    /// Largest key in the file
     pub largest_key: Vec<u8>,
 }
 
@@ -57,13 +71,7 @@ impl Version {
         let mut new_version = self.clone();
 
         match edit {
-            VersionEdit::AddFile {
-                level,
-                file_number,
-                file_size,
-                smallest_key,
-                largest_key,
-            } => {
+            VersionEdit::AddFile { level, file_number, file_size, smallest_key, largest_key } => {
                 new_version.levels[*level].push(FileMetaData {
                     file_number: *file_number,
                     file_size: *file_size,
@@ -149,25 +157,17 @@ impl VersionSet {
                 continue;
             }
 
-            let edit: VersionEdit = serde_json::from_str(&line).map_err(|e| {
-                Error::corruption(format!("Failed to parse manifest entry: {}", e))
-            })?;
+            let edit: VersionEdit = serde_json::from_str(&line)
+                .map_err(|e| Error::corruption(format!("Failed to parse manifest entry: {}", e)))?;
 
             self.apply_edit(&edit)?;
         }
 
         // Reopen manifest for appending
-        self.manifest_file = Some(
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.manifest_path)?,
-        );
+        self.manifest_file =
+            Some(OpenOptions::new().create(true).append(true).open(&self.manifest_path)?);
 
-        log::info!(
-            "Recovered {} files from manifest",
-            self.current.num_files()
-        );
+        log::info!("Recovered {} files from manifest", self.current.num_files());
 
         Ok(())
     }
@@ -252,11 +252,7 @@ impl VersionSet {
                             levels[level_idx].push(Arc::new(reader));
                         }
                         Err(e) => {
-                            log::warn!(
-                                "Failed to load SSTable {:?}: {}",
-                                path,
-                                e
-                            );
+                            log::warn!("Failed to load SSTable {:?}: {}", path, e);
                         }
                     }
                 }

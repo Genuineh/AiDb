@@ -119,9 +119,7 @@ fn test_compaction_maintains_sort_order() {
     let db = DB::open(temp_dir.path(), options).unwrap();
 
     // Write keys in random order across multiple SSTables
-    let keys = vec![
-        "gamma", "alpha", "epsilon", "beta", "delta", "zeta", "theta", "iota",
-    ];
+    let keys = ["gamma", "alpha", "epsilon", "beta", "delta", "zeta", "theta", "iota"];
 
     for (batch, key) in keys.iter().enumerate() {
         let value = format!("value_{}", batch);

@@ -47,7 +47,7 @@ impl Ord for MergeEntry {
 /// (which typically corresponds to the newest data).
 pub struct MergeIterator {
     heap: BinaryHeap<MergeEntry>,
-    iterators: Vec<Box<crate::sstable::reader::SSTableIterator>>,
+    iterators: Vec<crate::sstable::reader::SSTableIterator>,
 }
 
 impl MergeIterator {
@@ -69,7 +69,7 @@ impl MergeIterator {
                 });
             }
 
-            iterators.push(Box::new(iter));
+            iterators.push(iter);
         }
 
         Ok(Self { heap, iterators })
@@ -138,17 +138,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create two SSTables with non-overlapping keys
-        let table1 = create_sstable(
-            &temp_dir,
-            1,
-            &[(b"a", b"1"), (b"c", b"3"), (b"e", b"5")],
-        );
+        let table1 = create_sstable(&temp_dir, 1, &[(b"a", b"1"), (b"c", b"3"), (b"e", b"5")]);
 
-        let table2 = create_sstable(
-            &temp_dir,
-            2,
-            &[(b"b", b"2"), (b"d", b"4"), (b"f", b"6")],
-        );
+        let table2 = create_sstable(&temp_dir, 2, &[(b"b", b"2"), (b"d", b"4"), (b"f", b"6")]);
 
         let merge_iter = MergeIterator::new(vec![table1, table2]).unwrap();
         let result: Vec<_> = merge_iter.collect();
@@ -168,17 +160,10 @@ mod tests {
 
         // Create two SSTables with overlapping keys
         // Table 1 (newer) should take precedence
-        let table1 = create_sstable(
-            &temp_dir,
-            1,
-            &[(b"a", b"new_a"), (b"c", b"new_c")],
-        );
+        let table1 = create_sstable(&temp_dir, 1, &[(b"a", b"new_a"), (b"c", b"new_c")]);
 
-        let table2 = create_sstable(
-            &temp_dir,
-            2,
-            &[(b"a", b"old_a"), (b"b", b"old_b"), (b"c", b"old_c")],
-        );
+        let table2 =
+            create_sstable(&temp_dir, 2, &[(b"a", b"old_a"), (b"b", b"old_b"), (b"c", b"old_c")]);
 
         let merge_iter = MergeIterator::new(vec![table1, table2]).unwrap();
         let result: Vec<_> = merge_iter.collect();
@@ -211,11 +196,7 @@ mod tests {
     fn test_merge_iterator_single_table() {
         let temp_dir = TempDir::new().unwrap();
 
-        let table = create_sstable(
-            &temp_dir,
-            1,
-            &[(b"a", b"1"), (b"b", b"2"), (b"c", b"3")],
-        );
+        let table = create_sstable(&temp_dir, 1, &[(b"a", b"1"), (b"b", b"2"), (b"c", b"3")]);
 
         let merge_iter = MergeIterator::new(vec![table]).unwrap();
         let result: Vec<_> = merge_iter.collect();

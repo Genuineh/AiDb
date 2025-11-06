@@ -567,7 +567,6 @@ impl DB {
         for entry in memtable.iter() {
             let user_key = entry.user_key();
             let value = entry.value();
-            let value_type = entry.value_type();
 
             // Skip if this is an older version of the same key
             if let Some(ref last_key) = last_user_key {
@@ -819,10 +818,8 @@ impl DB {
 
             // Log deletions and delete files
             for (file_num, file_path) in deleted_files {
-                let delete_edit = VersionEdit::DeleteFile {
-                    level: task.level,
-                    file_number: file_num,
-                };
+                let delete_edit =
+                    VersionEdit::DeleteFile { level: task.level, file_number: file_num };
                 version_set.log_edit(&delete_edit)?;
 
                 // Delete the physical file
@@ -838,9 +835,8 @@ impl DB {
             let mut sstables = self.sstables.write();
 
             // Remove input files from source level
-            sstables[task.level].retain(|reader| {
-                !task.inputs.iter().any(|input| Arc::ptr_eq(reader, input))
-            });
+            sstables[task.level]
+                .retain(|reader| !task.inputs.iter().any(|input| Arc::ptr_eq(reader, input)));
 
             // Add new file to output level
             let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
@@ -1440,11 +1436,7 @@ mod tests {
             .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("sst"))
             .collect();
 
-        assert_eq!(
-            sst_files.len(),
-            1,
-            "SSTable with tombstones should be created at Level 0"
-        );
+        assert_eq!(sst_files.len(), 1, "SSTable with tombstones should be created at Level 0");
 
         // Reopen and verify all keys are deleted
         {

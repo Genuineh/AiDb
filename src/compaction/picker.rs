@@ -33,10 +33,7 @@ impl CompactionPicker {
     /// Pick files for compaction
     ///
     /// Returns None if no compaction is needed
-    pub fn pick_compaction(
-        &self,
-        levels: &[Vec<Arc<SSTableReader>>],
-    ) -> Option<CompactionTask> {
+    pub fn pick_compaction(&self, levels: &[Vec<Arc<SSTableReader>>]) -> Option<CompactionTask> {
         // Strategy:
         // 1. Check Level 0 first (file count based)
         // 2. Check other levels (size based)
@@ -62,18 +59,12 @@ impl CompactionPicker {
     /// Pick files for Level 0 compaction
     ///
     /// Level 0 files may overlap, so we compact all of them into Level 1
-    fn pick_level0_compaction(
-        &self,
-        levels: &[Vec<Arc<SSTableReader>>],
-    ) -> Option<CompactionTask> {
+    fn pick_level0_compaction(&self, levels: &[Vec<Arc<SSTableReader>>]) -> Option<CompactionTask> {
         if levels[0].is_empty() {
             return None;
         }
 
-        log::info!(
-            "Picking Level 0 compaction: {} files at Level 0",
-            levels[0].len()
-        );
+        log::info!("Picking Level 0 compaction: {} files at Level 0", levels[0].len());
 
         // Take all Level 0 files
         let inputs = levels[0].clone();
