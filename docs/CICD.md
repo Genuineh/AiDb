@@ -883,6 +883,51 @@ about: Report a bug
 
 ---
 
+## 手动触发的测试流水线
+
+### 压力测试 (Stress Tests)
+
+**何时运行**:
+- 重大功能完成后
+- 性能优化前后对比
+- 发布前验证
+
+**运行方法**:
+```bash
+# 在 GitHub Actions 页面手动触发
+# 或使用 gh CLI:
+gh workflow run stress-test.yml -f test_type=all -f duration_minutes=60
+```
+
+### 性能基准测试 (Benchmarks)
+
+**何时运行**:
+- 性能优化后
+- 发布前性能验证
+- 与基线对比
+
+**运行方法**:
+```bash
+# 在 GitHub Actions 页面手动触发
+# 或使用 gh CLI:
+gh workflow run benchmark.yml -f benchmark_type=all -f compare_baseline=true
+```
+
+**本地运行**:
+```bash
+# 运行所有基准测试
+cargo bench
+
+# 运行特定基准测试
+cargo bench --bench write_bench
+cargo bench --bench read_bench
+
+# 运行压力测试 (标记为 ignored)
+cargo test --release -- --ignored --nocapture
+```
+
+---
+
 ## 监控和维护
 
 ### 定期检查
@@ -891,17 +936,11 @@ about: Report a bug
 - [ ] 每月审查 Security Audit 结果
 - [ ] 每季度更新依赖
 - [ ] 定期检查 CodeQL 建议
+- [ ] 每次发布前运行压力测试和基准测试
 
 ### 性能监控
 
-考虑添加性能回归测试:
-```yaml
-- name: Run benchmarks
-  run: cargo bench -- --save-baseline main
-
-- name: Compare with baseline
-  run: cargo bench -- --baseline main
-```
+手动触发的性能基准测试流水线会保存结果供后续对比。建议在重大改动后运行基准测试并保存结果。
 
 ---
 

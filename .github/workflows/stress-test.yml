@@ -1,0 +1,159 @@
+name: Stress Tests
+
+# This workflow is manually triggered for stress testing
+# It runs intensive tests that are not suitable for regular CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Test duration in minutes'
+        required: false
+        default: '60'
+        type: choice
+        options:
+          - '10'
+          - '30'
+          - '60'
+          - '120'
+      test_type:
+        description: 'Type of stress test'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'write-heavy'
+          - 'read-heavy'
+          - 'mixed'
+          - 'memory'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  stress-test:
+    name: Run Stress Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-stress-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Display test configuration
+        run: |
+          echo "=== Stress Test Configuration ==="
+          echo "Duration: ${{ inputs.duration_minutes }} minutes"
+          echo "Test Type: ${{ inputs.test_type }}"
+          echo "OS: ${{ matrix.os }}"
+          echo "Rust: ${{ matrix.rust }}"
+          echo "================================"
+
+      - name: Build in release mode
+        run: cargo build --release --all-features
+
+      - name: Run high-frequency write stress test
+        if: inputs.test_type == 'write-heavy' || inputs.test_type == 'all'
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running high-frequency write stress test..."
+          cargo test --release stress_high_frequency_writes -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Run high-frequency read stress test
+        if: inputs.test_type == 'read-heavy' || inputs.test_type == 'all'
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running high-frequency read stress test..."
+          cargo test --release stress_high_frequency_reads -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Run mixed workload stress test
+        if: inputs.test_type == 'mixed' || inputs.test_type == 'all'
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running mixed workload stress test..."
+          cargo test --release stress_mixed_workload -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Run memory pressure stress test
+        if: inputs.test_type == 'memory' || inputs.test_type == 'all'
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running memory pressure stress test..."
+          cargo test --release stress_memory_pressure -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Run large value stress test
+        if: inputs.test_type == 'all'
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running large value stress test..."
+          cargo test --release stress_large_values -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Run long duration stress test
+        if: inputs.test_type == 'all' && fromJSON(inputs.duration_minutes) >= 60
+        timeout-minutes: ${{ fromJSON(inputs.duration_minutes) }}
+        run: |
+          echo "Running long duration stress test..."
+          cargo test --release stress_long_running -- --nocapture --test-threads=1 --ignored || true
+
+      - name: Check system resources
+        if: always()
+        run: |
+          echo "=== System Resource Usage ==="
+          echo "Memory:"
+          free -h || vm_stat || echo "Memory info not available"
+          echo ""
+          echo "Disk:"
+          df -h || echo "Disk info not available"
+          echo ""
+          echo "Process:"
+          ps aux | grep -E "(cargo|aidb)" | grep -v grep || echo "No related processes"
+
+      - name: Generate stress test report
+        if: always()
+        run: |
+          echo "=== Stress Test Report ===" > stress-test-report.txt
+          echo "Completed at: $(date)" >> stress-test-report.txt
+          echo "Duration: ${{ inputs.duration_minutes }} minutes" >> stress-test-report.txt
+          echo "Test Type: ${{ inputs.test_type }}" >> stress-test-report.txt
+          echo "" >> stress-test-report.txt
+          echo "System Info:" >> stress-test-report.txt
+          uname -a >> stress-test-report.txt
+          cat stress-test-report.txt
+
+      - name: Upload stress test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-test-report-${{ matrix.os }}-${{ github.run_number }}
+          path: stress-test-report.txt
+          retention-days: 30
+
+  summary:
+    name: Stress Test Summary
+    runs-on: ubuntu-latest
+    needs: stress-test
+    if: always()
+    steps:
+      - name: Report completion
+        run: |
+          echo "=== Stress Test Completed ==="
+          echo "Status: ${{ needs.stress-test.result }}"
+          echo "Check the artifacts for detailed reports"
