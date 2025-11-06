@@ -31,11 +31,13 @@ pub struct SSTableReader {
     #[allow(dead_code)]
     footer: Footer,
     file_size: u64,
+    file_path: std::path::PathBuf,
 }
 
 impl SSTableReader {
     /// Open an SSTable file for reading
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
         let mut file = File::open(path)?;
 
         // Get file size
@@ -52,7 +54,13 @@ impl SSTableReader {
         let index_data = Self::read_block_data(&mut file, &footer.index_handle)?;
         let index_block = IndexBlock::new(index_data)?;
 
-        Ok(Self { file: Arc::new(file), index_block, footer, file_size })
+        Ok(Self {
+            file: Arc::new(file),
+            index_block,
+            footer,
+            file_size,
+            file_path: path.to_path_buf(),
+        })
     }
 
     /// Get the value for a key
@@ -155,6 +163,21 @@ impl SSTableReader {
     /// Get the file size
     pub fn file_size(&self) -> u64 {
         self.file_size
+    }
+
+    /// Get the file path
+    pub fn file_path(&self) -> &Path {
+        &self.file_path
+    }
+
+    /// Get the file number from the filename
+    ///
+    /// Extracts the file number from filenames like "000001.sst"
+    /// Returns None if the filename doesn't match the expected pattern
+    pub fn file_number(&self) -> Option<u64> {
+        let filename = self.file_path.file_name()?.to_str()?;
+        let num_str = filename.strip_suffix(".sst")?;
+        num_str.parse::<u64>().ok()
     }
 
     /// Get the smallest key in the SSTable

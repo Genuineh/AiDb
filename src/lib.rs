@@ -765,20 +765,36 @@ impl DB {
             return Ok(());
         }
 
-        // Update version set
+        // Open the new SSTable reader once and reuse it (fixes duplicate Arc bug)
+        let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
+        
+        // Get metadata from the new reader
+        let smallest_key = new_reader
+            .smallest_key()?
+            .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
+        let largest_key = new_reader
+            .largest_key()?
+            .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
+        
+        // Collect input file numbers and paths using reliable file_number() method
+        // This fixes the unreliable file-size matching bug
+        let input_file_info: Vec<(u64, std::path::PathBuf)> = task.inputs
+            .iter()
+            .filter_map(|input| {
+                let file_num = input.file_number()?;
+                let file_path = input.file_path().to_path_buf();
+                Some((file_num, file_path))
+            })
+            .collect();
+
+        // Update both version set and in-memory SSTable list atomically
+        // This fixes the desynchronized state bug
         {
+            // Acquire both locks to ensure atomic update
             let mut version_set = self.version_set.write();
+            let mut sstables = self.sstables.write();
 
-            // Read smallest and largest keys from the new SSTable
-            let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
-            let smallest_key = new_reader
-                .smallest_key()?
-                .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
-            let largest_key = new_reader
-                .largest_key()?
-                .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
-
-            // Add new file to version
+            // Add new file to version set
             let add_edit = VersionEdit::AddFile {
                 level: task.output_level,
                 file_number: result.file_number,
@@ -788,63 +804,36 @@ impl DB {
             };
             version_set.log_edit(&add_edit)?;
 
-            // Delete input files from version
-            // We need to find the file numbers for the input files
-            // For now, we'll scan all files in the directory
-            let mut deleted_files = Vec::new();
-            for input in &task.inputs {
-                // Find matching file by size
-                if let Ok(entries) = std::fs::read_dir(&self.path) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                            if filename.ends_with(".sst") {
-                                if let Ok(reader) = SSTableReader::open(&path) {
-                                    if reader.file_size() == input.file_size() {
-                                        // Found a match
-                                        if let Some(num_str) = filename.strip_suffix(".sst") {
-                                            if let Ok(file_num) = num_str.parse::<u64>() {
-                                                deleted_files.push((file_num, path.clone()));
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Log deletions and delete files
-            for (file_num, file_path) in deleted_files {
+            // Delete input files from version set
+            for (file_num, _) in &input_file_info {
                 let delete_edit =
-                    VersionEdit::DeleteFile { level: task.level, file_number: file_num };
+                    VersionEdit::DeleteFile { level: task.level, file_number: *file_num };
                 version_set.log_edit(&delete_edit)?;
-
-                // Delete the physical file
-                if file_path.exists() {
-                    std::fs::remove_file(&file_path)?;
-                    log::info!("Deleted compacted file: {:?}", file_path);
-                }
             }
-        }
 
-        // Update in-memory SSTable list
-        {
-            let mut sstables = self.sstables.write();
-
-            // Remove input files from source level
+            // Update in-memory SSTable list BEFORE physical deletion
+            // This fixes the race condition bug where Arc::ptr_eq could fail
+            
+            // Remove input files from source level using Arc::ptr_eq
             sstables[task.level]
                 .retain(|reader| !task.inputs.iter().any(|input| Arc::ptr_eq(reader, input)));
 
-            // Add new file to output level
-            let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
+            // Add new file to output level (reuse the same Arc instance)
             // For Level 0, insert at front (newest first), for other levels, append
             if task.output_level == 0 {
-                sstables[task.output_level].insert(0, new_reader);
+                sstables[task.output_level].insert(0, Arc::clone(&new_reader));
             } else {
-                sstables[task.output_level].push(new_reader);
+                sstables[task.output_level].push(Arc::clone(&new_reader));
+            }
+        }
+        // Locks are released here
+
+        // Now delete physical files AFTER updating in-memory structures
+        // This ensures consistency if deletion fails
+        for (file_num, file_path) in input_file_info {
+            if file_path.exists() {
+                std::fs::remove_file(&file_path)?;
+                log::info!("Deleted compacted file {:06}.sst: {:?}", file_num, file_path);
             }
         }
 
