@@ -505,15 +505,15 @@ impl DB {
             log::info!(
                 "MemTable contains no entries to flush (only tombstones or duplicates), skipping SSTable creation"
             );
-            
+
             // Abandon the builder (don't write footer)
             builder.abandon()?;
-            
+
             // Remove the incomplete SSTable file
             if sstable_path.exists() {
                 std::fs::remove_file(&sstable_path)?;
             }
-            
+
             // Return a special value to indicate no file was created
             // (we still consumed the file number, which is fine)
             return Ok(0);
