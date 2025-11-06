@@ -198,7 +198,7 @@ fn test_concurrent_writes_during_compaction() {
             for i in 0..100 {
                 let key = format!("thread{:02}_key{:04}", thread_id, i);
                 let value = vec![b'x'; 100];
-                
+
                 // Use a retry loop to handle potential race conditions
                 let mut retries = 0;
                 loop {
