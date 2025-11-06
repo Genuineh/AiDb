@@ -38,6 +38,7 @@ impl IndexEntry {
 }
 
 /// IndexBlock provides efficient lookup of data blocks by key.
+#[derive(Debug)]
 pub struct IndexBlock {
     block: Block,
 }

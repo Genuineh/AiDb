@@ -203,15 +203,18 @@
 
 ### 阶段B: 性能优化 (Week 7-14)
 
-#### Week 7-8: Compaction
-- [ ] Level 0 Compaction
-- [ ] Level N Compaction
-- [ ] 文件选择策略
-- [ ] 多路归并实现
-- [ ] 后台Compaction线程
-- [ ] Version管理
-- [ ] Manifest实现
-- [ ] Compaction测试
+#### Week 7-8: Compaction ✅ **已完成**
+- [x] Level 0 Compaction
+- [x] Level N Compaction
+- [x] 文件选择策略
+- [x] 多路归并实现
+- [x] Version管理
+- [x] Manifest实现
+- [x] Compaction测试
+- [x] Tombstone处理
+- [ ] 后台Compaction线程（简化为同步实现）
+
+完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](COMPACTION_COMPLETION_SUMMARY.md)
 
 #### Week 9-10: Bloom Filter
 - [ ] BloomFilter数据结构
@@ -328,11 +331,12 @@
 ## 📊 进度统计
 
 - **总任务数**: ~200+
-- **已完成**: 97
+- **已完成**: 105 (新增8个compaction任务)
 - **Week 3-4 任务数**: 67 (详细子任务)
+- **Week 7-8 任务数**: 8 (Compaction任务)
 - **进行中**: 0
-- **待开始**: 103+
-- **完成度**: 48.5%
+- **待开始**: 95+
+- **完成度**: 52.5%
 
 ### Week 3-4 详细统计
 - **DB核心逻辑**: 26/26 任务 ✅ **已完成**
@@ -340,13 +344,14 @@
 - **测试和修复**: 19/19 任务 ✅ **已完成**
 
 ### 测试覆盖统计
-- **单元测试**: 96个 ✅
+- **单元测试**: 114个 ✅ (新增18个compaction单元测试)
+- **Compaction集成测试**: 8个 ✅
 - **端到端测试**: 14个 ✅
 - **崩溃恢复测试**: 11个 ✅
 - **并发测试**: 10个 ✅
 - **文档测试**: 19个 ✅
 - **压力测试**: 7个 (手动触发) ✅
-- **总计**: 150+ 测试
+- **总计**: 176+ 测试
 
 ---
 

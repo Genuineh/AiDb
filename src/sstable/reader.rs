@@ -24,6 +24,7 @@ use std::sync::Arc;
 ///     println!("Found: {:?}", value);
 /// }
 /// ```
+#[derive(Debug)]
 pub struct SSTableReader {
     file: Arc<File>,
     index_block: IndexBlock,
@@ -72,7 +73,12 @@ impl SSTableReader {
 
         while iter.advance() {
             if iter.key() == key {
-                return Ok(Some(iter.value().to_vec()));
+                let value = iter.value().to_vec();
+                // Empty value means tombstone (deleted)
+                if value.is_empty() {
+                    return Ok(None);
+                }
+                return Ok(Some(value));
             }
             if iter.key() > key {
                 // Key doesn't exist
