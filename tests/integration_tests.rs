@@ -54,20 +54,13 @@ fn test_e2e_large_data_write() {
     for i in (0..record_count).step_by(10_000) {
         let key = format!("key_{:08}", i);
         let expected_value = format!("value_{:08}", i);
-        assert_eq!(
-            db.get(key.as_bytes()).unwrap(),
-            Some(expected_value.as_bytes().to_vec())
-        );
+        assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected_value.as_bytes().to_vec()));
     }
 
     // Verify first and last
+    assert_eq!(db.get(b"key_00000000").unwrap(), Some(b"value_00000000".to_vec()));
     assert_eq!(
-        db.get(b"key_00000000").unwrap(),
-        Some(b"value_00000000".to_vec())
-    );
-    assert_eq!(
-        db.get(format!("key_{:08}", record_count - 1).as_bytes())
-            .unwrap(),
+        db.get(format!("key_{:08}", record_count - 1).as_bytes()).unwrap(),
         Some(format!("value_{:08}", record_count - 1).as_bytes().to_vec())
     );
 }
@@ -93,10 +86,7 @@ fn test_e2e_sequential_write_random_read() {
     for idx in random_indices {
         let key = format!("seq_key_{:06}", idx);
         let expected_value = format!("seq_value_{:06}", idx);
-        assert_eq!(
-            db.get(key.as_bytes()).unwrap(),
-            Some(expected_value.as_bytes().to_vec())
-        );
+        assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected_value.as_bytes().to_vec()));
     }
 }
 
@@ -107,9 +97,8 @@ fn test_e2e_random_write_random_read() {
     let db = DB::open(dir.path(), Options::default()).unwrap();
 
     // Random writes with non-sequential keys
-    let keys = vec![
-        "zebra", "apple", "mango", "banana", "cherry", "date", "fig", "grape", "kiwi",
-        "lemon",
+    let keys = [
+        "zebra", "apple", "mango", "banana", "cherry", "date", "fig", "grape", "kiwi", "lemon",
     ];
 
     for (i, key) in keys.iter().enumerate() {
@@ -191,10 +180,7 @@ fn test_e2e_persistence() {
         for i in 0..1000 {
             let key = format!("persist_key_{}", i);
             let expected_value = format!("persist_value_{}", i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(expected_value.as_bytes().to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected_value.as_bytes().to_vec()));
         }
     }
 }
@@ -281,10 +267,12 @@ fn test_e2e_many_deletes() {
 #[test]
 fn test_e2e_auto_flush_behavior() {
     let dir = TempDir::new().unwrap();
-    
+
     // Configure smaller memtable to trigger flushes
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 256; // 256KB memtable
+    let options = Options {
+        memtable_size: 1024 * 256, // 256KB memtable
+        ..Default::default()
+    };
 
     let db = DB::open(dir.path(), options).unwrap();
 
@@ -362,18 +350,13 @@ fn test_e2e_key_edge_cases() {
     // Binary data in key
     let binary_key = vec![0u8, 1, 2, 255, 254, 253];
     db.put(&binary_key, b"binary_key_value").unwrap();
-    assert_eq!(
-        db.get(&binary_key).unwrap(),
-        Some(b"binary_key_value".to_vec())
-    );
+    assert_eq!(db.get(&binary_key).unwrap(), Some(b"binary_key_value".to_vec()));
 
     // Special characters in key
-    let null_key = vec![b'k', b'e', b'y', 0u8, b'w', b'i', b't', b'h', 0u8, b'n', b'u', b'l', b'l', b's'];
+    let null_key =
+        vec![b'k', b'e', b'y', 0u8, b'w', b'i', b't', b'h', 0u8, b'n', b'u', b'l', b'l', b's'];
     db.put(&null_key, b"null_key_value").unwrap();
-    assert_eq!(
-        db.get(&null_key).unwrap(),
-        Some(b"null_key_value".to_vec())
-    );
+    assert_eq!(db.get(&null_key).unwrap(), Some(b"null_key_value".to_vec()));
 }
 
 /// Test value edge cases
@@ -392,7 +375,10 @@ fn test_e2e_value_edge_cases() {
     assert_eq!(db.get(b"binary_value").unwrap(), Some(binary_value));
 
     // Value with nulls
-    let null_value = vec![b'v', b'a', b'l', b'u', b'e', 0u8, b'w', b'i', b't', b'h', 0u8, b'n', b'u', b'l', b'l', b's'];
+    let null_value = vec![
+        b'v', b'a', b'l', b'u', b'e', 0u8, b'w', b'i', b't', b'h', 0u8, b'n', b'u', b'l', b'l',
+        b's',
+    ];
     db.put(b"null_value", &null_value).unwrap();
     assert_eq!(db.get(b"null_value").unwrap(), Some(null_value));
 }

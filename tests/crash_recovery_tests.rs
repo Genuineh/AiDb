@@ -3,7 +3,6 @@
 
 use aidb::{Options, DB};
 use std::fs;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Helper function to simulate a crash by dropping DB without proper close
@@ -85,19 +84,13 @@ fn test_recovery_partial_writes() {
         // Flushed data should be present
         for i in 0..50 {
             let key = format!("stable_key_{}", i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(b"stable_value".to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(b"stable_value".to_vec()));
         }
 
         // WAL data should also be recovered
         for i in 0..50 {
             let key = format!("partial_key_{}", i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(b"partial_value".to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(b"partial_value".to_vec()));
         }
     }
 }
@@ -108,8 +101,10 @@ fn test_recovery_during_flush() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
 
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 64; // Small memtable to trigger flush
+    let options = Options {
+        memtable_size: 1024 * 64, // Small memtable to trigger flush
+        ..Default::default()
+    };
 
     // Session 1: Fill memtable to trigger auto-flush
     {
@@ -136,11 +131,7 @@ fn test_recovery_during_flush() {
             let result = db.get(key.as_bytes()).unwrap();
 
             // Data should exist (either flushed or in WAL)
-            assert!(
-                result.is_some(),
-                "Key {} should exist after recovery",
-                key
-            );
+            assert!(result.is_some(), "Key {} should exist after recovery", key);
             assert_eq!(result.unwrap().len(), 100);
         }
     }
@@ -377,10 +368,7 @@ fn test_recovery_after_proper_shutdown() {
 
         for i in 0..100 {
             let key = format!("key_{}", i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(b"value".to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(b"value".to_vec()));
         }
     }
 }

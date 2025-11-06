@@ -14,10 +14,12 @@ use tempfile::TempDir;
 #[ignore]
 fn stress_high_frequency_writes() {
     let dir = TempDir::new().unwrap();
-    
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 1024 * 4; // 4MB memtable
-    
+
+    let options = Options {
+        memtable_size: 1024 * 1024 * 4, // 4MB memtable
+        ..Default::default()
+    };
+
     let db = Arc::new(DB::open(dir.path(), options).unwrap());
 
     let duration = Duration::from_secs(60); // 1 minute stress test
@@ -210,8 +212,16 @@ fn stress_mixed_workload() {
 
     println!("=== Mixed Workload Stress Test ===");
     println!("Duration: {:.2}s", elapsed.as_secs_f64());
-    println!("Read operations: {} ({:.0} ops/s)", total_reads, total_reads as f64 / elapsed.as_secs_f64());
-    println!("Write operations: {} ({:.0} ops/s)", total_writes, total_writes as f64 / elapsed.as_secs_f64());
+    println!(
+        "Read operations: {} ({:.0} ops/s)",
+        total_reads,
+        total_reads as f64 / elapsed.as_secs_f64()
+    );
+    println!(
+        "Write operations: {} ({:.0} ops/s)",
+        total_writes,
+        total_writes as f64 / elapsed.as_secs_f64()
+    );
     println!("Total operations: {}", total_reads + total_writes);
 }
 
@@ -220,10 +230,12 @@ fn stress_mixed_workload() {
 #[ignore]
 fn stress_memory_pressure() {
     let dir = TempDir::new().unwrap();
-    
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 1024 * 2; // 2MB memtable
-    
+
+    let options = Options {
+        memtable_size: 1024 * 1024 * 2, // 2MB memtable
+        ..Default::default()
+    };
+
     let db = DB::open(dir.path(), options).unwrap();
 
     println!("=== Memory Pressure Stress Test ===");
@@ -263,7 +275,10 @@ fn stress_memory_pressure() {
 
     println!("Write time: {:.2}s", write_duration.as_secs_f64());
     println!("Verify time: {:.2}s", verify_duration.as_secs_f64());
-    println!("Write throughput: {:.0} ops/s", num_records as f64 / write_duration.as_secs_f64());
+    println!(
+        "Write throughput: {:.0} ops/s",
+        num_records as f64 / write_duration.as_secs_f64()
+    );
 }
 
 /// Large value stress test (1MB+ values)
@@ -395,10 +410,12 @@ fn stress_long_running() {
 #[ignore]
 fn stress_disk_space() {
     let dir = TempDir::new().unwrap();
-    
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 1024; // 1MB memtable for more flushes
-    
+
+    let options = Options {
+        memtable_size: 1024 * 1024, // 1MB memtable for more flushes
+        ..Default::default()
+    };
+
     let db = DB::open(dir.path(), options).unwrap();
 
     println!("=== Disk Space Stress Test ===");
@@ -426,6 +443,8 @@ fn stress_disk_space() {
     println!("Write complete");
     println!("Duration: {:.2}s", duration.as_secs_f64());
     println!("Data written: {} MB", (num_records * value_size) / (1024 * 1024));
-    println!("Throughput: {:.0} MB/s", 
-             ((num_records * value_size) as f64 / (1024.0 * 1024.0)) / duration.as_secs_f64());
+    println!(
+        "Throughput: {:.0} MB/s",
+        ((num_records * value_size) as f64 / (1024.0 * 1024.0)) / duration.as_secs_f64()
+    );
 }

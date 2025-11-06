@@ -41,10 +41,7 @@ fn test_concurrent_writes() {
         for i in 0..writes_per_thread {
             let key = format!("thread_{}_key_{}", thread_id, i);
             let expected = format!("thread_{}_value_{}", thread_id, i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(expected.as_bytes().to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected.as_bytes().to_vec()));
         }
     }
 }
@@ -169,10 +166,7 @@ fn test_concurrent_reads_and_writes() {
         for i in 0..50 {
             let key = format!("writer_{}_key_{}", writer_id, i);
             let expected = format!("writer_{}_value_{}", writer_id, i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(expected.as_bytes().to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected.as_bytes().to_vec()));
         }
     }
 }
@@ -189,16 +183,14 @@ fn test_concurrent_writes_same_key() {
 
     let mut handles = vec![];
 
-    for thread_id in 0..num_threads {
+    for _ in 0..num_threads {
         let db_clone = Arc::clone(&db);
         let counter_clone = Arc::clone(&counter);
         let handle = thread::spawn(move || {
             for _ in 0..writes_per_thread {
                 let value = counter_clone.fetch_add(1, Ordering::SeqCst);
                 let value_str = format!("value_{}", value);
-                db_clone
-                    .put(b"shared_key", value_str.as_bytes())
-                    .unwrap();
+                db_clone.put(b"shared_key", value_str.as_bytes()).unwrap();
             }
         });
         handles.push(handle);
@@ -214,10 +206,7 @@ fn test_concurrent_writes_same_key() {
     assert!(result.is_some(), "Shared key should have a value");
 
     // Total writes should match
-    assert_eq!(
-        counter.load(Ordering::SeqCst),
-        num_threads * writes_per_thread
-    );
+    assert_eq!(counter.load(Ordering::SeqCst), num_threads * writes_per_thread);
 }
 
 /// Test concurrent deletes
@@ -264,12 +253,7 @@ fn test_concurrent_deletes() {
         if i < num_threads * deletes_per_thread {
             assert_eq!(result, None, "Key {} should be deleted", key);
         } else {
-            assert_eq!(
-                result,
-                Some(b"value".to_vec()),
-                "Key {} should still exist",
-                key
-            );
+            assert_eq!(result, Some(b"value".to_vec()), "Key {} should still exist", key);
         }
     }
 }
@@ -279,8 +263,10 @@ fn test_concurrent_deletes() {
 fn test_concurrent_writes_during_flush() {
     let dir = TempDir::new().unwrap();
 
-    let mut options = Options::default();
-    options.memtable_size = 1024 * 128; // 128KB to trigger flushes
+    let options = Options {
+        memtable_size: 1024 * 128, // 128KB to trigger flushes
+        ..Default::default()
+    };
 
     let db = Arc::new(DB::open(dir.path(), options).unwrap());
 
@@ -407,18 +393,13 @@ fn test_consistency_under_contention() {
             for _ in 0..increments_per_thread {
                 // Read current value
                 let current = db_clone.get(b"counter").unwrap().unwrap();
-                let current_val: usize = String::from_utf8(current)
-                    .unwrap()
-                    .parse()
-                    .unwrap();
+                let current_val: usize = String::from_utf8(current).unwrap().parse().unwrap();
 
                 // Increment
                 let new_val = current_val + 1;
 
                 // Write back
-                db_clone
-                    .put(b"counter", new_val.to_string().as_bytes())
-                    .unwrap();
+                db_clone.put(b"counter", new_val.to_string().as_bytes()).unwrap();
             }
         });
         handles.push(handle);
@@ -436,10 +417,7 @@ fn test_consistency_under_contention() {
     let final_count: usize = String::from_utf8(final_value).unwrap().parse().unwrap();
 
     println!("Final counter value: {}", final_count);
-    println!(
-        "Expected if serialized: {}",
-        num_threads * increments_per_thread
-    );
+    println!("Expected if serialized: {}", num_threads * increments_per_thread);
 
     // The database should at least be functional
     assert!(final_count > 0);
@@ -476,9 +454,6 @@ fn test_concurrent_flush_calls() {
 
     // Data should still be accessible
     for i in 0..100 {
-        assert_eq!(
-            db.get(format!("key_{}", i).as_bytes()).unwrap(),
-            Some(b"value".to_vec())
-        );
+        assert_eq!(db.get(format!("key_{}", i).as_bytes()).unwrap(), Some(b"value".to_vec()));
     }
 }

@@ -157,7 +157,7 @@ impl DB {
         // Step 3: Find and open the latest WAL file
         let mut wal_number = 1u64;
         let mut latest_wal_path = path.join(wal::wal_filename(1));
-        
+
         // Scan for the latest WAL file
         if path.exists() {
             if let Ok(entries) = std::fs::read_dir(&path) {
@@ -173,7 +173,7 @@ impl DB {
                 }
             }
         }
-        
+
         let wal = WAL::open(&latest_wal_path)?;
 
         // Step 4: Recover from WAL if it exists and has data
@@ -188,75 +188,73 @@ impl DB {
 
         for entry in recovered_entries {
             sequence += 1;
-            
+
             // Parse WAL entry format
             if entry.starts_with(b"put:") {
                 // Format: "put:key_len:key:value"
                 let entry = &entry[4..]; // Skip "put:"
-                
+
                 // Read key length
                 if entry.len() < 4 {
                     log::warn!("Invalid WAL entry: too short");
                     continue;
                 }
-                
+
                 let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
                 let entry = &entry[4..]; // Skip key_len
-                
-                if entry.len() < 1 || entry[0] != b':' {
+
+                if entry.is_empty() || entry[0] != b':' {
                     log::warn!("Invalid WAL entry: missing separator");
                     continue;
                 }
-                
+
                 let entry = &entry[1..]; // Skip ':'
-                
+
                 if entry.len() < key_len + 1 {
                     log::warn!("Invalid WAL entry: key too short");
                     continue;
                 }
-                
+
                 let key = &entry[..key_len];
                 let entry = &entry[key_len..];
-                
-                if entry.len() < 1 || entry[0] != b':' {
+
+                if entry.is_empty() || entry[0] != b':' {
                     log::warn!("Invalid WAL entry: missing value separator");
                     continue;
                 }
-                
+
                 let value = &entry[1..];
-                
+
                 // Insert into memtable
                 memtable.put(key, value, sequence);
-                
             } else if entry.starts_with(b"del:") {
                 // Format: "del:key_len:key"
                 let entry = &entry[4..]; // Skip "del:"
-                
+
                 if entry.len() < 4 {
                     log::warn!("Invalid WAL entry: too short");
                     continue;
                 }
-                
+
                 let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
                 let entry = &entry[4..]; // Skip key_len
-                
-                if entry.len() < 1 || entry[0] != b':' {
+
+                if entry.is_empty() || entry[0] != b':' {
                     log::warn!("Invalid WAL entry: missing separator");
                     continue;
                 }
-                
+
                 let entry = &entry[1..]; // Skip ':'
-                
+
                 if entry.len() < key_len {
                     log::warn!("Invalid WAL entry: key too short");
                     continue;
                 }
-                
+
                 let key = &entry[..key_len];
-                
+
                 // Insert tombstone into memtable
                 memtable.delete(key, sequence);
-                
             } else {
                 log::warn!("Unknown WAL entry type");
             }
@@ -732,7 +730,7 @@ impl Drop for DB {
         if let Err(e) = self.flush() {
             eprintln!("Error flushing database during drop: {}", e);
         }
-        
+
         if self.options.use_wal {
             let mut wal = self.wal.write();
             if let Err(e) = wal.sync() {
