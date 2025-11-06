@@ -3,6 +3,7 @@ name: Security Audit
 on:
   pull_request:
     branches: ["main"]
+    types: [ready_for_review, synchronize]
   schedule:
     # Run security audit every day at 00:00 UTC
     - cron: '0 0 * * *'
@@ -14,6 +15,7 @@ jobs:
   audit:
     name: Cargo Audit
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.pull_request.draft == false
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -30,6 +32,7 @@ jobs:
   deny:
     name: Cargo Deny
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.pull_request.draft == false
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
