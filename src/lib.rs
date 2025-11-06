@@ -44,6 +44,7 @@
 #![warn(rust_2018_idioms)]
 
 // Module declarations
+pub mod compaction;
 pub mod config;
 pub mod error;
 pub mod memtable;
@@ -54,6 +55,7 @@ pub mod wal;
 pub use config::Options;
 pub use error::{Error, Result};
 
+use compaction::{CompactionJob, CompactionPicker, VersionEdit, VersionSet};
 use memtable::MemTable;
 use parking_lot::RwLock;
 use sstable::{SSTableBuilder, SSTableReader};
@@ -100,6 +102,12 @@ pub struct DB {
 
     /// Current WAL file number
     wal_file_number: Arc<AtomicU64>,
+
+    /// Version set for managing SSTable metadata
+    version_set: Arc<RwLock<VersionSet>>,
+
+    /// Compaction picker
+    compaction_picker: Arc<CompactionPicker>,
 }
 
 impl DB {
@@ -296,7 +304,13 @@ impl DB {
             }
         }
 
-        // Step 7: Construct DB instance
+        // Step 7: Initialize VersionSet
+        let version_set = VersionSet::new(&path, options.max_levels)?;
+
+        // Step 8: Initialize CompactionPicker
+        let compaction_picker = CompactionPicker::new(options.max_levels);
+
+        // Step 9: Construct DB instance
         Ok(DB {
             path,
             options,
@@ -307,6 +321,8 @@ impl DB {
             sequence: Arc::new(AtomicU64::new(sequence)),
             next_file_number: Arc::new(AtomicU64::new(2)), // Start from 2 (1 is for WAL)
             wal_file_number: Arc::new(AtomicU64::new(wal_number)),
+            version_set: Arc::new(RwLock::new(version_set)),
+            compaction_picker: Arc::new(compaction_picker),
         })
     }
 
@@ -551,7 +567,6 @@ impl DB {
         for entry in memtable.iter() {
             let user_key = entry.user_key();
             let value = entry.value();
-            let value_type = entry.value_type();
 
             // Skip if this is an older version of the same key
             if let Some(ref last_key) = last_user_key {
@@ -560,21 +575,10 @@ impl DB {
                 }
             }
 
-            // For SSTable at Level 0, we only store user_key (not internal key)
-            // This simplifies the format and is sufficient for a basic implementation
-            // (In a full implementation, we'd store internal keys for MVCC support)
-
-            // Only add non-deleted entries
-            match value_type {
-                memtable::ValueType::Value => {
-                    builder.add(user_key, value)?;
-                    entry_count += 1;
-                }
-                memtable::ValueType::Deletion => {
-                    // Skip tombstones during flush (they'll be handled by compaction)
-                    // In a full implementation, we'd keep tombstones for correctness
-                }
-            }
+            // For SSTable at Level 0, we store both values and tombstones
+            // Tombstones will be removed during compaction
+            builder.add(user_key, value)?;
+            entry_count += 1;
 
             last_user_key = Some(user_key.to_vec());
         }
@@ -611,10 +615,10 @@ impl DB {
         // Open the SSTable for reading
         let reader = Arc::new(SSTableReader::open(&sstable_path)?);
 
-        // Add to Level 0
+        // Add to Level 0 at the front (newest files first)
         {
             let mut sstables = self.sstables.write();
-            sstables[0].push(reader);
+            sstables[0].insert(0, reader);
         }
 
         Ok(file_number)
@@ -668,6 +672,9 @@ impl DB {
         // Step 3: Rotate WAL after successful flush
         self.rotate_wal()?;
 
+        // Step 4: Check if compaction is needed
+        self.maybe_trigger_compaction()?;
+
         Ok(())
     }
 
@@ -698,6 +705,154 @@ impl DB {
             std::fs::remove_file(&old_path)?;
             log::info!("Removed old WAL file: {:?}", old_path);
         }
+
+        Ok(())
+    }
+
+    /// Check if compaction is needed and trigger it if necessary
+    ///
+    /// This is called after flush to check if any level needs compaction
+    pub fn maybe_trigger_compaction(&self) -> Result<()> {
+        let sstables = self.sstables.read();
+
+        // Check if compaction is needed
+        let task = {
+            let task = self.compaction_picker.pick_compaction(&sstables);
+            match task {
+                Some(t) => t,
+                None => {
+                    log::debug!("No compaction needed");
+                    return Ok(());
+                }
+            }
+        };
+
+        // Drop the read lock before compaction
+        drop(sstables);
+
+        log::info!(
+            "Triggering compaction: level {} -> level {}, {} input files",
+            task.level,
+            task.output_level,
+            task.inputs.len()
+        );
+
+        // Execute compaction
+        self.compact(task)?;
+
+        Ok(())
+    }
+
+    /// Execute a compaction task
+    fn compact(&self, task: compaction::CompactionTask) -> Result<()> {
+        // Allocate file number for output SSTable
+        let file_number = self.next_file_number.fetch_add(1, Ordering::SeqCst);
+
+        // Create compaction job
+        let job = CompactionJob::new(
+            task.inputs.clone(),
+            task.output_level,
+            self.path.clone(),
+            self.options.block_size,
+        );
+
+        // Run compaction
+        let result = job.run(file_number)?;
+
+        // If no file was created, nothing to update
+        if result.file_number == 0 {
+            log::info!("Compaction produced no output (all tombstones or duplicates)");
+            return Ok(());
+        }
+
+        // Update version set
+        {
+            let mut version_set = self.version_set.write();
+
+            // Read smallest and largest keys from the new SSTable
+            let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
+            let smallest_key = new_reader
+                .smallest_key()?
+                .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
+            let largest_key = new_reader
+                .largest_key()?
+                .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
+
+            // Add new file to version
+            let add_edit = VersionEdit::AddFile {
+                level: task.output_level,
+                file_number: result.file_number,
+                file_size: new_reader.file_size(),
+                smallest_key,
+                largest_key,
+            };
+            version_set.log_edit(&add_edit)?;
+
+            // Delete input files from version
+            // We need to find the file numbers for the input files
+            // For now, we'll scan all files in the directory
+            let mut deleted_files = Vec::new();
+            for input in &task.inputs {
+                // Find matching file by size
+                if let Ok(entries) = std::fs::read_dir(&self.path) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                            if filename.ends_with(".sst") {
+                                if let Ok(reader) = SSTableReader::open(&path) {
+                                    if reader.file_size() == input.file_size() {
+                                        // Found a match
+                                        if let Some(num_str) = filename.strip_suffix(".sst") {
+                                            if let Ok(file_num) = num_str.parse::<u64>() {
+                                                deleted_files.push((file_num, path.clone()));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Log deletions and delete files
+            for (file_num, file_path) in deleted_files {
+                let delete_edit =
+                    VersionEdit::DeleteFile { level: task.level, file_number: file_num };
+                version_set.log_edit(&delete_edit)?;
+
+                // Delete the physical file
+                if file_path.exists() {
+                    std::fs::remove_file(&file_path)?;
+                    log::info!("Deleted compacted file: {:?}", file_path);
+                }
+            }
+        }
+
+        // Update in-memory SSTable list
+        {
+            let mut sstables = self.sstables.write();
+
+            // Remove input files from source level
+            sstables[task.level]
+                .retain(|reader| !task.inputs.iter().any(|input| Arc::ptr_eq(reader, input)));
+
+            // Add new file to output level
+            let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
+            // For Level 0, insert at front (newest first), for other levels, append
+            if task.output_level == 0 {
+                sstables[task.output_level].insert(0, new_reader);
+            } else {
+                sstables[task.output_level].push(new_reader);
+            }
+        }
+
+        log::info!(
+            "Compaction completed: wrote {} entries to level {}",
+            result.entry_count,
+            task.output_level
+        );
 
         Ok(())
     }
@@ -1125,7 +1280,7 @@ mod tests {
     // ===== Bug Fix Tests: Empty SSTable Prevention =====
 
     #[test]
-    fn test_flush_only_tombstones_no_sstable() {
+    fn test_flush_only_tombstones_creates_sstable() {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
 
@@ -1142,32 +1297,26 @@ mod tests {
             sstables[0].len()
         };
 
-        // Flush should not create an SSTable (only tombstones)
+        // Flush SHOULD create an SSTable (tombstones are preserved at Level 0)
         db.flush().unwrap();
 
-        // Verify no new SSTable was created
+        // Verify new SSTable was created
         let final_sstable_count = {
             let sstables = db.sstables.read();
             sstables[0].len()
         };
 
         assert_eq!(
-            initial_sstable_count, final_sstable_count,
-            "No SSTable should be created when MemTable contains only tombstones"
+            final_sstable_count,
+            initial_sstable_count + 1,
+            "SSTable should be created even with only tombstones at Level 0"
         );
 
-        // Verify no SSTable files exist
-        let sst_files: Vec<_> = std::fs::read_dir(temp_dir.path())
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("sst"))
-            .collect();
-
-        assert_eq!(
-            sst_files.len(),
-            initial_sstable_count,
-            "No SSTable files should be created on disk"
-        );
+        // Verify all deleted keys return None
+        for i in 0..50 {
+            let key = format!("key{}", i);
+            assert_eq!(db.get(key.as_bytes()).unwrap(), None);
+        }
     }
 
     #[test]
@@ -1262,7 +1411,7 @@ mod tests {
     }
 
     #[test]
-    fn test_no_orphan_sstable_files() {
+    fn test_tombstone_sstable_files_created() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().to_path_buf();
 
@@ -1280,17 +1429,22 @@ mod tests {
             db.close().unwrap();
         }
 
-        // Check for any .sst files
+        // Check for .sst files (should exist with tombstones)
         let sst_files: Vec<_> = std::fs::read_dir(&db_path)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("sst"))
             .collect();
 
-        assert_eq!(
-            sst_files.len(),
-            0,
-            "No orphan SSTable files should exist after flushing only tombstones"
-        );
+        assert_eq!(sst_files.len(), 1, "SSTable with tombstones should be created at Level 0");
+
+        // Reopen and verify all keys are deleted
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+            for i in 0..10 {
+                let key = format!("key{}", i);
+                assert_eq!(db.get(key.as_bytes()).unwrap(), None);
+            }
+        }
     }
 }
