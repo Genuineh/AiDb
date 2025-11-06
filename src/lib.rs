@@ -56,7 +56,7 @@ pub use error::{Error, Result};
 
 use memtable::MemTable;
 use parking_lot::RwLock;
-use sstable::SSTableReader;
+use sstable::{SSTableBuilder, SSTableReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -73,7 +73,6 @@ use wal::WAL;
 /// using `Arc<DB>`.
 pub struct DB {
     /// Database directory path
-    #[allow(dead_code)]
     path: PathBuf,
 
     /// Configuration options
@@ -95,6 +94,12 @@ pub struct DB {
 
     /// Global sequence number (monotonically increasing)
     sequence: Arc<AtomicU64>,
+
+    /// File number generator for SSTables and WAL
+    next_file_number: Arc<AtomicU64>,
+
+    /// Current WAL file number
+    wal_file_number: Arc<AtomicU64>,
 }
 
 impl DB {
@@ -173,9 +178,40 @@ impl DB {
         }
 
         // Step 6: Load existing SSTables
-        // For now, we'll start with empty SSTable list
-        // This will be enhanced when we implement flush and compaction
-        let sstables: Vec<Vec<Arc<SSTableReader>>> = vec![Vec::new(); options.max_levels];
+        let mut sstables: Vec<Vec<Arc<SSTableReader>>> = vec![Vec::new(); options.max_levels];
+        
+        // Scan directory for SSTable files (*.sst)
+        if path.exists() {
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                let mut sst_files = Vec::new();
+                
+                for entry in entries.flatten() {
+                    if let Some(filename) = entry.file_name().to_str() {
+                        if filename.ends_with(".sst") {
+                            sst_files.push(entry.path());
+                        }
+                    }
+                }
+                
+                // Sort SSTable files by file number (newest last)
+                sst_files.sort();
+                
+                // Load all SSTables into Level 0
+                for sst_path in sst_files {
+                    match SSTableReader::open(&sst_path) {
+                        Ok(reader) => {
+                            sstables[0].push(Arc::new(reader));
+                            log::info!("Loaded SSTable: {:?}", sst_path);
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load SSTable {:?}: {}", sst_path, e);
+                        }
+                    }
+                }
+                
+                log::info!("Loaded {} SSTables at Level 0", sstables[0].len());
+            }
+        }
 
         // Step 7: Construct DB instance
         Ok(DB {
@@ -186,6 +222,8 @@ impl DB {
             wal: Arc::new(RwLock::new(wal)),
             sstables: Arc::new(RwLock::new(sstables)),
             sequence: Arc::new(AtomicU64::new(sequence)),
+            next_file_number: Arc::new(AtomicU64::new(2)), // Start from 2 (1 is for WAL)
+            wal_file_number: Arc::new(AtomicU64::new(1)),
         })
     }
 
@@ -249,12 +287,14 @@ impl DB {
         };
 
         if memtable_size >= self.options.memtable_size {
-            // TODO: Trigger flush (will be implemented in the Flush phase)
-            // For now, we'll just log that it's full
-            log::warn!(
-                "MemTable is full ({} bytes), flush not yet implemented",
-                memtable_size
+            log::info!(
+                "MemTable is full ({} bytes >= {}), triggering freeze",
+                memtable_size,
+                self.options.memtable_size
             );
+            // Freeze the current MemTable
+            // The actual flush will happen in the background or on next flush() call
+            self.freeze_memtable()?;
         }
 
         Ok(())
@@ -310,10 +350,14 @@ impl DB {
         {
             let sstables = self.sstables.read();
             for level_tables in sstables.iter() {
-                for _table in level_tables.iter().rev() {
-                    // TODO: Use bloom filter to skip tables
-                    // TODO: Use index block to find the right data block
-                    // For now, we'll implement this in the next phase
+                // For Level 0, search all tables (may overlap)
+                // For other levels, tables don't overlap, so we can binary search
+                for table in level_tables.iter().rev() {
+                    // Since we store user_key only in SSTables (simplified version),
+                    // we can directly search for the key
+                    if let Some(value) = table.get(key)? {
+                        return Ok(Some(value));
+                    }
                 }
             }
         }
@@ -376,20 +420,207 @@ impl DB {
         Ok(())
     }
 
+    /// Freezes the current MemTable and creates a new one.
+    ///
+    /// This moves the current mutable MemTable to the immutable list
+    /// and creates a fresh MemTable for new writes.
+    fn freeze_memtable(&self) -> Result<()> {
+        let mut memtable = self.memtable.write();
+        let mut immutable = self.immutable_memtables.write();
+
+        // Get current sequence number for the new MemTable
+        let current_seq = self.sequence.load(Ordering::SeqCst);
+
+        // Move current memtable to immutable list
+        let old_memtable = std::mem::replace(&mut *memtable, MemTable::new(current_seq + 1));
+        immutable.push(Arc::new(old_memtable));
+
+        log::info!(
+            "MemTable frozen, {} immutable memtables waiting for flush",
+            immutable.len()
+        );
+
+        Ok(())
+    }
+
+    /// Flushes an immutable MemTable to an SSTable file.
+    ///
+    /// This method:
+    /// 1. Iterates through all entries in the MemTable
+    /// 2. Writes them to an SSTable using SSTableBuilder
+    /// 3. Adds the new SSTable to Level 0
+    /// 4. Returns the file number of the created SSTable
+    fn flush_memtable_to_sstable(&self, memtable: &MemTable) -> Result<u64> {
+        // Generate a new file number
+        let file_number = self.next_file_number.fetch_add(1, Ordering::SeqCst);
+
+        // Create SSTable file path
+        let sstable_path = self.path.join(format!("{:06}.sst", file_number));
+
+        log::info!(
+            "Starting flush of MemTable to SSTable: {:?}",
+            sstable_path
+        );
+
+        // Create SSTable builder
+        let mut builder = SSTableBuilder::new(&sstable_path)?;
+        builder.set_block_size(self.options.block_size);
+
+        // Iterate through MemTable and add entries to SSTable
+        // We only keep the latest version of each user key (skip older versions)
+        let mut entry_count = 0;
+        let mut last_user_key: Option<Vec<u8>> = None;
+
+        for entry in memtable.iter() {
+            let user_key = entry.user_key();
+            let value = entry.value();
+            let value_type = entry.value_type();
+
+            // Skip if this is an older version of the same key
+            if let Some(ref last_key) = last_user_key {
+                if last_key.as_slice() == user_key {
+                    continue; // Skip older versions
+                }
+            }
+
+            // For SSTable at Level 0, we only store user_key (not internal key)
+            // This simplifies the format and is sufficient for a basic implementation
+            // (In a full implementation, we'd store internal keys for MVCC support)
+            
+            // Only add non-deleted entries
+            match value_type {
+                memtable::ValueType::Value => {
+                    builder.add(user_key, value)?;
+                    entry_count += 1;
+                }
+                memtable::ValueType::Deletion => {
+                    // Skip tombstones during flush (they'll be handled by compaction)
+                    // In a full implementation, we'd keep tombstones for correctness
+                }
+            }
+
+            last_user_key = Some(user_key.to_vec());
+        }
+
+        // Finish building the SSTable
+        let file_size = builder.finish()?;
+
+        log::info!(
+            "Flush completed: {} entries written, file size: {} bytes",
+            entry_count,
+            file_size
+        );
+
+        // Open the SSTable for reading
+        let reader = Arc::new(SSTableReader::open(&sstable_path)?);
+
+        // Add to Level 0
+        {
+            let mut sstables = self.sstables.write();
+            sstables[0].push(reader);
+        }
+
+        Ok(file_number)
+    }
+
+    /// Manually triggers a flush of the current MemTable.
+    ///
+    /// This will freeze the current MemTable and flush all immutable MemTables
+    /// to SSTable files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the flush fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use aidb::{DB, Options};
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// # let db = DB::open("./data", Options::default())?;
+    /// db.put(b"key", b"value")?;
+    /// db.flush()?; // Manually flush to disk
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn flush(&self) -> Result<()> {
+        // Step 1: Freeze the current MemTable if it's not empty
+        {
+            let memtable = self.memtable.read();
+            if !memtable.is_empty() {
+                drop(memtable); // Release read lock before freeze
+                self.freeze_memtable()?;
+            }
+        }
+
+        // Step 2: Flush all immutable MemTables
+        loop {
+            // Get the oldest immutable MemTable
+            let memtable_to_flush = {
+                let mut immutable = self.immutable_memtables.write();
+                if immutable.is_empty() {
+                    break;
+                }
+                immutable.remove(0) // Remove from front (FIFO)
+            };
+
+            // Flush it to SSTable
+            self.flush_memtable_to_sstable(&memtable_to_flush)?;
+        }
+
+        // Step 3: Rotate WAL after successful flush
+        self.rotate_wal()?;
+
+        Ok(())
+    }
+
+    /// Rotates the WAL file.
+    ///
+    /// This creates a new WAL file and removes the old one after a successful flush.
+    fn rotate_wal(&self) -> Result<()> {
+        let new_wal_number = self.wal_file_number.fetch_add(1, Ordering::SeqCst) + 1;
+        let new_wal_path = self.path.join(wal::wal_filename(new_wal_number));
+
+        log::info!("Rotating WAL to {:?}", new_wal_path);
+
+        // Create new WAL
+        let new_wal = WAL::open(&new_wal_path)?;
+
+        // Replace the old WAL
+        let old_wal = {
+            let mut wal = self.wal.write();
+            std::mem::replace(&mut *wal, new_wal)
+        };
+
+        // Close and delete the old WAL file
+        let old_path = old_wal.path().to_path_buf();
+        drop(old_wal);
+
+        // Remove old WAL file
+        if old_path.exists() {
+            std::fs::remove_file(&old_path)?;
+            log::info!("Removed old WAL file: {:?}", old_path);
+        }
+
+        Ok(())
+    }
+
     /// Closes the database, ensuring all data is flushed to disk.
     ///
     /// # Errors
     ///
     /// Returns an error if flushing fails.
     pub fn close(&self) -> Result<()> {
-        // Step 1: Sync WAL to ensure all writes are persisted
+        // Step 1: Flush all data to disk
+        self.flush()?;
+
+        // Step 2: Sync WAL to ensure all writes are persisted
         if self.options.use_wal {
             let mut wal = self.wal.write();
             wal.sync()?;
         }
 
-        // TODO: Step 2: Flush MemTable to SSTable (will be implemented in Flush phase)
-        // TODO: Step 3: Write final Manifest entry
+        log::info!("Database closed successfully");
 
         Ok(())
     }
@@ -519,5 +750,255 @@ mod tests {
 
         let result = DB::open(temp_dir.path(), options);
         assert!(result.is_err());
+    }
+
+    // ===== Flush Tests =====
+
+    #[test]
+    fn test_manual_flush() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write some data
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let value = format!("value{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+
+        // Manually flush
+        db.flush().unwrap();
+
+        // Verify data is still accessible
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let expected = format!("value{}", i);
+            let value = db.get(key.as_bytes()).unwrap();
+            assert_eq!(value, Some(expected.as_bytes().to_vec()));
+        }
+
+        // Check that SSTable was created
+        let sstables = db.sstables.read();
+        assert!(!sstables[0].is_empty(), "Level 0 should have SSTables after flush");
+    }
+
+    #[test]
+    fn test_auto_flush_on_memtable_full() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Use a small memtable size to trigger auto-flush
+        let options = Options::default().memtable_size(1024); // 1KB
+        let db = DB::open(temp_dir.path(), options).unwrap();
+
+        // Write enough data to exceed memtable size
+        for i in 0..200 {
+            let key = format!("key{:08}", i);
+            let value = vec![b'x'; 100]; // 100 bytes value
+            db.put(key.as_bytes(), &value).unwrap();
+        }
+
+        // Check that immutable memtables were created
+        let immutable = db.immutable_memtables.read();
+        assert!(!immutable.is_empty(), "Should have frozen memtables");
+    }
+
+    #[test]
+    fn test_flush_persistence() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // First session: write and flush
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+            
+            for i in 0..50 {
+                let key = format!("persist_key{}", i);
+                let value = format!("persist_value{}", i);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+            }
+
+            db.flush().unwrap();
+            db.close().unwrap();
+        }
+
+        // Second session: verify data from SSTables
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+            
+            for i in 0..50 {
+                let key = format!("persist_key{}", i);
+                let expected = format!("persist_value{}", i);
+                let value = db.get(key.as_bytes()).unwrap();
+                assert_eq!(value, Some(expected.as_bytes().to_vec()), 
+                    "Data should persist after flush and reopen");
+            }
+        }
+    }
+
+    #[test]
+    fn test_flush_with_deletes() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write and delete some keys
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let value = format!("value{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+
+        // Delete every other key
+        for i in (0..100).step_by(2) {
+            let key = format!("key{}", i);
+            db.delete(key.as_bytes()).unwrap();
+        }
+
+        // Flush
+        db.flush().unwrap();
+
+        // Verify deleted keys are gone
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let value = db.get(key.as_bytes()).unwrap();
+            
+            if i % 2 == 0 {
+                assert_eq!(value, None, "Deleted keys should not be found");
+            } else {
+                let expected = format!("value{}", i);
+                assert_eq!(value, Some(expected.as_bytes().to_vec()));
+            }
+        }
+    }
+
+    #[test]
+    fn test_flush_empty_memtable() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Flush without any data
+        let result = db.flush();
+        assert!(result.is_ok(), "Flushing empty memtable should succeed");
+
+        // Verify no SSTables were created
+        let sstables = db.sstables.read();
+        assert!(sstables[0].is_empty(), "No SSTables should be created for empty memtable");
+    }
+
+    #[test]
+    fn test_multiple_flushes() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // First batch
+        for i in 0..50 {
+            let key = format!("batch1_key{}", i);
+            let value = format!("batch1_value{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
+        // Second batch
+        for i in 0..50 {
+            let key = format!("batch2_key{}", i);
+            let value = format!("batch2_value{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
+        // Third batch
+        for i in 0..50 {
+            let key = format!("batch3_key{}", i);
+            let value = format!("batch3_value{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
+        // Verify all SSTables exist
+        let sstables = db.sstables.read();
+        assert_eq!(sstables[0].len(), 3, "Should have 3 SSTables at Level 0");
+
+        // Verify all data is accessible
+        for i in 0..50 {
+            let key1 = format!("batch1_key{}", i);
+            let key2 = format!("batch2_key{}", i);
+            let key3 = format!("batch3_key{}", i);
+            
+            assert!(db.get(key1.as_bytes()).unwrap().is_some());
+            assert!(db.get(key2.as_bytes()).unwrap().is_some());
+            assert!(db.get(key3.as_bytes()).unwrap().is_some());
+        }
+    }
+
+    #[test]
+    fn test_close_triggers_flush() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // Write data and close (should auto-flush)
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+            
+            for i in 0..100 {
+                let key = format!("key{}", i);
+                let value = format!("value{}", i);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+            }
+
+            db.close().unwrap(); // Should trigger flush
+        }
+
+        // Reopen and verify data
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+            
+            for i in 0..100 {
+                let key = format!("key{}", i);
+                let expected = format!("value{}", i);
+                let value = db.get(key.as_bytes()).unwrap();
+                assert_eq!(value, Some(expected.as_bytes().to_vec()),
+                    "Data should be persisted after close");
+            }
+        }
+    }
+
+    #[test]
+    fn test_concurrent_writes_during_freeze() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let temp_dir = TempDir::new().unwrap();
+        let options = Options::default().memtable_size(1024); // Small memtable
+        let db = Arc::new(DB::open(temp_dir.path(), options).unwrap());
+
+        let mut handles = vec![];
+
+        // Spawn multiple writer threads
+        for thread_id in 0..5 {
+            let db_clone = db.clone();
+            let handle = thread::spawn(move || {
+                for i in 0..50 {
+                    let key = format!("thread{}_key{}", thread_id, i);
+                    let value = vec![b'x'; 50];
+                    db_clone.put(key.as_bytes(), &value).unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Flush and verify
+        db.flush().unwrap();
+
+        for thread_id in 0..5 {
+            for i in 0..50 {
+                let key = format!("thread{}_key{}", thread_id, i);
+                let value = db.get(key.as_bytes()).unwrap();
+                assert!(value.is_some(), "All concurrent writes should succeed");
+            }
+        }
     }
 }

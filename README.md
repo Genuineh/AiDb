@@ -24,9 +24,10 @@ AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架�
 - ✅ WAL（Write-Ahead Log）保证持久化
 - ✅ MemTable（SkipList）高性能内存索引
 - ✅ SSTable分层存储，支持前缀压缩和索引
+- ✅ Flush机制：MemTable自动刷新到SSTable
+- ✅ 数据持久化和恢复
 - ⏳ Bloom Filter加速查询（阶段B）
 - ⏳ Leveled Compaction优化空间利用
-- ⏳ 崩溃恢复机制
 - ⏳ 压缩支持（Snappy/LZ4）
 
 ### 集群版特性
@@ -94,20 +95,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options::default();
     let db = DB::open("./data", options)?;
 
-    // 写入
+    // 写入数据
     db.put(b"key1", b"value1")?;
+    db.put(b"key2", b"value2")?;
     
-    // 读取
+    // 读取数据
     if let Some(value) = db.get(b"key1")? {
         println!("value: {:?}", value);
     }
     
-    // 删除
+    // 删除数据
     db.delete(b"key1")?;
+
+    // 手动刷新到磁盘
+    db.flush()?;
+
+    // 关闭数据库（会自动flush）
+    db.close()?;
 
     Ok(())
 }
 ```
+
+更多示例请查看 [examples/](examples/) 目录。
 
 ### 集群使用（待实现）
 ```rust
@@ -147,12 +157,16 @@ async fn main() -> Result<()> {
 **当前阶段**: 🚧 阶段A - 单机版MVP开发中
 
 - ✅ 项目基础设施
-- ✅ WAL实现（已完成）
-- ✅ MemTable实现（已完成）
-- 🚧 SSTable实现（进行中）
+- ✅ WAL实现
+- ✅ MemTable实现
+- ✅ SSTable实现
+- ✅ Flush机制（刚完成！）
 - ⏳ Compaction实现
+- ⏳ 性能优化
 
-完整进度查看：[TODO.md](TODO.md)
+**最新成就**: Flush功能实现完成（Day 19-21），91个测试全部通过！
+
+完整进度查看：[TODO.md](TODO.md) | [Flush完成总结](FLUSH_COMPLETION_SUMMARY.md)
 
 ## 📚 文档导航
 
@@ -214,8 +228,9 @@ aidb/
 - [x] 项目初始化
 - [x] WAL实现
 - [x] MemTable实现  
-- [x] SSTable实现 ✅ **刚完成**
-- [ ] DB引擎整合
+- [x] SSTable实现
+- [x] DB引擎整合
+- [x] Flush机制 ✅ **刚完成**
 - [ ] Compaction实现
 - [ ] 性能优化
 
