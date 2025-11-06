@@ -34,6 +34,12 @@
   - Writer和Reader实现
   - 使用示例和最佳实践
 
+- **[docs/MEMTABLE_IMPLEMENTATION.md](docs/MEMTABLE_IMPLEMENTATION.md)** ✅
+  - MemTable架构设计
+  - InternalKey格式详解
+  - 并发访问和MVCC支持
+  - 使用示例和性能特点
+
 ### 实施和开发
 
 - **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** 
@@ -76,7 +82,7 @@ aidb/
 │   ├── error.rs          # 错误定义
 │   ├── config.rs         # 配置
 │   ├── wal/              # WAL模块 ✅
-│   ├── memtable/         # MemTable模块（待实现）
+│   ├── memtable/         # MemTable模块 ✅
 │   └── sstable/          # SSTable模块（待实现）
 │
 ├── tests/                 # 集成测试
@@ -193,7 +199,8 @@ aidb/
 | docs/DESIGN_DECISIONS.md | 2025-11-04 |
 | docs/DEVELOPMENT.md | 2025-11-04 |
 | docs/WAL_IMPLEMENTATION.md | 2025-11-05 ✅ |
-| TODO.md | 2025-11-05 |
+| docs/MEMTABLE_IMPLEMENTATION.md | 2025-11-06 ✅ |
+| TODO.md | 2025-11-06 |
 
 ---
 
