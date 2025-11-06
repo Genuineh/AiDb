@@ -179,12 +179,12 @@ impl DB {
 
         // Step 6: Load existing SSTables
         let mut sstables: Vec<Vec<Arc<SSTableReader>>> = vec![Vec::new(); options.max_levels];
-        
+
         // Scan directory for SSTable files (*.sst)
         if path.exists() {
             if let Ok(entries) = std::fs::read_dir(&path) {
                 let mut sst_files = Vec::new();
-                
+
                 for entry in entries.flatten() {
                     if let Some(filename) = entry.file_name().to_str() {
                         if filename.ends_with(".sst") {
@@ -192,10 +192,10 @@ impl DB {
                         }
                     }
                 }
-                
+
                 // Sort SSTable files by file number (newest last)
                 sst_files.sort();
-                
+
                 // Load all SSTables into Level 0
                 for sst_path in sst_files {
                     match SSTableReader::open(&sst_path) {
@@ -208,7 +208,7 @@ impl DB {
                         }
                     }
                 }
-                
+
                 log::info!("Loaded {} SSTables at Level 0", sstables[0].len());
             }
         }
@@ -457,10 +457,7 @@ impl DB {
         // Create SSTable file path
         let sstable_path = self.path.join(format!("{:06}.sst", file_number));
 
-        log::info!(
-            "Starting flush of MemTable to SSTable: {:?}",
-            sstable_path
-        );
+        log::info!("Starting flush of MemTable to SSTable: {:?}", sstable_path);
 
         // Create SSTable builder
         let mut builder = SSTableBuilder::new(&sstable_path)?;
@@ -486,7 +483,7 @@ impl DB {
             // For SSTable at Level 0, we only store user_key (not internal key)
             // This simplifies the format and is sufficient for a basic implementation
             // (In a full implementation, we'd store internal keys for MVCC support)
-            
+
             // Only add non-deleted entries
             match value_type {
                 memtable::ValueType::Value => {
@@ -779,13 +776,16 @@ mod tests {
 
         // Check that SSTable was created
         let sstables = db.sstables.read();
-        assert!(!sstables[0].is_empty(), "Level 0 should have SSTables after flush");
+        assert!(
+            !sstables[0].is_empty(),
+            "Level 0 should have SSTables after flush"
+        );
     }
 
     #[test]
     fn test_auto_flush_on_memtable_full() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Use a small memtable size to trigger auto-flush
         let options = Options::default().memtable_size(1024); // 1KB
         let db = DB::open(temp_dir.path(), options).unwrap();
@@ -810,7 +810,7 @@ mod tests {
         // First session: write and flush
         {
             let db = DB::open(&db_path, Options::default()).unwrap();
-            
+
             for i in 0..50 {
                 let key = format!("persist_key{}", i);
                 let value = format!("persist_value{}", i);
@@ -824,13 +824,16 @@ mod tests {
         // Second session: verify data from SSTables
         {
             let db = DB::open(&db_path, Options::default()).unwrap();
-            
+
             for i in 0..50 {
                 let key = format!("persist_key{}", i);
                 let expected = format!("persist_value{}", i);
                 let value = db.get(key.as_bytes()).unwrap();
-                assert_eq!(value, Some(expected.as_bytes().to_vec()), 
-                    "Data should persist after flush and reopen");
+                assert_eq!(
+                    value,
+                    Some(expected.as_bytes().to_vec()),
+                    "Data should persist after flush and reopen"
+                );
             }
         }
     }
@@ -860,7 +863,7 @@ mod tests {
         for i in 0..100 {
             let key = format!("key{}", i);
             let value = db.get(key.as_bytes()).unwrap();
-            
+
             if i % 2 == 0 {
                 assert_eq!(value, None, "Deleted keys should not be found");
             } else {
@@ -881,7 +884,10 @@ mod tests {
 
         // Verify no SSTables were created
         let sstables = db.sstables.read();
-        assert!(sstables[0].is_empty(), "No SSTables should be created for empty memtable");
+        assert!(
+            sstables[0].is_empty(),
+            "No SSTables should be created for empty memtable"
+        );
     }
 
     #[test]
@@ -922,7 +928,7 @@ mod tests {
             let key1 = format!("batch1_key{}", i);
             let key2 = format!("batch2_key{}", i);
             let key3 = format!("batch3_key{}", i);
-            
+
             assert!(db.get(key1.as_bytes()).unwrap().is_some());
             assert!(db.get(key2.as_bytes()).unwrap().is_some());
             assert!(db.get(key3.as_bytes()).unwrap().is_some());
@@ -937,7 +943,7 @@ mod tests {
         // Write data and close (should auto-flush)
         {
             let db = DB::open(&db_path, Options::default()).unwrap();
-            
+
             for i in 0..100 {
                 let key = format!("key{}", i);
                 let value = format!("value{}", i);
@@ -950,13 +956,16 @@ mod tests {
         // Reopen and verify data
         {
             let db = DB::open(&db_path, Options::default()).unwrap();
-            
+
             for i in 0..100 {
                 let key = format!("key{}", i);
                 let expected = format!("value{}", i);
                 let value = db.get(key.as_bytes()).unwrap();
-                assert_eq!(value, Some(expected.as_bytes().to_vec()),
-                    "Data should be persisted after close");
+                assert_eq!(
+                    value,
+                    Some(expected.as_bytes().to_vec()),
+                    "Data should be persisted after close"
+                );
             }
         }
     }
