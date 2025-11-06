@@ -160,7 +160,7 @@ impl SSTableReader {
     pub fn smallest_key(&self) -> Result<Option<Vec<u8>>> {
         let mut iter = self.index_block.iter();
         iter.seek_to_first();
-        
+
         if !iter.advance() {
             return Ok(None);
         }
