@@ -767,7 +767,7 @@ impl DB {
 
         // Open the new SSTable reader once and reuse it (fixes duplicate Arc bug)
         let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
-        
+
         // Get metadata from the new reader
         let smallest_key = new_reader
             .smallest_key()?
@@ -775,10 +775,11 @@ impl DB {
         let largest_key = new_reader
             .largest_key()?
             .ok_or_else(|| Error::internal("New SSTable has no keys"))?;
-        
+
         // Collect input file numbers and paths using reliable file_number() method
         // This fixes the unreliable file-size matching bug
-        let input_file_info: Vec<(u64, std::path::PathBuf)> = task.inputs
+        let input_file_info: Vec<(u64, std::path::PathBuf)> = task
+            .inputs
             .iter()
             .filter_map(|input| {
                 let file_num = input.file_number()?;
@@ -813,7 +814,7 @@ impl DB {
 
             // Update in-memory SSTable list BEFORE physical deletion
             // This fixes the race condition bug where Arc::ptr_eq could fail
-            
+
             // Remove input files from source level using Arc::ptr_eq
             sstables[task.level]
                 .retain(|reader| !task.inputs.iter().any(|input| Arc::ptr_eq(reader, input)));
