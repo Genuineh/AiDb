@@ -47,10 +47,10 @@ pub const DEFAULT_MEMTABLE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 pub struct MemTable {
     /// The underlying SkipList storing InternalKey -> Value
     data: Arc<SkipMap<InternalKey, Vec<u8>>>,
-    
+
     /// Approximate size in bytes (keys + values)
     size: AtomicUsize,
-    
+
     /// The starting sequence number for this MemTable
     start_sequence: u64,
 }
@@ -96,10 +96,10 @@ impl MemTable {
     pub fn put(&self, key: &[u8], value: &[u8], sequence: u64) {
         let internal_key = InternalKey::new(key.to_vec(), sequence, ValueType::Value);
         let value_vec = value.to_vec();
-        
+
         // Calculate the size of this entry
         let entry_size = internal_key.user_key().len() + value_vec.len() + 16; // 16 bytes overhead
-        
+
         self.data.insert(internal_key, value_vec);
         self.size.fetch_add(entry_size, Ordering::Relaxed);
     }
@@ -133,20 +133,20 @@ impl MemTable {
         // Lower bound: key with max possible sequence (u64::MAX)
         // Upper bound: next key with max sequence
         let lower_bound = InternalKey::new(key.to_vec(), u64::MAX, ValueType::Value);
-        
+
         // Create an upper bound by appending a byte to the key
         let mut upper_key = key.to_vec();
         upper_key.push(0);
         let upper_bound = InternalKey::new(upper_key, u64::MAX, ValueType::Value);
-        
+
         // Iterate through entries with matching user key
         let range = self.data.range(lower_bound..upper_bound);
-        
+
         // Find the most recent entry with sequence <= max_sequence
         for entry in range {
             let internal_key = entry.key();
             let value = entry.value();
-            
+
             // Double-check the user key matches (it should, given our range)
             if internal_key.user_key() == key && internal_key.sequence() <= max_sequence {
                 match internal_key.value_type() {
@@ -155,7 +155,7 @@ impl MemTable {
                 }
             }
         }
-        
+
         None
     }
 
@@ -178,10 +178,10 @@ impl MemTable {
     /// ```
     pub fn delete(&self, key: &[u8], sequence: u64) {
         let internal_key = InternalKey::new(key.to_vec(), sequence, ValueType::Deletion);
-        
+
         // Tombstone has no value
         let entry_size = internal_key.user_key().len() + 16; // 16 bytes overhead
-        
+
         self.data.insert(internal_key, Vec::new());
         self.size.fetch_add(entry_size, Ordering::Relaxed);
     }
@@ -277,7 +277,7 @@ impl MemTableIterator {
                 crossbeam_skiplist::map::Iter<'static, InternalKey, Vec<u8>>,
             >(data.iter())
         };
-        
+
         Self { _data: data, iter }
     }
 
@@ -293,11 +293,9 @@ impl Iterator for MemTableIterator {
     type Item = MemTableEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|entry| {
-            MemTableEntry {
-                key: entry.key().clone(),
-                value: entry.value().clone(),
-            }
+        self.iter.next().map(|entry| MemTableEntry {
+            key: entry.key().clone(),
+            value: entry.value().clone(),
         })
     }
 }
@@ -351,14 +349,14 @@ mod tests {
     #[test]
     fn test_memtable_put_and_get() {
         let memtable = MemTable::new(1);
-        
+
         memtable.put(b"key1", b"value1", 1);
         memtable.put(b"key2", b"value2", 2);
-        
+
         assert_eq!(memtable.get(b"key1", 100), Some(b"value1".to_vec()));
         assert_eq!(memtable.get(b"key2", 100), Some(b"value2".to_vec()));
         assert_eq!(memtable.get(b"key3", 100), None);
-        
+
         assert_eq!(memtable.len(), 2);
         assert!(!memtable.is_empty());
     }
@@ -366,13 +364,13 @@ mod tests {
     #[test]
     fn test_memtable_delete() {
         let memtable = MemTable::new(1);
-        
+
         memtable.put(b"key1", b"value1", 1);
         assert_eq!(memtable.get(b"key1", 100), Some(b"value1".to_vec()));
-        
+
         memtable.delete(b"key1", 2);
         assert_eq!(memtable.get(b"key1", 100), None);
-        
+
         // Entry still exists (as tombstone)
         assert_eq!(memtable.len(), 2);
     }
@@ -380,17 +378,17 @@ mod tests {
     #[test]
     fn test_memtable_mvcc() {
         let memtable = MemTable::new(1);
-        
+
         memtable.put(b"key1", b"value1", 1);
         memtable.put(b"key1", b"value2", 2);
         memtable.put(b"key1", b"value3", 3);
-        
+
         // Should get the version at sequence 1
         assert_eq!(memtable.get(b"key1", 1), Some(b"value1".to_vec()));
-        
+
         // Should get the version at sequence 2
         assert_eq!(memtable.get(b"key1", 2), Some(b"value2".to_vec()));
-        
+
         // Should get the latest version
         assert_eq!(memtable.get(b"key1", 100), Some(b"value3".to_vec()));
     }
@@ -398,13 +396,13 @@ mod tests {
     #[test]
     fn test_memtable_size() {
         let memtable = MemTable::new(1);
-        
+
         let initial_size = memtable.approximate_size();
         assert_eq!(initial_size, 0);
-        
+
         memtable.put(b"key1", b"value1", 1);
         assert!(memtable.approximate_size() > initial_size);
-        
+
         let size_after_first = memtable.approximate_size();
         memtable.put(b"key2", b"value2", 2);
         assert!(memtable.approximate_size() > size_after_first);
@@ -413,14 +411,14 @@ mod tests {
     #[test]
     fn test_memtable_iterator() {
         let memtable = MemTable::new(1);
-        
+
         memtable.put(b"key1", b"value1", 1);
         memtable.put(b"key2", b"value2", 2);
         memtable.put(b"key3", b"value3", 3);
-        
+
         let entries: Vec<_> = memtable.iter().collect();
         assert_eq!(entries.len(), 3);
-        
+
         // Verify keys are in sorted order
         assert_eq!(entries[0].user_key(), b"key1");
         assert_eq!(entries[1].user_key(), b"key2");
@@ -430,13 +428,13 @@ mod tests {
     #[test]
     fn test_memtable_overwrite() {
         let memtable = MemTable::new(1);
-        
+
         memtable.put(b"key1", b"value1", 1);
         memtable.put(b"key1", b"value2", 2);
-        
+
         // Should return the latest value
         assert_eq!(memtable.get(b"key1", 100), Some(b"value2".to_vec()));
-        
+
         // But both entries exist in the table
         assert_eq!(memtable.len(), 2);
     }
@@ -444,10 +442,10 @@ mod tests {
     #[test]
     fn test_memtable_concurrent_access() {
         use std::thread;
-        
+
         let memtable = Arc::new(MemTable::new(1));
         let mut handles = vec![];
-        
+
         // Spawn multiple writer threads
         for i in 0..10 {
             let mt = memtable.clone();
@@ -460,15 +458,15 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all writers to finish
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Verify all entries were written
         assert_eq!(memtable.len(), 1000);
-        
+
         // Spawn multiple reader threads
         let mut handles = vec![];
         for i in 0..10 {
@@ -485,7 +483,7 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all readers to finish
         for handle in handles {
             handle.join().unwrap();

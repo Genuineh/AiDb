@@ -26,7 +26,7 @@ use std::cmp::Ordering;
 pub enum ValueType {
     /// A tombstone indicating the key has been deleted
     Deletion = 0,
-    
+
     /// A normal value
     Value = 1,
 }
@@ -134,12 +134,10 @@ impl InternalKey {
 
         let user_key_len = data.len() - 9;
         let user_key = data[..user_key_len].to_vec();
-        
-        let sequence_bytes: [u8; 8] = data[user_key_len..user_key_len + 8]
-            .try_into()
-            .ok()?;
+
+        let sequence_bytes: [u8; 8] = data[user_key_len..user_key_len + 8].try_into().ok()?;
         let sequence = u64::from_le_bytes(sequence_bytes);
-        
+
         let value_type = ValueType::from_u8(data[user_key_len + 8])?;
 
         Some(Self {
@@ -188,7 +186,7 @@ mod tests {
     fn test_value_type_conversion() {
         assert_eq!(ValueType::Deletion.as_u8(), 0);
         assert_eq!(ValueType::Value.as_u8(), 1);
-        
+
         assert_eq!(ValueType::from_u8(0), Some(ValueType::Deletion));
         assert_eq!(ValueType::from_u8(1), Some(ValueType::Value));
         assert_eq!(ValueType::from_u8(2), None);
@@ -197,7 +195,7 @@ mod tests {
     #[test]
     fn test_internal_key_creation() {
         let key = InternalKey::new(b"test_key".to_vec(), 42, ValueType::Value);
-        
+
         assert_eq!(key.user_key(), b"test_key");
         assert_eq!(key.sequence(), 42);
         assert_eq!(key.value_type(), ValueType::Value);
@@ -208,7 +206,7 @@ mod tests {
         let original = InternalKey::new(b"test_key".to_vec(), 12345, ValueType::Value);
         let encoded = original.encode();
         let decoded = InternalKey::decode(&encoded).unwrap();
-        
+
         assert_eq!(decoded.user_key(), original.user_key());
         assert_eq!(decoded.sequence(), original.sequence());
         assert_eq!(decoded.value_type(), original.value_type());
@@ -218,7 +216,7 @@ mod tests {
     fn test_internal_key_decode_invalid() {
         // Too short
         assert!(InternalKey::decode(&[1, 2, 3]).is_none());
-        
+
         // Invalid value type
         let mut buf = vec![1, 2, 3, 4, 5, 6, 7, 8]; // 8 bytes
         buf.extend_from_slice(&42u64.to_le_bytes());
@@ -230,7 +228,7 @@ mod tests {
     fn test_internal_key_ordering_by_user_key() {
         let key1 = InternalKey::new(b"a".to_vec(), 100, ValueType::Value);
         let key2 = InternalKey::new(b"b".to_vec(), 100, ValueType::Value);
-        
+
         assert!(key1 < key2);
         assert!(key2 > key1);
     }
@@ -240,7 +238,7 @@ mod tests {
         // Same user key, different sequences (newer first)
         let key1 = InternalKey::new(b"key".to_vec(), 100, ValueType::Value);
         let key2 = InternalKey::new(b"key".to_vec(), 50, ValueType::Value);
-        
+
         // Higher sequence should come first (descending order)
         assert!(key1 < key2);
     }
@@ -250,7 +248,7 @@ mod tests {
         // Same user key and sequence, different types
         let value_key = InternalKey::new(b"key".to_vec(), 100, ValueType::Value);
         let delete_key = InternalKey::new(b"key".to_vec(), 100, ValueType::Deletion);
-        
+
         // Value should come before Deletion
         assert!(value_key < delete_key);
     }
@@ -276,18 +274,18 @@ mod tests {
 
         assert_eq!(keys[0].user_key(), b"key1");
         assert_eq!(keys[0].sequence(), 150);
-        
+
         assert_eq!(keys[1].user_key(), b"key1");
         assert_eq!(keys[1].sequence(), 100);
         assert_eq!(keys[1].value_type(), ValueType::Value);
-        
+
         assert_eq!(keys[2].user_key(), b"key1");
         assert_eq!(keys[2].sequence(), 100);
         assert_eq!(keys[2].value_type(), ValueType::Deletion);
-        
+
         assert_eq!(keys[3].user_key(), b"key1");
         assert_eq!(keys[3].sequence(), 50);
-        
+
         assert_eq!(keys[4].user_key(), b"key2");
     }
 

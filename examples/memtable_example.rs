@@ -85,7 +85,7 @@ fn mvcc_example() {
         "counter @ seq 3 (after delete) = {}",
         String::from_utf8_lossy(&memtable.get(b"counter", 3).unwrap())
     );
-    
+
     // But seq 4+ sees deletion
     println!(
         "counter @ seq 4 (after delete) = {:?}",
