@@ -135,21 +135,27 @@ pub struct SSTable {
 
 #### Week 3-4: DB引擎整合
 
-**Day 15-18**: DB核心逻辑
+**Day 15-18**: DB核心逻辑 ✅ **已完成**
 ```rust
 // src/lib.rs
 pub struct DB {
-    wal: WAL,
+    path: PathBuf,
+    options: Options,
     memtable: Arc<RwLock<MemTable>>,
-    sstables: Vec<Arc<SSTable>>,
+    immutable_memtables: Arc<RwLock<Vec<Arc<MemTable>>>>,
+    wal: Arc<RwLock<WAL>>,
+    sstables: Arc<RwLock<Vec<Vec<Arc<SSTableReader>>>>>,
+    sequence: Arc<AtomicU64>,
 }
 
 任务：
-- [ ] DB::open()实现
-- [ ] Put/Get/Delete
-- [ ] 写入路径
-- [ ] 读取路径
-- [ ] 基础集成测试
+- [x] DB::open()实现 - 创建目录、恢复WAL、初始化组件
+- [x] Put/Get/Delete - 完整CRUD操作
+- [x] 写入路径 - WAL → MemTable
+- [x] 读取路径 - MemTable → Immutable → SSTables
+- [x] 基础集成测试 - 83个测试全部通过
+
+完成详情：见 [DB_CORE_COMPLETION_SUMMARY.md](../DB_CORE_COMPLETION_SUMMARY.md)
 ```
 
 **Day 19-21**: Flush实现
@@ -181,6 +187,11 @@ for i in 0..10000 {
 }
 // 性能：20K+ ops/s
 ```
+
+**当前状态**：
+- ✅ DB核心逻辑已完成（Day 15-18）
+- 🔄 Flush实现待开始（Day 19-21）
+- 🔄 测试和修复待开始（Day 22-28）
 
 ---
 
