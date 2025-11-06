@@ -23,20 +23,12 @@ impl WALWriter {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(Error::Io)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path).map_err(Error::Io)?;
 
         let file_size = file.metadata().map_err(Error::Io)?.len();
         let writer = BufWriter::new(file);
 
-        Ok(Self {
-            path,
-            writer,
-            file_size,
-        })
+        Ok(Self { path, writer, file_size })
     }
 
     /// Append a record to the WAL

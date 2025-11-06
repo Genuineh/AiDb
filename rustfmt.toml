@@ -1,0 +1,52 @@
+# Rustfmt Configuration for MinDB
+# This file configures the code formatting style for the project
+# Run `cargo fmt` to format your code according to these rules
+
+# Edition configuration
+edition = "2021"
+
+# Maximum width of each line
+max_width = 100
+
+# Maximum width of the args of a function call before falling back to vertical formatting
+fn_call_width = 80
+
+# Maximum width in the body of a struct literal before falling back to vertical formatting
+struct_lit_width = 80
+
+# Maximum width in the body of a struct variant before falling back to vertical formatting
+struct_variant_width = 80
+
+# Maximum width of an array literal before falling back to vertical formatting
+array_width = 80
+
+# Maximum width of a chain to fit on a single line
+chain_width = 80
+
+# How to indent
+hard_tabs = false
+tab_spaces = 4
+
+# Newline style
+newline_style = "Unix"
+
+# Use field init shorthand if possible
+use_field_init_shorthand = true
+
+# Use small heuristics for the formatting
+use_small_heuristics = "Default"
+
+# Reorder import statements alphabetically
+reorder_imports = true
+
+# Reorder module statements alphabetically in group
+reorder_modules = true
+
+# Always print the abi for extern items
+force_explicit_abi = true
+
+# Remove nested parens
+remove_nested_parens = true
+
+# Use try shorthand
+use_try_shorthand = true

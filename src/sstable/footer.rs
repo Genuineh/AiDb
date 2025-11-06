@@ -70,10 +70,7 @@ pub struct Footer {
 impl Footer {
     /// Create a new Footer
     pub fn new(meta_index_handle: BlockHandle, index_handle: BlockHandle) -> Self {
-        Self {
-            meta_index_handle,
-            index_handle,
-        }
+        Self { meta_index_handle, index_handle }
     }
 
     /// Encode the footer to bytes (48 bytes)
@@ -118,10 +115,7 @@ impl Footer {
         let meta_index_handle = BlockHandle::decode(&data[0..16])?;
         let index_handle = BlockHandle::decode(&data[16..32])?;
 
-        Ok(Self {
-            meta_index_handle,
-            index_handle,
-        })
+        Ok(Self { meta_index_handle, index_handle })
     }
 
     /// Write the footer to a writer

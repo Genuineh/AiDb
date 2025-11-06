@@ -159,43 +159,26 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     if: needs.changes.outputs.code == 'true'
-    permissions:
-      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - name: Auto-format code
+      - name: Check code formatting
         run: |
-          echo "Running rustfmt to auto-format code..."
-          cargo fmt --all
+          echo "Checking code formatting with rustfmt..."
+          cargo fmt --all -- --check
           
-          if ! git diff --quiet; then
-            echo "✨ Code was auto-formatted by rustfmt"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "style: auto-format code with rustfmt [skip ci]"
-            
-            # Only push if not from a fork
-            if [ "${{ github.event.pull_request.head.repo.full_name }}" == "${{ github.repository }}" ] || [ "${{ github.event_name }}" == "push" ]; then
-              git push
-              echo "✅ Formatted code pushed successfully"
-            else
-              echo "⚠️  Cannot push to fork. Please run 'cargo fmt --all' locally."
-              exit 1
-            fi
+          if [ $? -eq 0 ]; then
+            echo "✅ Code is properly formatted"
           else
-            echo "✅ Code is already properly formatted"
+            echo "❌ Code formatting issues found"
+            echo "Please run 'cargo fmt --all' locally to fix formatting"
+            exit 1
           fi
 
       - name: Cache dependencies

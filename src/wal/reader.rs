@@ -20,10 +20,7 @@ impl WALReader {
         let file = File::open(path).map_err(Error::Io)?;
         let reader = BufReader::new(file);
 
-        Ok(Self {
-            reader,
-            position: 0,
-        })
+        Ok(Self { reader, position: 0 })
     }
 
     /// Read the next complete entry from the WAL
@@ -110,9 +107,7 @@ impl WALReader {
         buffer[..HEADER_SIZE].copy_from_slice(&header);
 
         if length > 0 {
-            self.reader
-                .read_exact(&mut buffer[HEADER_SIZE..])
-                .map_err(Error::Io)?;
+            self.reader.read_exact(&mut buffer[HEADER_SIZE..]).map_err(Error::Io)?;
         }
 
         self.position += total_size as u64;

@@ -87,10 +87,7 @@ fn mvcc_example() {
     );
 
     // But seq 4+ sees deletion
-    println!(
-        "counter @ seq 4 (after delete) = {:?}",
-        memtable.get(b"counter", 4)
-    );
+    println!("counter @ seq 4 (after delete) = {:?}", memtable.get(b"counter", 4));
     println!();
 }
 

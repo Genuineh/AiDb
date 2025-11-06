@@ -89,11 +89,7 @@ impl InternalKey {
     /// let key = InternalKey::new(b"user_key".to_vec(), 42, ValueType::Value);
     /// ```
     pub fn new(user_key: Vec<u8>, sequence: u64, value_type: ValueType) -> Self {
-        Self {
-            user_key,
-            sequence,
-            value_type,
-        }
+        Self { user_key, sequence, value_type }
     }
 
     /// Returns the user key.
@@ -140,11 +136,7 @@ impl InternalKey {
 
         let value_type = ValueType::from_u8(data[user_key_len + 8])?;
 
-        Some(Self {
-            user_key,
-            sequence,
-            value_type,
-        })
+        Some(Self { user_key, sequence, value_type })
     }
 
     /// Returns the total encoded size of this InternalKey.

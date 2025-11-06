@@ -78,11 +78,7 @@ impl fmt::Display for Error {
             Error::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
             Error::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             Error::ChecksumMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "Checksum mismatch: expected {:#x}, got {:#x}",
-                    expected, actual
-                )
+                write!(f, "Checksum mismatch: expected {:#x}, got {:#x}", expected, actual)
             }
             Error::AlreadyExists(msg) => write!(f, "Already exists: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
@@ -120,10 +116,7 @@ mod tests {
         let err = Error::corruption("test corruption");
         assert_eq!(err.to_string(), "Data corruption: test corruption");
 
-        let err = Error::ChecksumMismatch {
-            expected: 0x12345678,
-            actual: 0x87654321,
-        };
+        let err = Error::ChecksumMismatch { expected: 0x12345678, actual: 0x87654321 };
         assert!(err.to_string().contains("0x12345678"));
         assert!(err.to_string().contains("0x87654321"));
     }

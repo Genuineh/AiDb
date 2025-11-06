@@ -73,9 +73,7 @@ impl SSTableBuilder {
 
         // Verify keys are in sorted order
         if !self.last_key.is_empty() && key <= self.last_key.as_slice() {
-            return Err(Error::invalid_argument(
-                "Keys must be added in sorted order",
-            ));
+            return Err(Error::invalid_argument("Keys must be added in sorted order"));
         }
 
         // If we have a pending index entry, add it now

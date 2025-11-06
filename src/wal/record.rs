@@ -87,10 +87,7 @@ impl Record {
     /// Decode a record from bytes
     pub fn decode(mut data: &[u8]) -> Result<Self> {
         if data.len() < HEADER_SIZE {
-            return Err(Error::Corruption(format!(
-                "Record too short: {} bytes",
-                data.len()
-            )));
+            return Err(Error::Corruption(format!("Record too short: {} bytes", data.len())));
         }
 
         // Read checksum
@@ -123,10 +120,7 @@ impl Record {
             )));
         }
 
-        Ok(Record {
-            record_type,
-            data: record_data,
-        })
+        Ok(Record { record_type, data: record_data })
     }
 
     /// Calculate CRC32 checksum for record type and data
@@ -161,12 +155,7 @@ mod tests {
 
     #[test]
     fn test_record_types() {
-        let types = vec![
-            RecordType::Full,
-            RecordType::First,
-            RecordType::Middle,
-            RecordType::Last,
-        ];
+        let types = vec![RecordType::Full, RecordType::First, RecordType::Middle, RecordType::Last];
 
         for record_type in types {
             let data = b"test".to_vec();
