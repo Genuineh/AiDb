@@ -922,6 +922,14 @@ impl DB {
     pub fn clear_cache(&self) {
         self.block_cache.clear();
     }
+
+    /// Reset cache statistics.
+    ///
+    /// Resets hits, misses, and other cache statistics to zero while preserving
+    /// cached data.
+    pub fn reset_cache_stats(&self) {
+        self.block_cache.reset_stats();
+    }
 }
 
 impl Drop for DB {
@@ -1508,7 +1516,7 @@ mod tests {
         db.flush().unwrap();
 
         // Clear cache stats
-        db.block_cache.reset_stats();
+        db.reset_cache_stats();
 
         // First read - should be cache misses
         let _ = db.get(b"key0001").unwrap();
@@ -1620,7 +1628,7 @@ mod tests {
             db.flush().unwrap();
         }
 
-        db.block_cache.reset_stats();
+        db.reset_cache_stats();
 
         // Read from different SSTables
         let _ = db.get(b"key00_001").unwrap(); // From first SSTable

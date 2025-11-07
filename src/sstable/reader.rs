@@ -60,12 +60,20 @@ impl SSTableReader {
         }
 
         // Extract file number from filename
+        // Use path hash as fallback to ensure unique cache keys
         let file_number = path
             .file_name()
             .and_then(|n| n.to_str())
             .and_then(|s| s.strip_suffix(".sst"))
             .and_then(|n| n.parse::<u64>().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                // Fallback: use hash of full path to ensure uniqueness
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                path.hash(&mut hasher);
+                hasher.finish()
+            });
 
         // Read footer from the end of the file
         file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
