@@ -47,6 +47,7 @@
 pub mod compaction;
 pub mod config;
 pub mod error;
+pub mod filter;
 pub mod memtable;
 pub mod sstable;
 pub mod wal;

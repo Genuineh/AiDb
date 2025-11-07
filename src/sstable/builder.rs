@@ -3,6 +3,7 @@
 //! Builds an SSTable file from a sequence of sorted key-value pairs.
 
 use crate::error::{Error, Result};
+use crate::filter::{BloomFilter, Filter};
 use crate::sstable::block::BlockBuilder;
 use crate::sstable::footer::{BlockHandle, Footer};
 use crate::sstable::index::{IndexBlockBuilder, IndexEntry};
@@ -32,6 +33,8 @@ pub struct SSTableBuilder {
     block_size: usize,
     compression: CompressionType,
     pending_handle: Option<BlockHandle>,
+    bloom_filter: Option<BloomFilter>,
+    enable_bloom_filter: bool,
 }
 
 impl SSTableBuilder {
@@ -50,6 +53,8 @@ impl SSTableBuilder {
             block_size: DEFAULT_BLOCK_SIZE,
             compression: CompressionType::None,
             pending_handle: None,
+            bloom_filter: None,
+            enable_bloom_filter: true, // Enabled by default
         })
     }
 
@@ -61,6 +66,19 @@ impl SSTableBuilder {
     /// Set the compression type
     pub fn set_compression(&mut self, compression: CompressionType) {
         self.compression = compression;
+    }
+
+    /// Enable or disable Bloom Filter (enabled by default)
+    pub fn set_bloom_filter_enabled(&mut self, enabled: bool) {
+        self.enable_bloom_filter = enabled;
+    }
+
+    /// Set expected number of keys for optimal Bloom Filter sizing
+    pub fn set_expected_keys(&mut self, num_keys: usize) {
+        if self.enable_bloom_filter {
+            // Use 1% false positive rate by default
+            self.bloom_filter = Some(BloomFilter::new(num_keys, 0.01));
+        }
     }
 
     /// Add a key-value pair to the SSTable.
@@ -87,6 +105,18 @@ impl SSTableBuilder {
         self.last_key.clear();
         self.last_key.extend_from_slice(key);
         self.num_entries += 1;
+
+        // Add key to bloom filter
+        if self.enable_bloom_filter {
+            // Lazily initialize bloom filter if not set
+            if self.bloom_filter.is_none() {
+                // Default: estimate 10000 keys if not specified
+                self.bloom_filter = Some(BloomFilter::default_with_keys(10000));
+            }
+            if let Some(ref mut filter) = self.bloom_filter {
+                filter.add(key);
+            }
+        }
 
         // Flush block if it's large enough
         if self.data_block_builder.current_size() >= self.block_size {
@@ -153,19 +183,34 @@ impl SSTableBuilder {
             self.index_block_builder.add_entry(&entry);
         }
 
-        // Write meta index block (empty for now, but reserved for bloom filters)
-        let meta_index_offset = self.data_block_offset;
-        let meta_index_data = vec![0u8; 8]; // Empty meta block with just num_restarts=0
+        // Write meta block (Bloom Filter)
+        let meta_block_offset = self.data_block_offset;
+        let meta_block_data = if let Some(ref filter) = self.bloom_filter {
+            filter.encode()
+        } else {
+            vec![0u8; 8] // Empty meta block
+        };
+        self.writer.write_all(&meta_block_data)?;
+        // Write compression type and checksum for meta block
+        self.writer.write_all(&[CompressionType::None as u8])?;
+        let meta_checksum = crc32fast::hash(&meta_block_data);
+        self.writer.write_all(&meta_checksum.to_le_bytes())?;
+        let meta_block_size = meta_block_data.len() as u64 + 5; // data + compression + checksum
+        let _meta_block_handle = BlockHandle::new(meta_block_offset, meta_block_size);
+
+        // Write meta index block (points to bloom filter)
+        let meta_index_offset = self.data_block_offset + meta_block_size;
+        let meta_index_data = vec![0u8; 8]; // Empty meta index for now
         self.writer.write_all(&meta_index_data)?;
         // Write compression type and checksum for meta index block
         self.writer.write_all(&[CompressionType::None as u8])?;
-        let meta_checksum = crc32fast::hash(&meta_index_data);
-        self.writer.write_all(&meta_checksum.to_le_bytes())?;
+        let meta_index_checksum = crc32fast::hash(&meta_index_data);
+        self.writer.write_all(&meta_index_checksum.to_le_bytes())?;
         let meta_index_size = meta_index_data.len() as u64 + 5; // data + compression + checksum
         let meta_index_handle = BlockHandle::new(meta_index_offset, meta_index_size);
 
         // Write index block
-        let index_offset = self.data_block_offset + meta_index_size;
+        let index_offset = self.data_block_offset + meta_block_size + meta_index_size;
         let index_data = self.index_block_builder.finish();
         self.writer.write_all(&index_data)?;
         // Write compression type and checksum for index block
