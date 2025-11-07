@@ -215,6 +215,12 @@ impl BlockCache {
     /// Touch a key to mark it as recently used.
     ///
     /// Moves the key to the end of the LRU queue without changing its value.
+    ///
+    /// # Performance Note
+    ///
+    /// This operation is O(n) due to linear search in VecDeque. For typical cache
+    /// sizes (default 8MB ≈ 2000 blocks), this is acceptable. For very large caches
+    /// (>10K entries), consider using a more efficient data structure.
     fn touch(&self, key: &CacheKey) {
         let mut lru_queue = self.lru_queue.write();
 

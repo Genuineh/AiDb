@@ -17,11 +17,30 @@ use std::sync::Arc;
 
 /// SSTableReader provides read access to an SSTable file.
 ///
-/// Usage:
+/// # Basic Usage
+///
 /// ```no_run
 /// use aidb::sstable::SSTableReader;
 ///
-/// let reader = SSTableReader::open("table.sst", None).unwrap();
+/// // Open without cache
+/// let reader = SSTableReader::open("table.sst").unwrap();
+/// if let Some(value) = reader.get(b"key1").unwrap() {
+///     println!("Found: {:?}", value);
+/// }
+/// ```
+///
+/// # With Block Cache
+///
+/// ```no_run
+/// use aidb::sstable::SSTableReader;
+/// use aidb::cache::BlockCache;
+/// use std::sync::Arc;
+///
+/// // Create a shared cache
+/// let cache = Arc::new(BlockCache::new(8 * 1024 * 1024)); // 8MB
+///
+/// // Open with cache
+/// let reader = SSTableReader::open_with_cache("table.sst", Some(cache)).unwrap();
 /// if let Some(value) = reader.get(b"key1").unwrap() {
 ///     println!("Found: {:?}", value);
 /// }
