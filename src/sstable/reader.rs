@@ -2,6 +2,7 @@
 //!
 //! Reads data from an SSTable file with efficient caching and lookup.
 
+use crate::cache::{BlockCache, CacheKey};
 use crate::error::{Error, Result};
 use crate::filter::{BloomFilter, Filter};
 use crate::sstable::block::Block;
@@ -16,11 +17,30 @@ use std::sync::Arc;
 
 /// SSTableReader provides read access to an SSTable file.
 ///
-/// Usage:
+/// # Basic Usage
+///
 /// ```no_run
 /// use aidb::sstable::SSTableReader;
 ///
+/// // Open without cache
 /// let reader = SSTableReader::open("table.sst").unwrap();
+/// if let Some(value) = reader.get(b"key1").unwrap() {
+///     println!("Found: {:?}", value);
+/// }
+/// ```
+///
+/// # With Block Cache
+///
+/// ```no_run
+/// use aidb::sstable::SSTableReader;
+/// use aidb::cache::BlockCache;
+/// use std::sync::Arc;
+///
+/// // Create a shared cache
+/// let cache = Arc::new(BlockCache::new(8 * 1024 * 1024)); // 8MB
+///
+/// // Open with cache
+/// let reader = SSTableReader::open_with_cache("table.sst", Some(cache)).unwrap();
 /// if let Some(value) = reader.get(b"key1").unwrap() {
 ///     println!("Found: {:?}", value);
 /// }
@@ -28,17 +48,27 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct SSTableReader {
     file: Arc<File>,
+    file_number: u64,
     index_block: IndexBlock,
     bloom_filter: Option<BloomFilter>,
     #[allow(dead_code)]
     footer: Footer,
     file_size: u64,
     file_path: std::path::PathBuf,
+    block_cache: Option<Arc<BlockCache>>,
 }
 
 impl SSTableReader {
     /// Open an SSTable file for reading
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::open_with_cache(path, None)
+    }
+
+    /// Open an SSTable file for reading with optional block cache
+    pub fn open_with_cache<P: AsRef<Path>>(
+        path: P,
+        block_cache: Option<Arc<BlockCache>>,
+    ) -> Result<Self> {
         let path = path.as_ref();
         let mut file = File::open(path)?;
 
@@ -47,6 +77,22 @@ impl SSTableReader {
         if file_size < FOOTER_SIZE as u64 {
             return Err(Error::corruption("File too small to be a valid SSTable"));
         }
+
+        // Extract file number from filename
+        // Use path hash as fallback to ensure unique cache keys
+        let file_number = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|s| s.strip_suffix(".sst"))
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or_else(|| {
+                // Fallback: use hash of full path to ensure uniqueness
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                path.hash(&mut hasher);
+                hasher.finish()
+            });
 
         // Read footer from the end of the file
         file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
@@ -95,11 +141,13 @@ impl SSTableReader {
 
         Ok(Self {
             file: Arc::new(file),
+            file_number,
             index_block,
             bloom_filter,
             footer,
             file_size,
             file_path: path.to_path_buf(),
+            block_cache,
         })
     }
 
@@ -118,8 +166,8 @@ impl SSTableReader {
             None => return Ok(None),
         };
 
-        // Read and search the data block
-        let block_data = Self::read_block_with_handle(&self.file, &handle)?;
+        // Read block with cache support
+        let block_data = self.read_block_cached(&handle)?;
         let block = Block::new(block_data)?;
 
         // Search for the key in the block
@@ -265,6 +313,27 @@ impl SSTableReader {
         Self::read_block_data(&mut file_clone, handle)
     }
 
+    /// Read a block with caching support
+    fn read_block_cached(&self, handle: &BlockHandle) -> Result<Bytes> {
+        if let Some(ref cache) = self.block_cache {
+            let cache_key = CacheKey::new(self.file_number, handle.offset);
+
+            // Check cache
+            if let Some(cached_data) = cache.get(&cache_key) {
+                return Ok(cached_data);
+            }
+
+            // Cache miss - read from file
+            let data = Self::read_block_with_handle(&self.file, handle)?;
+            // Insert into cache for future reads
+            cache.insert(cache_key, data.clone());
+            Ok(data)
+        } else {
+            // No cache - read directly from file
+            Self::read_block_with_handle(&self.file, handle)
+        }
+    }
+
     /// Get the number of data blocks
     pub fn num_blocks(&self) -> usize {
         self.index_block.len()
@@ -302,8 +371,8 @@ impl SSTableReader {
         let entry = iter.entry()?;
         let handle = entry.handle;
 
-        // Read the first data block
-        let block_data = Self::read_block_with_handle(&self.file, &handle)?;
+        // Read the first data block with cache support
+        let block_data = self.read_block_cached(&handle)?;
         let block = Block::new(block_data)?;
 
         let mut block_iter = block.iter();
