@@ -11,13 +11,15 @@ pub use bloom::BloomFilter;
 pub trait Filter {
     /// Check if a key may exist (can have false positives)
     fn may_contain(&self, key: &[u8]) -> bool;
-    
+
     /// Add a key to the filter
     fn add(&mut self, key: &[u8]);
-    
+
     /// Get the serialized representation of the filter
     fn encode(&self) -> Vec<u8>;
-    
+
     /// Create a filter from serialized data
-    fn decode(data: &[u8]) -> crate::Result<Self> where Self: Sized;
+    fn decode(data: &[u8]) -> crate::Result<Self>
+    where
+        Self: Sized;
 }

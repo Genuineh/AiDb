@@ -37,11 +37,7 @@ fn example_direct_bloom_filter() -> Result<()> {
     }
 
     println!("Added {} keys to bloom filter", keys.len());
-    println!(
-        "Filter size: {} bytes ({} bits)",
-        filter.size(),
-        filter.num_bits()
-    );
+    println!("Filter size: {} bytes ({} bits)", filter.size(), filter.num_bits());
     println!("Number of hash functions: {}", filter.num_hashes());
 
     // Test membership
