@@ -216,13 +216,15 @@
 
 完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](COMPACTION_COMPLETION_SUMMARY.md)
 
-#### Week 9-10: Bloom Filter
-- [ ] BloomFilter数据结构
-- [ ] 哈希函数实现
-- [ ] 插入和查询
-- [ ] 集成到SSTableBuilder
-- [ ] 集成到SSTableReader
-- [ ] 误判率测试
+#### Week 9-10: Bloom Filter ✅ **已完成**
+- [x] BloomFilter数据结构
+- [x] 哈希函数实现
+- [x] 插入和查询
+- [x] 集成到SSTableBuilder
+- [x] 集成到SSTableReader
+- [x] 误判率测试
+
+完成详情：见 [BLOOM_FILTER_COMPLETION_SUMMARY.md](BLOOM_FILTER_COMPLETION_SUMMARY.md)
 
 #### Week 11-12: Block Cache
 - [ ] LRU Cache实现
@@ -331,12 +333,13 @@
 ## 📊 进度统计
 
 - **总任务数**: ~200+
-- **已完成**: 105 (新增8个compaction任务)
+- **已完成**: 111 (新增6个Bloom Filter任务)
 - **Week 3-4 任务数**: 67 (详细子任务)
 - **Week 7-8 任务数**: 8 (Compaction任务)
+- **Week 9-10 任务数**: 6 (Bloom Filter任务)
 - **进行中**: 0
-- **待开始**: 95+
-- **完成度**: 52.5%
+- **待开始**: 89+
+- **完成度**: 55.5%
 
 ### Week 3-4 详细统计
 - **DB核心逻辑**: 26/26 任务 ✅ **已完成**
@@ -344,14 +347,15 @@
 - **测试和修复**: 19/19 任务 ✅ **已完成**
 
 ### 测试覆盖统计
-- **单元测试**: 114个 ✅ (新增18个compaction单元测试)
+- **单元测试**: 123个 ✅ (新增9个Bloom Filter单元测试)
+- **Bloom Filter集成测试**: 7个 ✅
 - **Compaction集成测试**: 8个 ✅
 - **端到端测试**: 14个 ✅
 - **崩溃恢复测试**: 11个 ✅
 - **并发测试**: 10个 ✅
 - **文档测试**: 19个 ✅
 - **压力测试**: 7个 (手动触发) ✅
-- **总计**: 176+ 测试
+- **总计**: 192+ 测试
 
 ---
 

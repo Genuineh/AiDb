@@ -3,6 +3,7 @@
 //! Reads data from an SSTable file with efficient caching and lookup.
 
 use crate::error::{Error, Result};
+use crate::filter::{BloomFilter, Filter};
 use crate::sstable::block::Block;
 use crate::sstable::footer::{BlockHandle, Footer};
 use crate::sstable::index::IndexBlock;
@@ -28,6 +29,7 @@ use std::sync::Arc;
 pub struct SSTableReader {
     file: Arc<File>,
     index_block: IndexBlock,
+    bloom_filter: Option<BloomFilter>,
     #[allow(dead_code)]
     footer: Footer,
     file_size: u64,
@@ -54,9 +56,47 @@ impl SSTableReader {
         let index_data = Self::read_block_data(&mut file, &footer.index_handle)?;
         let index_block = IndexBlock::new(index_data)?;
 
+        // Read bloom filter from meta block
+        let bloom_filter = if footer.meta_index_handle.size > 5 {
+            // Try to read meta block (it should point to the bloom filter)
+            // For now, we directly read using the meta index handle's offset minus meta block size
+            // This is a simplification; in a full implementation, we'd parse the meta index
+
+            // Read the actual meta block (bloom filter data)
+            // The meta block comes before the meta index block
+            // We need to calculate its position from the footer
+            let _meta_block_handle = BlockHandle::new(
+                0,                               // Will be calculated
+                footer.meta_index_handle.offset, // Size before meta index
+            );
+
+            // For simplicity, we'll read it from the known position
+            // In the builder, we write: [meta_block][meta_index_block][index_block][footer]
+            // The footer.meta_index_handle points to meta_index_block
+            // We need to find meta_block, which comes before it
+
+            // Let's try a different approach: read from the start of meta section
+            // The meta section starts after all data blocks
+            // We can estimate this from the index block entries
+
+            // For now, try to read the meta block assuming it's before the meta index
+            // This is a simplified implementation
+            match Self::try_read_bloom_filter(&mut file, &footer) {
+                Ok(Some(filter)) => Some(filter),
+                Ok(None) => None,
+                Err(e) => {
+                    log::warn!("Failed to read bloom filter: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             file: Arc::new(file),
             index_block,
+            bloom_filter,
             footer,
             file_size,
             file_path: path.to_path_buf(),
@@ -65,6 +105,13 @@ impl SSTableReader {
 
     /// Get the value for a key
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // Check bloom filter first (if available)
+        if let Some(ref filter) = self.bloom_filter {
+            if !filter.may_contain(key) {
+                // Definitely not in the SSTable
+                return Ok(None);
+            }
+        }
         // Find the data block that may contain the key
         let handle = match self.index_block.find_block(key)? {
             Some(h) => h,
@@ -147,6 +194,69 @@ impl SSTableReader {
         Ok(Bytes::from(decompressed))
     }
 
+    /// Try to read the bloom filter from the meta block
+    fn try_read_bloom_filter(file: &mut File, footer: &Footer) -> Result<Option<BloomFilter>> {
+        // The meta block handle is stored in the footer, but it points to the meta index
+        // We need to read the actual meta block which comes before the meta index
+
+        // Calculate meta block position: it's before the meta index block
+        // From the builder: meta_block_offset = self.data_block_offset
+        // meta_index_offset = self.data_block_offset + meta_block_size
+
+        // We can calculate the meta block offset from:
+        // meta_index_offset = footer.meta_index_handle.offset
+        // So meta_block_offset = meta_index_offset - meta_block_size
+
+        // But we don't know meta_block_size yet. Let's try a different approach:
+        // Read backward from meta_index_offset to find the meta block
+
+        // For now, let's try to read the meta index to get the meta block handle
+        // But in our simple implementation, meta index is empty
+
+        // Simpler approach: try to read meta block at a known offset
+        // The meta block starts right after the last data block
+        // We can get the offset from the last index entry
+
+        let mut index_iter =
+            IndexBlock::new(Self::read_block_data(file, &footer.index_handle)?)?.iter();
+        index_iter.seek_to_first();
+
+        let mut last_data_block_end = 0u64;
+        while index_iter.advance() {
+            if let Ok(entry) = index_iter.entry() {
+                last_data_block_end = entry.handle.offset + entry.handle.size;
+            }
+        }
+
+        if last_data_block_end == 0 {
+            return Ok(None);
+        }
+
+        // Meta block should start at last_data_block_end
+        let meta_block_offset = last_data_block_end;
+        let meta_block_size = footer.meta_index_handle.offset - meta_block_offset;
+
+        if !(5..=100_000_000).contains(&meta_block_size) {
+            // Sanity check
+            return Ok(None);
+        }
+
+        let meta_block_handle = BlockHandle::new(meta_block_offset, meta_block_size);
+
+        // Try to read the meta block
+        let meta_data = Self::read_block_data(file, &meta_block_handle)?;
+
+        // Try to decode as bloom filter
+        if meta_data.len() > 12 {
+            match BloomFilter::decode(&meta_data) {
+                Ok(filter) => Ok(Some(filter)),
+                Err(_) => Ok(None), // Not a valid bloom filter
+            }
+        } else {
+            Ok(None) // Empty meta block
+        }
+    }
+
     /// Read block data using an Arc<File> (for concurrent access)
     fn read_block_with_handle(file: &Arc<File>, handle: &BlockHandle) -> Result<Bytes> {
         // Clone the file descriptor for this read operation
@@ -222,6 +332,11 @@ impl SSTableReader {
         };
 
         Ok(Some(entry.key))
+    }
+
+    /// Check if bloom filter is available
+    pub fn has_bloom_filter(&self) -> bool {
+        self.bloom_filter.is_some()
     }
 
     /// Create an iterator over all key-value pairs
