@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully fixed **4 critical bugs** in the SSTable compaction system that could cause data loss, race conditions, and state inconsistencies.
+Successfully fixed **5 critical bugs** in the SSTable compaction system that could cause data loss, race conditions, and state inconsistencies.
 
 ## Bugs Fixed
 
@@ -25,6 +25,11 @@ Successfully fixed **4 critical bugs** in the SSTable compaction system that cou
 **Severity:** Medium - Resource inefficiency  
 **Status:** Fixed  
 **Solution:** Created single Arc instance and reused it throughout the operation
+
+### ✅ Bug 5: Silent Skipping of Input Files Causes Inconsistencies
+**Severity:** Critical - Silent state corruption  
+**Status:** Fixed  
+**Solution:** Changed from filter_map to explicit error handling to fail fast on invalid filenames
 
 ## Changes Made
 

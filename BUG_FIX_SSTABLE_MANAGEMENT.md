@@ -2,7 +2,7 @@
 
 ## Summary
 
-Fixed four critical bugs in the compaction system that could cause data loss, race conditions, and inconsistent state. All bugs were in the `compact()` method in `src/lib.rs`.
+Fixed **five** critical bugs in the compaction system that could cause data loss, race conditions, and inconsistent state. All bugs were in the `compact()` method in `src/lib.rs`.
 
 ## Bugs Fixed
 
@@ -136,6 +136,46 @@ sstables[task.output_level].push(Arc::clone(&new_reader));
 
 ---
 
+### 5. Silent Skipping of Input Files Causes Inconsistencies
+
+**Problem:**
+- The `filter_map` silently skipped input SSTables whose `file_number()` returned `None`
+- If any input file had a filename that didn't match the expected pattern (e.g., doesn't end with ".sst"), it would be:
+  - Removed from the in-memory sstables list (via `Arc::ptr_eq`)
+  - NOT logged as deleted in the version_set (skipped in the loop)
+  - NOT physically deleted from disk (skipped in the loop)
+- This created orphaned files in version_set and on disk that were no longer in the in-memory list
+- Led to inconsistency across database restarts
+
+**Fix:**
+- Changed from `filter_map` (silent skip) to explicit error handling (fail fast):
+```rust
+// OLD CODE (buggy - silently skips):
+let input_file_info: Vec<(u64, PathBuf)> = task.inputs
+    .iter()
+    .filter_map(|input| {
+        let file_num = input.file_number()?; // Returns None silently
+        Some((file_num, input.file_path().to_path_buf()))
+    })
+    .collect();
+
+// NEW CODE (fixed - fails fast):
+let mut input_file_info: Vec<(u64, PathBuf)> = Vec::new();
+for input in &task.inputs {
+    let file_num = input.file_number().ok_or_else(|| {
+        Error::internal(format!(
+            "Input SSTable has invalid filename: {:?}",
+            input.file_path()
+        ))
+    })?; // Fails immediately with clear error
+    input_file_info.push((file_num, input.file_path().to_path_buf()));
+}
+```
+
+**Result:** Any invalid filename is immediately detected and causes compaction to fail with a clear error, preventing silent state corruption.
+
+---
+
 ## Changes Made
 
 ### Files Modified
@@ -168,6 +208,7 @@ These fixes eliminate several critical data integrity and consistency issues:
 2. **Consistency Guarantee**: In-memory and persisted state always match
 3. **Race Condition Resolution**: No more dangling references to deleted files
 4. **Resource Efficiency**: Reduced Arc churn and potential file handle leaks
+5. **Fail-Fast Safety**: Invalid filenames detected immediately, preventing silent corruption
 
 ## Verification
 

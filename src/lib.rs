@@ -778,15 +778,18 @@ impl DB {
 
         // Collect input file numbers and paths using reliable file_number() method
         // This fixes the unreliable file-size matching bug
-        let input_file_info: Vec<(u64, std::path::PathBuf)> = task
-            .inputs
-            .iter()
-            .filter_map(|input| {
-                let file_num = input.file_number()?;
-                let file_path = input.file_path().to_path_buf();
-                Some((file_num, file_path))
-            })
-            .collect();
+        // We fail fast if any file has an invalid filename to prevent state inconsistencies
+        let mut input_file_info: Vec<(u64, std::path::PathBuf)> = Vec::new();
+        for input in &task.inputs {
+            let file_num = input.file_number().ok_or_else(|| {
+                Error::internal(format!(
+                    "Input SSTable has invalid filename: {:?}",
+                    input.file_path()
+                ))
+            })?;
+            let file_path = input.file_path().to_path_buf();
+            input_file_info.push((file_num, file_path));
+        }
 
         // Update both version set and in-memory SSTable list atomically
         // This fixes the desynchronized state bug
