@@ -90,17 +90,32 @@ impl Default for Options {
 
 /// Compression algorithms supported by AiDb.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum CompressionType {
     /// No compression.
-    None,
+    None = 0,
 
     /// Snappy compression (fast, moderate compression ratio).
     #[cfg(feature = "snappy")]
-    Snappy,
+    Snappy = 1,
 
     /// LZ4 compression (very fast, lower compression ratio).
     #[cfg(feature = "lz4-compression")]
-    Lz4,
+    Lz4 = 2,
+}
+
+impl CompressionType {
+    /// Convert from u8
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(CompressionType::None),
+            #[cfg(feature = "snappy")]
+            1 => Some(CompressionType::Snappy),
+            #[cfg(feature = "lz4-compression")]
+            2 => Some(CompressionType::Lz4),
+            _ => None,
+        }
+    }
 }
 
 impl Default for CompressionType {
