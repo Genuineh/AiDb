@@ -9,19 +9,20 @@ fn benchmark_sequential_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequential_read");
 
     for size in [100, 1000, 10000].iter() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-        // Pre-populate data
-        for i in 0..*size {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
-
         group.throughput(Throughput::Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            // Setup database once for this size parameter
+            let temp_dir = TempDir::new().unwrap();
+            let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+            // Pre-populate data
+            for i in 0..size {
+                let key = format!("key{:08}", i);
+                let value = format!("value{:08}", i);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+            }
+            db.flush().unwrap();
+
             b.iter(|| {
                 for i in 0..size {
                     let key = format!("key{:08}", i);
@@ -39,19 +40,20 @@ fn benchmark_random_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("random_read");
 
     for size in [100, 1000, 10000].iter() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-        // Pre-populate data
-        for i in 0..*size {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
-
         group.throughput(Throughput::Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            // Setup database once for this size parameter
+            let temp_dir = TempDir::new().unwrap();
+            let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+            // Pre-populate data
+            for i in 0..size {
+                let key = format!("key{:08}", i);
+                let value = format!("value{:08}", i);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+            }
+            db.flush().unwrap();
+
             b.iter(|| {
                 use rand::Rng;
                 let mut rng = rand::rng();
@@ -72,25 +74,26 @@ fn benchmark_random_read(c: &mut Criterion) {
 fn benchmark_cache_hit(c: &mut Criterion) {
     let mut group = c.benchmark_group("cache_hit");
 
-    let temp_dir = TempDir::new().unwrap();
-    let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-    // Pre-populate data
-    for i in 0..1000 {
-        let key = format!("key{:08}", i);
-        let value = format!("value{:08}", i);
-        db.put(key.as_bytes(), value.as_bytes()).unwrap();
-    }
-    db.flush().unwrap();
-
-    // Warm up cache by reading all keys once
-    for i in 0..1000 {
-        let key = format!("key{:08}", i);
-        let _ = db.get(key.as_bytes()).unwrap();
-    }
-
     group.throughput(Throughput::Elements(1000));
     group.bench_function("cached_reads", |b| {
+        // Setup database once for all iterations
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Pre-populate data
+        for i in 0..1000 {
+            let key = format!("key{:08}", i);
+            let value = format!("value{:08}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
+        // Warm up cache by reading all keys once
+        for i in 0..1000 {
+            let key = format!("key{:08}", i);
+            let _ = db.get(key.as_bytes()).unwrap();
+        }
+
         b.iter(|| {
             for i in 0..1000 {
                 let key = format!("key{:08}", i);
@@ -106,19 +109,20 @@ fn benchmark_cache_hit(c: &mut Criterion) {
 fn benchmark_read_missing_keys(c: &mut Criterion) {
     let mut group = c.benchmark_group("read_missing");
 
-    let temp_dir = TempDir::new().unwrap();
-    let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-    // Pre-populate data with keys 0-999
-    for i in 0..1000 {
-        let key = format!("key{:08}", i);
-        let value = format!("value{:08}", i);
-        db.put(key.as_bytes(), value.as_bytes()).unwrap();
-    }
-    db.flush().unwrap();
-
     group.throughput(Throughput::Elements(1000));
     group.bench_function("missing_keys", |b| {
+        // Setup database once for all iterations
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Pre-populate data with keys 0-999
+        for i in 0..1000 {
+            let key = format!("key{:08}", i);
+            let value = format!("value{:08}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
         b.iter(|| {
             // Try to read keys 1000-1999 (which don't exist)
             for i in 1000..2000 {
@@ -198,4 +202,3 @@ criterion_group!(
     benchmark_read_with_bloom_filter
 );
 criterion_main!(benches);
-

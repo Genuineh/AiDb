@@ -91,18 +91,19 @@ fn benchmark_batch_write(c: &mut Criterion) {
 fn benchmark_overwrite(c: &mut Criterion) {
     let mut group = c.benchmark_group("overwrite");
 
-    let temp_dir = TempDir::new().unwrap();
-    let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-    // Pre-populate with data
-    for i in 0..1000 {
-        let key = format!("key{:08}", i);
-        let value = format!("initial_value{:08}", i);
-        db.put(key.as_bytes(), value.as_bytes()).unwrap();
-    }
-
     group.throughput(Throughput::Elements(1000));
     group.bench_function("overwrite_1000", |b| {
+        // Setup database once for all iterations
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Pre-populate with data
+        for i in 0..1000 {
+            let key = format!("key{:08}", i);
+            let value = format!("initial_value{:08}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+
         b.iter(|| {
             for i in 0..1000 {
                 let key = format!("key{:08}", i);
@@ -166,4 +167,3 @@ criterion_group!(
     benchmark_write_with_compression
 );
 criterion_main!(benches);
-

@@ -121,10 +121,7 @@ fn example_batch_performance() -> Result<(), Box<dyn std::error::Error>> {
     }
     let individual_time = start.elapsed();
 
-    println!(
-        "100 individual writes: {:.2}ms",
-        individual_time.as_secs_f64() * 1000.0
-    );
+    println!("100 individual writes: {:.2}ms", individual_time.as_secs_f64() * 1000.0);
 
     // Batch write
     let start = std::time::Instant::now();

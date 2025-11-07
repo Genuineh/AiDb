@@ -535,8 +535,17 @@ impl DB {
     /// Applies a batch of write operations atomically.
     ///
     /// All operations in the batch are applied together as a single atomic unit.
-    /// Either all operations succeed, or none of them are applied.
-    /// This provides better performance than individual writes and ensures consistency.
+    /// All operations will be written to WAL first for durability, then applied to
+    /// the MemTable. All operations in a batch share the same base sequence number
+    /// for consistency.
+    ///
+    /// # Durability Guarantees
+    ///
+    /// - All operations are written to WAL before being applied to MemTable
+    /// - A single WAL sync occurs after all batch entries are written
+    /// - On recovery, all WAL entries for the batch will be replayed together
+    /// - If any operation fails during WAL write, the entire batch fails and no
+    ///   operations are applied to MemTable
     ///
     /// # Arguments
     ///
@@ -544,8 +553,10 @@ impl DB {
     ///
     /// # Errors
     ///
-    /// Returns an error if any operation fails. In case of error, no operations
-    /// from the batch will be applied (atomicity guarantee).
+    /// Returns an error if WAL writing or MemTable operations fail.
+    /// If WAL writing fails, no operations are applied to MemTable.
+    /// If MemTable operations fail after WAL writing succeeds, the operations
+    /// will be recovered from WAL on next database open.
     ///
     /// # Example
     ///
@@ -567,6 +578,10 @@ impl DB {
         if batch.is_empty() {
             return Ok(());
         }
+
+        // Allocate sequence numbers for the entire batch upfront
+        let batch_size = batch.len() as u64;
+        let base_seq = self.sequence.fetch_add(batch_size, Ordering::SeqCst) + 1;
 
         // Write all operations to WAL first (for durability)
         if self.options.use_wal {
@@ -602,13 +617,12 @@ impl DB {
             }
         }
 
-        // Apply all operations to MemTable
+        // Apply all operations to MemTable with consecutive sequence numbers
         {
             let memtable = self.memtable.read();
+            let mut seq = base_seq;
 
             for op in batch.iter() {
-                let seq = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
-
                 match op {
                     write_batch::WriteOp::Put { key, value } => {
                         memtable.put(key, value, seq);
@@ -617,6 +631,7 @@ impl DB {
                         memtable.delete(key, seq);
                     }
                 }
+                seq += 1;
             }
         }
 
@@ -1919,4 +1934,3 @@ mod tests {
         assert!(!immutable.is_empty() || db.sstables.read()[0].len() > 0);
     }
 }
-

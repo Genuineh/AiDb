@@ -80,7 +80,8 @@ impl WriteBatch {
     pub fn put(&mut self, key: &[u8], value: &[u8]) {
         let op_size = key.len() + value.len() + 8; // Approximate overhead
         self.approximate_size += op_size;
-        self.operations.push_back(WriteOp::Put { key: key.to_vec(), value: value.to_vec() });
+        self.operations
+            .push_back(WriteOp::Put { key: key.to_vec(), value: value.to_vec() });
     }
 
     /// Adds a Delete operation to the batch.
