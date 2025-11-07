@@ -44,6 +44,7 @@
 #![warn(rust_2018_idioms)]
 
 // Module declarations
+pub mod cache;
 pub mod compaction;
 pub mod config;
 pub mod error;
@@ -56,6 +57,7 @@ pub mod wal;
 pub use config::Options;
 pub use error::{Error, Result};
 
+use cache::BlockCache;
 use compaction::{CompactionJob, CompactionPicker, VersionEdit, VersionSet};
 use memtable::MemTable;
 use parking_lot::RwLock;
@@ -109,6 +111,9 @@ pub struct DB {
 
     /// Compaction picker
     compaction_picker: Arc<CompactionPicker>,
+
+    /// Block cache for SSTable data blocks
+    block_cache: Arc<BlockCache>,
 }
 
 impl DB {
@@ -272,6 +277,9 @@ impl DB {
         // Step 6: Load existing SSTables
         let mut sstables: Vec<Vec<Arc<SSTableReader>>> = vec![Vec::new(); options.max_levels];
 
+        // Step 6a: Create block cache (needed before loading SSTables)
+        let block_cache = Arc::new(BlockCache::new(options.block_cache_size));
+
         // Scan directory for SSTable files (*.sst)
         if path.exists() {
             if let Ok(entries) = std::fs::read_dir(&path) {
@@ -290,7 +298,8 @@ impl DB {
 
                 // Load all SSTables into Level 0
                 for sst_path in sst_files {
-                    match SSTableReader::open(&sst_path) {
+                    match SSTableReader::open_with_cache(&sst_path, Some(Arc::clone(&block_cache)))
+                    {
                         Ok(reader) => {
                             sstables[0].push(Arc::new(reader));
                             log::info!("Loaded SSTable: {:?}", sst_path);
@@ -324,6 +333,7 @@ impl DB {
             wal_file_number: Arc::new(AtomicU64::new(wal_number)),
             version_set: Arc::new(RwLock::new(version_set)),
             compaction_picker: Arc::new(compaction_picker),
+            block_cache,
         })
     }
 
@@ -613,8 +623,11 @@ impl DB {
             file_size
         );
 
-        // Open the SSTable for reading
-        let reader = Arc::new(SSTableReader::open(&sstable_path)?);
+        // Open the SSTable for reading with block cache
+        let reader = Arc::new(SSTableReader::open_with_cache(
+            &sstable_path,
+            Some(Arc::clone(&self.block_cache)),
+        )?);
 
         // Add to Level 0 at the front (newest files first)
         {
@@ -767,7 +780,10 @@ impl DB {
         }
 
         // Open the new SSTable reader once and reuse it (fixes duplicate Arc bug)
-        let new_reader = Arc::new(SSTableReader::open(&result.output_path)?);
+        let new_reader = Arc::new(SSTableReader::open_with_cache(
+            &result.output_path,
+            Some(Arc::clone(&self.block_cache)),
+        )?);
 
         // Get metadata from the new reader
         let smallest_key = new_reader
@@ -869,6 +885,42 @@ impl DB {
         log::info!("Database closed successfully");
 
         Ok(())
+    }
+
+    /// Get block cache statistics.
+    ///
+    /// Returns statistics about cache hits, misses, and evictions.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use aidb::{DB, Options};
+    ///
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// let db = DB::open("./data", Options::default())?;
+    ///
+    /// // Perform some operations
+    /// db.put(b"key1", b"value1")?;
+    /// db.get(b"key1")?;
+    ///
+    /// // Check cache statistics
+    /// let stats = db.cache_stats();
+    /// println!("Cache hit rate: {:.2}%", stats.hit_rate() * 100.0);
+    /// println!("Total lookups: {}", stats.lookups);
+    /// println!("Hits: {}, Misses: {}", stats.hits, stats.misses);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn cache_stats(&self) -> cache::CacheStats {
+        self.block_cache.stats()
+    }
+
+    /// Clear the block cache.
+    ///
+    /// This removes all cached blocks, which may temporarily reduce read performance
+    /// but can be useful for benchmarking or memory management.
+    pub fn clear_cache(&self) {
+        self.block_cache.clear();
     }
 }
 
@@ -1440,5 +1492,146 @@ mod tests {
                 assert_eq!(db.get(key.as_bytes()).unwrap(), None);
             }
         }
+    }
+
+    #[test]
+    fn test_block_cache_hit_miss() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write some data and flush to create SSTables
+        for i in 0..100 {
+            let key = format!("key{:04}", i);
+            let value = format!("value{:04}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+
+        // Clear cache stats
+        db.block_cache.reset_stats();
+
+        // First read - should be cache misses
+        let _ = db.get(b"key0001").unwrap();
+        let stats = db.cache_stats();
+        assert!(stats.misses > 0, "Should have cache misses");
+
+        // Second read of same key - should hit cache
+        let initial_hits = stats.hits;
+        let _ = db.get(b"key0001").unwrap();
+        let stats = db.cache_stats();
+        assert!(
+            stats.hits > initial_hits,
+            "Should have cache hits on second read"
+        );
+
+        // Verify hit rate increases
+        assert!(stats.hit_rate() > 0.0);
+    }
+
+    #[test]
+    fn test_block_cache_stats() {
+        let temp_dir = TempDir::new().unwrap();
+        let opts = Options::default().block_cache_size(1024 * 1024); // 1MB cache
+        let db = DB::open(temp_dir.path(), opts).unwrap();
+
+        // Initial stats should be zero
+        let stats = db.cache_stats();
+        assert_eq!(stats.lookups, 0);
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+
+        // Write and flush
+        for i in 0..50 {
+            db.put(format!("key{}", i).as_bytes(), b"value").unwrap();
+        }
+        db.flush().unwrap();
+
+        // Read some keys
+        for i in 0..10 {
+            let _ = db.get(format!("key{}", i).as_bytes()).unwrap();
+        }
+
+        let stats = db.cache_stats();
+        assert!(stats.lookups > 0, "Should have cache lookups");
+        assert!(
+            stats.hits + stats.misses == stats.lookups,
+            "Hits + misses should equal lookups"
+        );
+    }
+
+    #[test]
+    fn test_block_cache_clear() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Write and flush
+        for i in 0..50 {
+            db.put(format!("key{}", i).as_bytes(), b"value").unwrap();
+        }
+        db.flush().unwrap();
+
+        // Read to populate cache
+        for i in 0..10 {
+            let _ = db.get(format!("key{}", i).as_bytes()).unwrap();
+        }
+
+        // Cache should have entries
+        assert!(db.block_cache.len() > 0, "Cache should have entries");
+
+        // Clear cache
+        db.clear_cache();
+
+        // Cache should be empty
+        assert_eq!(db.block_cache.len(), 0, "Cache should be empty after clear");
+    }
+
+    #[test]
+    fn test_block_cache_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let opts = Options::default().block_cache_size(0); // Disable cache
+        let db = DB::open(temp_dir.path(), opts).unwrap();
+
+        // Write and flush
+        for i in 0..50 {
+            db.put(format!("key{}", i).as_bytes(), b"value").unwrap();
+        }
+        db.flush().unwrap();
+
+        // Read some keys
+        for i in 0..10 {
+            let _ = db.get(format!("key{}", i).as_bytes()).unwrap();
+        }
+
+        // With cache disabled, should always have zero cache entries
+        assert_eq!(db.block_cache.len(), 0, "Cache should be empty when disabled");
+    }
+
+    #[test]
+    fn test_block_cache_shared_across_sstables() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Create multiple SSTables
+        for batch in 0..3 {
+            for i in 0..20 {
+                let key = format!("key{:02}_{:03}", batch, i);
+                db.put(key.as_bytes(), b"value").unwrap();
+            }
+            db.flush().unwrap();
+        }
+
+        db.block_cache.reset_stats();
+
+        // Read from different SSTables
+        let _ = db.get(b"key00_001").unwrap(); // From first SSTable
+        let _ = db.get(b"key01_001").unwrap(); // From second SSTable
+        let _ = db.get(b"key02_001").unwrap(); // From third SSTable
+
+        // All should share the same cache
+        let stats = db.cache_stats();
+        assert!(
+            stats.lookups > 0,
+            "Should have lookups across multiple SSTables"
+        );
     }
 }
