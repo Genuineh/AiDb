@@ -26,9 +26,11 @@ AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架�
 - ✅ SSTable分层存储，支持前缀压缩和索引
 - ✅ Flush机制：MemTable自动刷新到SSTable
 - ✅ 数据持久化和恢复
-- ⏳ Bloom Filter加速查询（阶段B）
-- ⏳ Leveled Compaction优化空间利用
-- ⏳ 压缩支持（Snappy/LZ4）
+- ✅ Bloom Filter加速查询
+- ✅ Leveled Compaction优化空间利用
+- ✅ Snappy压缩支持（可选）
+- ✅ Block Cache缓存热数据
+- ✅ WriteBatch原子批量写入
 
 ### 集群版特性
 - 🔄 Primary-Replica架构，Replica作为缓存层
@@ -88,7 +90,7 @@ cargo build --release
 
 ### 基础使用（单机版）
 ```rust
-use aidb::{DB, Options};
+use aidb::{DB, Options, WriteBatch};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 打开数据库
@@ -99,13 +101,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     db.put(b"key1", b"value1")?;
     db.put(b"key2", b"value2")?;
     
+    // 批量写入（原子操作）
+    let mut batch = WriteBatch::new();
+    batch.put(b"key3", b"value3");
+    batch.put(b"key4", b"value4");
+    batch.delete(b"key1");
+    db.write(batch)?;
+    
     // 读取数据
-    if let Some(value) = db.get(b"key1")? {
+    if let Some(value) = db.get(b"key2")? {
         println!("value: {:?}", value);
     }
     
     // 删除数据
-    db.delete(b"key1")?;
+    db.delete(b"key2")?;
 
     // 手动刷新到磁盘
     db.flush()?;
@@ -154,19 +163,22 @@ async fn main() -> Result<()> {
 
 ## 📅 项目状态
 
-**当前阶段**: 🚧 阶段A - 单机版MVP开发中
+**当前阶段**: 🚧 阶段B - 性能优化
 
 - ✅ 项目基础设施
 - ✅ WAL实现
 - ✅ MemTable实现
 - ✅ SSTable实现
-- ✅ Flush机制（刚完成！）
-- ⏳ Compaction实现
-- ⏳ 性能优化
+- ✅ Flush机制
+- ✅ Compaction实现
+- ✅ Bloom Filter实现
+- ✅ Block Cache实现
+- ✅ 压缩和优化（刚完成！）
+- ⏳ 高级功能开发
 
-**最新成就**: Flush功能实现完成（Day 19-21），91个测试全部通过！
+**最新成就**: Week 13-14压缩和优化完成！WriteBatch、Snappy压缩集成、完整基准测试套件。
 
-完整进度查看：[TODO.md](TODO.md) | [Flush完成总结](FLUSH_COMPLETION_SUMMARY.md)
+完整进度查看：[TODO.md](TODO.md) | [Week 13-14完成总结](WEEK_13_14_COMPLETION_SUMMARY.md)
 
 ## 📚 文档导航
 
@@ -230,9 +242,14 @@ aidb/
 - [x] MemTable实现  
 - [x] SSTable实现
 - [x] DB引擎整合
-- [x] Flush机制 ✅ **刚完成**
-- [ ] Compaction实现
-- [ ] 性能优化
+- [x] Flush机制
+- [x] Compaction实现
+- [x] Bloom Filter实现
+- [x] Block Cache实现
+- [x] 压缩和优化 ✅ **刚完成**
+- [ ] 高级功能
+- [ ] 测试完善
+- [ ] 文档和发布
 
 ### 阶段1: RPC网络层 (Week 21-24)
 - [ ] gRPC框架
