@@ -1527,10 +1527,7 @@ mod tests {
         let initial_hits = stats.hits;
         let _ = db.get(b"key0001").unwrap();
         let stats = db.cache_stats();
-        assert!(
-            stats.hits > initial_hits,
-            "Should have cache hits on second read"
-        );
+        assert!(stats.hits > initial_hits, "Should have cache hits on second read");
 
         // Verify hit rate increases
         assert!(stats.hit_rate() > 0.0);
@@ -1561,10 +1558,7 @@ mod tests {
 
         let stats = db.cache_stats();
         assert!(stats.lookups > 0, "Should have cache lookups");
-        assert!(
-            stats.hits + stats.misses == stats.lookups,
-            "Hits + misses should equal lookups"
-        );
+        assert!(stats.hits + stats.misses == stats.lookups, "Hits + misses should equal lookups");
     }
 
     #[test]
@@ -1584,7 +1578,7 @@ mod tests {
         }
 
         // Cache should have entries
-        assert!(db.block_cache.len() > 0, "Cache should have entries");
+        assert!(!db.block_cache.is_empty(), "Cache should have entries");
 
         // Clear cache
         db.clear_cache();
@@ -1637,9 +1631,6 @@ mod tests {
 
         // All should share the same cache
         let stats = db.cache_stats();
-        assert!(
-            stats.lookups > 0,
-            "Should have lookups across multiple SSTables"
-        );
+        assert!(stats.lookups > 0, "Should have lookups across multiple SSTables");
     }
 }

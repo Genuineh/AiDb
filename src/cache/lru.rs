@@ -7,7 +7,6 @@ use bytes::Bytes;
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 /// A unique identifier for a cached block.
 ///
@@ -188,8 +187,7 @@ impl BlockCache {
         if let Some(old_value) = cache.get(&key) {
             // Update size
             let old_size = old_value.len();
-            self.current_size
-                .fetch_sub(old_size as u64, Ordering::Relaxed);
+            self.current_size.fetch_sub(old_size as u64, Ordering::Relaxed);
 
             // Remove old position in LRU queue
             lru_queue.retain(|k| k != &key);
@@ -200,8 +198,7 @@ impl BlockCache {
         lru_queue.push_back(key);
 
         // Update size
-        self.current_size
-            .fetch_add(value_size as u64, Ordering::Relaxed);
+        self.current_size.fetch_add(value_size as u64, Ordering::Relaxed);
 
         // Update stats
         drop(cache);
@@ -244,8 +241,7 @@ impl BlockCache {
             if let Some(value) = cache.remove(&key) {
                 // Update size
                 let size = value.len();
-                self.current_size
-                    .fetch_sub(size as u64, Ordering::Relaxed);
+                self.current_size.fetch_sub(size as u64, Ordering::Relaxed);
 
                 // Update stats
                 drop(cache);
@@ -302,6 +298,7 @@ impl BlockCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_cache_basic_operations() {
