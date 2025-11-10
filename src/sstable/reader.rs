@@ -431,13 +431,13 @@ impl SSTableReader {
     pub fn keys(&self) -> Result<Vec<Vec<u8>>> {
         let mut keys = Vec::new();
         let mut iter = self.iter();
-        
+
         iter.seek_to_first()?;
         while iter.valid() {
             keys.push(iter.key().to_vec());
             iter.advance()?;
         }
-        
+
         Ok(keys)
     }
 

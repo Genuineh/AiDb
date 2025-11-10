@@ -225,37 +225,37 @@ impl Options {
     }
 
     /// Creates a minimal configuration for testing or development.
-    /// 
+    ///
     /// This uses smaller sizes and disables features that slow down tests.
     pub fn for_testing() -> Self {
         Self {
             create_if_missing: true,
             error_if_exists: false,
-            memtable_size: 64 * 1024,          // 64KB
+            memtable_size: 64 * 1024, // 64KB
             level0_compaction_threshold: 2,
             level_size_multiplier: 10,
-            base_level_size: 1024 * 1024,      // 1MB
+            base_level_size: 1024 * 1024, // 1MB
             max_levels: 4,
-            block_size: 1024,                   // 1KB
-            block_cache_size: 1024 * 1024,     // 1MB
-            use_bloom_filter: false,            // Disable for faster tests
+            block_size: 1024,              // 1KB
+            block_cache_size: 1024 * 1024, // 1MB
+            use_bloom_filter: false,       // Disable for faster tests
             bloom_filter_fp_rate: 0.01,
             compression: CompressionType::None, // Disable for faster tests
             use_wal: true,
-            sync_wal: false,                    // Disable for faster tests
+            sync_wal: false, // Disable for faster tests
             compaction_threads: 1,
         }
     }
 
     /// Creates a configuration optimized for high write throughput.
-    /// 
+    ///
     /// This uses larger buffers and less aggressive compaction.
     pub fn for_high_write_throughput() -> Self {
         Self {
             create_if_missing: true,
             error_if_exists: false,
-            memtable_size: 16 * 1024 * 1024,   // 16MB
-            level0_compaction_threshold: 8,     // More files before compaction
+            memtable_size: 16 * 1024 * 1024, // 16MB
+            level0_compaction_threshold: 8,  // More files before compaction
             level_size_multiplier: 10,
             base_level_size: 100 * 1024 * 1024, // 100MB
             max_levels: 7,
@@ -265,27 +265,27 @@ impl Options {
             bloom_filter_fp_rate: 0.01,
             compression: CompressionType::default(),
             use_wal: true,
-            sync_wal: false,                    // Trade durability for speed
+            sync_wal: false, // Trade durability for speed
             compaction_threads: 2,
         }
     }
 
     /// Creates a configuration optimized for read-heavy workloads.
-    /// 
+    ///
     /// This uses larger caches and bloom filters.
     pub fn for_high_read_throughput() -> Self {
         Self {
             create_if_missing: true,
             error_if_exists: false,
-            memtable_size: 4 * 1024 * 1024,     // 4MB
+            memtable_size: 4 * 1024 * 1024, // 4MB
             level0_compaction_threshold: 4,
             level_size_multiplier: 10,
-            base_level_size: 10 * 1024 * 1024,  // 10MB
+            base_level_size: 10 * 1024 * 1024, // 10MB
             max_levels: 7,
             block_size: 8 * 1024,               // 8KB
             block_cache_size: 64 * 1024 * 1024, // 64MB - large cache
             use_bloom_filter: true,
-            bloom_filter_fp_rate: 0.001,        // Lower FP rate
+            bloom_filter_fp_rate: 0.001, // Lower FP rate
             compression: CompressionType::default(),
             use_wal: true,
             sync_wal: true,
@@ -310,14 +310,10 @@ impl Options {
             ));
         }
         if self.level0_compaction_threshold == 0 {
-            return Err(crate::Error::invalid_argument(
-                "level0_compaction_threshold must be > 0",
-            ));
+            return Err(crate::Error::invalid_argument("level0_compaction_threshold must be > 0"));
         }
         if self.level_size_multiplier == 0 {
-            return Err(crate::Error::invalid_argument(
-                "level_size_multiplier must be > 0",
-            ));
+            return Err(crate::Error::invalid_argument("level_size_multiplier must be > 0"));
         }
         if self.base_level_size == 0 {
             return Err(crate::Error::invalid_argument("base_level_size must be > 0"));
@@ -431,45 +427,45 @@ mod tests {
     #[test]
     fn test_validation_comprehensive() {
         let mut opts = Options::default();
-        
+
         // Valid config
         assert!(opts.validate().is_ok());
-        
+
         // Invalid memtable_size
         opts = Options::default();
         opts.memtable_size = 0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid block_size
         opts = Options::default();
         opts.block_size = 0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid max_levels
         opts = Options::default();
         opts.max_levels = 0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid bloom_filter_fp_rate (too low)
         opts = Options::default();
         opts.bloom_filter_fp_rate = 0.0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid bloom_filter_fp_rate (too high)
         opts = Options::default();
         opts.bloom_filter_fp_rate = 1.0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid level0_compaction_threshold
         opts = Options::default();
         opts.level0_compaction_threshold = 0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid level_size_multiplier
         opts = Options::default();
         opts.level_size_multiplier = 0;
         assert!(opts.validate().is_err());
-        
+
         // Invalid base_level_size
         opts = Options::default();
         opts.base_level_size = 0;

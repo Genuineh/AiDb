@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::{DB, Result};
+use crate::{Result, DB};
 
 /// A snapshot represents a point-in-time view of the database.
 ///
@@ -40,7 +40,7 @@ use crate::{DB, Result};
 pub struct Snapshot {
     /// Reference to the database
     db: Arc<DB>,
-    
+
     /// Sequence number at the time of snapshot creation
     /// All reads will be filtered to only see entries with seq <= snapshot_seq
     sequence: u64,
@@ -80,9 +80,7 @@ impl Snapshot {
 
 impl std::fmt::Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Snapshot")
-            .field("sequence", &self.sequence)
-            .finish()
+        f.debug_struct("Snapshot").field("sequence", &self.sequence).finish()
     }
 }
 
@@ -110,7 +108,7 @@ mod tests {
 
         // Snapshot should see old value
         assert_eq!(snapshot.get(b"key1").unwrap(), Some(b"value1".to_vec()));
-        
+
         // Snapshot should not see key2
         assert_eq!(snapshot.get(b"key2").unwrap(), None);
 
@@ -174,15 +172,15 @@ mod tests {
         let db = Arc::new(db);
 
         db.put(b"key", b"value").unwrap();
-        
+
         let snapshot = db.snapshot();
         let seq1 = snapshot.sequence();
-        
+
         db.put(b"another", b"value").unwrap();
-        
+
         let snapshot2 = db.snapshot();
         let seq2 = snapshot2.sequence();
-        
+
         // Second snapshot should have higher sequence number
         assert!(seq2 > seq1);
     }

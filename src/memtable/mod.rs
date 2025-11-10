@@ -262,7 +262,7 @@ impl MemTable {
     /// This collects all user keys, removing duplicates (keeping only latest version).
     pub fn keys(&self) -> Vec<Vec<u8>> {
         use std::collections::BTreeSet;
-        
+
         let mut keys = BTreeSet::new();
         for entry in self.data.iter() {
             keys.insert(entry.key().user_key().to_vec());

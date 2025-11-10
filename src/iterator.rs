@@ -43,16 +43,16 @@ use crate::{Result, DB};
 pub struct DBIterator {
     /// Reference to the database
     db: Arc<DB>,
-    
+
     /// Current key-value pair
     current: Option<(Vec<u8>, Vec<u8>)>,
-    
+
     /// Sequence number for consistent reads
     sequence: u64,
-    
+
     /// All keys in sorted order (cached for simplicity)
     keys: Vec<Vec<u8>>,
-    
+
     /// Current position in the keys vector
     position: usize,
 }
@@ -60,23 +60,17 @@ pub struct DBIterator {
 impl DBIterator {
     /// Creates a new iterator starting from the beginning.
     pub(crate) fn new(db: Arc<DB>, sequence: u64) -> Result<Self> {
-        let mut iter = Self {
-            db,
-            current: None,
-            sequence,
-            keys: Vec::new(),
-            position: 0,
-        };
-        
+        let mut iter = Self { db, current: None, sequence, keys: Vec::new(), position: 0 };
+
         // Collect all keys from the database
         iter.collect_keys(None, None)?;
-        
+
         // Position at the first key
         if !iter.keys.is_empty() {
             iter.position = 0;
             iter.load_current()?;
         }
-        
+
         Ok(iter)
     }
 
@@ -87,38 +81,32 @@ impl DBIterator {
         start: Option<&[u8]>,
         end: Option<&[u8]>,
     ) -> Result<Self> {
-        let mut iter = Self {
-            db,
-            current: None,
-            sequence,
-            keys: Vec::new(),
-            position: 0,
-        };
-        
+        let mut iter = Self { db, current: None, sequence, keys: Vec::new(), position: 0 };
+
         // Collect keys in the specified range
         iter.collect_keys(start.map(|s| s.to_vec()), end.map(|e| e.to_vec()))?;
-        
+
         // Position at the first key
         if !iter.keys.is_empty() {
             iter.position = 0;
             iter.load_current()?;
         }
-        
+
         Ok(iter)
     }
 
     /// Collects all keys from the database that fall within the specified range.
     fn collect_keys(&mut self, start: Option<Vec<u8>>, end: Option<Vec<u8>>) -> Result<()> {
         use std::collections::BTreeSet;
-        
+
         let mut all_keys = BTreeSet::new();
-        
+
         // Collect from current MemTable
         {
             let memtable = self.db.memtable.read();
             all_keys.extend(memtable.keys());
         }
-        
+
         // Collect from immutable MemTables
         {
             let immutable = self.db.immutable_memtables.read();
@@ -126,7 +114,7 @@ impl DBIterator {
                 all_keys.extend(memtable.keys());
             }
         }
-        
+
         // Collect from SSTables
         {
             let sstables = self.db.sstables.read();
@@ -136,17 +124,17 @@ impl DBIterator {
                 }
             }
         }
-        
+
         // Filter by range and convert to Vec
         self.keys = all_keys
             .into_iter()
             .filter(|key| {
-                let after_start = start.as_ref().map_or(true, |s| key >= s);
-                let before_end = end.as_ref().map_or(true, |e| key < e);
+                let after_start = start.as_ref().is_none_or(|s| key >= s);
+                let before_end = end.as_ref().is_none_or(|e| key < e);
                 after_start && before_end
             })
             .collect();
-        
+
         Ok(())
     }
 
@@ -156,9 +144,9 @@ impl DBIterator {
             self.current = None;
             return Ok(());
         }
-        
+
         let key = &self.keys[self.position];
-        
+
         // Get the value using the snapshot sequence
         if let Some(value) = self.db.get_at_sequence(key, self.sequence)? {
             self.current = Some((key.clone(), value));
@@ -166,7 +154,7 @@ impl DBIterator {
             // Key was deleted or doesn't exist at this sequence, skip it
             self.next();
         }
-        
+
         Ok(())
     }
 
@@ -292,11 +280,7 @@ impl DB {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn scan(
-        self: &Arc<Self>,
-        start: Option<&[u8]>,
-        end: Option<&[u8]>,
-    ) -> Result<DBIterator> {
+    pub fn scan(self: &Arc<Self>, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<DBIterator> {
         let seq = self.sequence.load(std::sync::atomic::Ordering::SeqCst);
         DBIterator::new_range(Arc::clone(self), seq, start, end)
     }
@@ -345,7 +329,7 @@ mod tests {
         db.put(b"e", b"5").unwrap();
 
         let mut iter = db.iter();
-        
+
         // Seek to "c"
         iter.seek(b"c");
         assert!(iter.valid());
@@ -370,13 +354,13 @@ mod tests {
 
         let mut iter = db.iter();
         iter.seek_to_last();
-        
+
         assert!(iter.valid());
         assert_eq!(iter.key(), b"key3");
-        
+
         iter.prev();
         assert_eq!(iter.key(), b"key2");
-        
+
         iter.prev();
         assert_eq!(iter.key(), b"key1");
     }
@@ -396,7 +380,7 @@ mod tests {
         // Scan from "b" to "d" (exclusive)
         let mut iter = db.scan(Some(b"b"), Some(b"d")).unwrap();
         let mut keys = Vec::new();
-        
+
         while iter.valid() {
             keys.push(iter.key().to_vec());
             iter.next();
@@ -414,14 +398,14 @@ mod tests {
         db.put(b"key1", b"value1").unwrap();
         db.put(b"key2", b"value2").unwrap();
         db.put(b"key3", b"value3").unwrap();
-        
+
         // Delete key2
         db.delete(b"key2").unwrap();
 
         // Iterator should skip deleted keys
         let mut iter = db.iter();
         let mut keys = Vec::new();
-        
+
         while iter.valid() {
             keys.push(iter.key().to_vec());
             iter.next();
@@ -436,7 +420,7 @@ mod tests {
         let db = DB::open(tmp_dir.path(), Options::default()).unwrap();
         let db = Arc::new(db);
 
-        let mut iter = db.iter();
+        let iter = db.iter();
         assert!(!iter.valid());
     }
 }
