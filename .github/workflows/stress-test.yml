@@ -140,7 +140,7 @@ jobs:
 
       - name: Upload stress test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: stress-test-report-${{ matrix.os }}-${{ github.run_number }}
           path: stress-test-report.txt
