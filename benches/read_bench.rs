@@ -142,10 +142,7 @@ fn benchmark_read_with_bloom_filter(c: &mut Criterion) {
     // Without bloom filter
     {
         let temp_dir = TempDir::new().unwrap();
-        let opts = Options {
-            use_bloom_filter: false,
-            ..Default::default()
-        };
+        let opts = Options { use_bloom_filter: false, ..Default::default() };
         let db = DB::open(temp_dir.path(), opts).unwrap();
 
         for i in 0..1000 {
