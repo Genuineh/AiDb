@@ -121,14 +121,14 @@ jobs:
           cat benchmark-report.txt
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-results-${{ matrix.os }}-${{ github.run_number }}
           path: target/criterion/
           retention-days: 90
 
       - name: Upload benchmark report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-report-${{ matrix.os }}-${{ github.run_number }}
           path: benchmark-report.txt
