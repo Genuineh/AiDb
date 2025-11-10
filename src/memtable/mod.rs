@@ -256,6 +256,19 @@ impl MemTable {
     pub fn start_sequence(&self) -> u64 {
         self.start_sequence
     }
+
+    /// Returns all unique user keys in the MemTable.
+    ///
+    /// This collects all user keys, removing duplicates (keeping only latest version).
+    pub fn keys(&self) -> Vec<Vec<u8>> {
+        use std::collections::BTreeSet;
+
+        let mut keys = BTreeSet::new();
+        for entry in self.data.iter() {
+            keys.insert(entry.key().user_key().to_vec());
+        }
+        keys.into_iter().collect()
+    }
 }
 
 /// Iterator over MemTable entries in sorted order.

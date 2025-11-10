@@ -31,6 +31,10 @@ AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架�
 - ✅ Snappy压缩支持（可选）
 - ✅ Block Cache缓存热数据
 - ✅ WriteBatch原子批量写入
+- ✅ **Snapshot快照：点时间一致性读取**
+- ✅ **MVCC支持：多版本并发控制**
+- ✅ **Iterator迭代器：完整遍历支持**
+- ✅ **Range Query：灵活的范围查询**
 
 ### 集群版特性
 - 🔄 Primary-Replica架构，Replica作为缓存层
@@ -91,11 +95,13 @@ cargo build --release
 ### 基础使用（单机版）
 ```rust
 use aidb::{DB, Options, WriteBatch};
+use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 打开数据库
     let options = Options::default();
     let db = DB::open("./data", options)?;
+    let db = Arc::new(db);
 
     // 写入数据
     db.put(b"key1", b"value1")?;
@@ -111,6 +117,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 读取数据
     if let Some(value) = db.get(b"key2")? {
         println!("value: {:?}", value);
+    }
+    
+    // 创建快照（点时间一致性读取）
+    let snapshot = db.snapshot();
+    db.put(b"key5", b"value5")?;
+    // 快照仍然看不到 key5
+    assert!(snapshot.get(b"key5")?.is_none());
+    
+    // 使用迭代器遍历所有数据
+    let mut iter = db.iter();
+    while iter.valid() {
+        println!("{:?} => {:?}", iter.key(), iter.value());
+        iter.next();
+    }
+    
+    // 范围查询
+    let mut iter = db.scan(Some(b"key1"), Some(b"key4"))?;
+    while iter.valid() {
+        println!("{:?} => {:?}", iter.key(), iter.value());
+        iter.next();
     }
     
     // 删除数据

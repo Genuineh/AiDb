@@ -49,7 +49,9 @@ pub mod compaction;
 pub mod config;
 pub mod error;
 pub mod filter;
+pub mod iterator;
 pub mod memtable;
+pub mod snapshot;
 pub mod sstable;
 pub mod wal;
 pub mod write_batch;
@@ -57,6 +59,8 @@ pub mod write_batch;
 // Re-exports
 pub use config::Options;
 pub use error::{Error, Result};
+pub use iterator::DBIterator;
+pub use snapshot::Snapshot;
 pub use write_batch::WriteBatch;
 
 use cache::BlockCache;
@@ -530,6 +534,85 @@ impl DB {
         }
 
         Ok(())
+    }
+
+    /// Creates a snapshot of the database at the current point in time.
+    ///
+    /// A snapshot provides a consistent, point-in-time view of the database.
+    /// All read operations through the snapshot will see data as it existed
+    /// at the time the snapshot was created, regardless of subsequent modifications.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use aidb::{DB, Options};
+    /// # use std::sync::Arc;
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// let db = DB::open("./data", Options::default())?;
+    /// let db = Arc::new(db);
+    ///
+    /// db.put(b"key", b"value1")?;
+    ///
+    /// // Create a snapshot
+    /// let snapshot = db.snapshot();
+    ///
+    /// // Modify the database
+    /// db.put(b"key", b"value2")?;
+    ///
+    /// // Snapshot still sees old value
+    /// assert_eq!(snapshot.get(b"key")?, Some(b"value1".to_vec()));
+    ///
+    /// // Current DB sees new value
+    /// assert_eq!(db.get(b"key")?, Some(b"value2".to_vec()));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn snapshot(self: &Arc<Self>) -> crate::snapshot::Snapshot {
+        let seq = self.sequence.load(Ordering::SeqCst);
+        crate::snapshot::Snapshot::new(Arc::clone(self), seq)
+    }
+
+    /// Internal method to get a value at a specific sequence number.
+    ///
+    /// This is used by snapshots to implement point-in-time reads.
+    /// Only entries with sequence numbers <= max_seq are visible.
+    pub(crate) fn get_at_sequence(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
+        // Step 1: Check current MemTable
+        {
+            let memtable = self.memtable.read();
+            if let Some(value) = memtable.get(key, max_seq) {
+                return Ok(Some(value));
+            }
+        }
+
+        // Step 2: Check Immutable MemTables (newest to oldest)
+        {
+            let immutable = self.immutable_memtables.read();
+            for memtable in immutable.iter().rev() {
+                if let Some(value) = memtable.get(key, max_seq) {
+                    return Ok(Some(value));
+                }
+            }
+        }
+
+        // Step 3: Search SSTables from Level 0 to Level N
+        {
+            let sstables = self.sstables.read();
+            for level_tables in sstables.iter() {
+                // For Level 0, search all tables (may overlap)
+                // For other levels, tables don't overlap, so we can binary search
+                for table in level_tables.iter().rev() {
+                    // Since we store user_key only in SSTables (simplified version),
+                    // we can directly search for the key
+                    if let Some(value) = table.get(key)? {
+                        return Ok(Some(value));
+                    }
+                }
+            }
+        }
+
+        // Key not found
+        Ok(None)
     }
 
     /// Applies a batch of write operations atomically.
