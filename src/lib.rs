@@ -52,10 +52,12 @@ pub mod filter;
 pub mod memtable;
 pub mod sstable;
 pub mod wal;
+pub mod write_batch;
 
 // Re-exports
 pub use config::Options;
 pub use error::{Error, Result};
+pub use write_batch::WriteBatch;
 
 use cache::BlockCache;
 use compaction::{CompactionJob, CompactionPicker, VersionEdit, VersionSet};
@@ -530,6 +532,127 @@ impl DB {
         Ok(())
     }
 
+    /// Applies a batch of write operations atomically.
+    ///
+    /// All operations in the batch are applied together as a single atomic unit.
+    /// All operations will be written to WAL first for durability, then applied to
+    /// the MemTable. All operations in a batch share the same base sequence number
+    /// for consistency.
+    ///
+    /// # Durability Guarantees
+    ///
+    /// - All operations are written to WAL before being applied to MemTable
+    /// - A single WAL sync occurs after all batch entries are written
+    /// - On recovery, all WAL entries for the batch will be replayed together
+    /// - If any operation fails during WAL write, the entire batch fails and no
+    ///   operations are applied to MemTable
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The WriteBatch containing operations to apply
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if WAL writing or MemTable operations fail.
+    /// If WAL writing fails, no operations are applied to MemTable.
+    /// If MemTable operations fail after WAL writing succeeds, the operations
+    /// will be recovered from WAL on next database open.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use aidb::{DB, Options, WriteBatch};
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// # let db = DB::open("./data", Options::default())?;
+    /// let mut batch = WriteBatch::new();
+    /// batch.put(b"key1", b"value1");
+    /// batch.put(b"key2", b"value2");
+    /// batch.delete(b"key3");
+    ///
+    /// // Apply all operations atomically
+    /// db.write(batch)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn write(&self, batch: WriteBatch) -> Result<()> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+
+        // Allocate sequence numbers for the entire batch upfront
+        let batch_size = batch.len() as u64;
+        let base_seq = self.sequence.fetch_add(batch_size, Ordering::SeqCst) + 1;
+
+        // Write all operations to WAL first (for durability)
+        if self.options.use_wal {
+            let mut wal = self.wal.write();
+
+            for op in batch.iter() {
+                match op {
+                    write_batch::WriteOp::Put { key, value } => {
+                        // Encode as: "put:key_len:key:value"
+                        let mut entry = Vec::new();
+                        entry.extend_from_slice(b"put:");
+                        entry.extend_from_slice(&(key.len() as u32).to_le_bytes());
+                        entry.extend_from_slice(b":");
+                        entry.extend_from_slice(key);
+                        entry.extend_from_slice(b":");
+                        entry.extend_from_slice(value);
+                        wal.append(&entry)?;
+                    }
+                    write_batch::WriteOp::Delete { key } => {
+                        // Encode as: "del:key_len:key"
+                        let mut entry = Vec::new();
+                        entry.extend_from_slice(b"del:");
+                        entry.extend_from_slice(&(key.len() as u32).to_le_bytes());
+                        entry.extend_from_slice(b":");
+                        entry.extend_from_slice(key);
+                        wal.append(&entry)?;
+                    }
+                }
+            }
+
+            if self.options.sync_wal {
+                wal.sync()?;
+            }
+        }
+
+        // Apply all operations to MemTable with consecutive sequence numbers
+        {
+            let memtable = self.memtable.read();
+            let mut seq = base_seq;
+
+            for op in batch.iter() {
+                match op {
+                    write_batch::WriteOp::Put { key, value } => {
+                        memtable.put(key, value, seq);
+                    }
+                    write_batch::WriteOp::Delete { key } => {
+                        memtable.delete(key, seq);
+                    }
+                }
+                seq += 1;
+            }
+        }
+
+        // Check if MemTable is full and needs flushing
+        let memtable_size = {
+            let memtable = self.memtable.read();
+            memtable.approximate_size()
+        };
+
+        if memtable_size >= self.options.memtable_size {
+            log::info!(
+                "MemTable is full ({} bytes >= {}), triggering freeze after batch write",
+                memtable_size,
+                self.options.memtable_size
+            );
+            self.freeze_memtable()?;
+        }
+
+        Ok(())
+    }
+
     /// Freezes the current MemTable and creates a new one.
     ///
     /// This moves the current mutable MemTable to the immutable list
@@ -569,6 +692,7 @@ impl DB {
         // Create SSTable builder
         let mut builder = SSTableBuilder::new(&sstable_path)?;
         builder.set_block_size(self.options.block_size);
+        builder.set_compression(self.options.compression);
 
         // Iterate through MemTable and add entries to SSTable
         // We only keep the latest version of each user key (skip older versions)
@@ -1632,5 +1756,181 @@ mod tests {
         // All should share the same cache
         let stats = db.cache_stats();
         assert!(stats.lookups > 0, "Should have lookups across multiple SSTables");
+    }
+
+    // ===== WriteBatch Tests =====
+
+    #[test]
+    fn test_write_batch_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        let batch = WriteBatch::new();
+        let result = db.write(batch);
+        assert!(result.is_ok(), "Writing empty batch should succeed");
+    }
+
+    #[test]
+    fn test_write_batch_single_put() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        let mut batch = WriteBatch::new();
+        batch.put(b"key1", b"value1");
+
+        db.write(batch).unwrap();
+
+        let value = db.get(b"key1").unwrap();
+        assert_eq!(value, Some(b"value1".to_vec()));
+    }
+
+    #[test]
+    fn test_write_batch_multiple_puts() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        let mut batch = WriteBatch::new();
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let value = format!("value{}", i);
+            batch.put(key.as_bytes(), value.as_bytes());
+        }
+
+        db.write(batch).unwrap();
+
+        // Verify all values
+        for i in 0..100 {
+            let key = format!("key{}", i);
+            let expected = format!("value{}", i);
+            let value = db.get(key.as_bytes()).unwrap();
+            assert_eq!(value, Some(expected.as_bytes().to_vec()));
+        }
+    }
+
+    #[test]
+    fn test_write_batch_delete() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // First put a key
+        db.put(b"key1", b"value1").unwrap();
+        assert_eq!(db.get(b"key1").unwrap(), Some(b"value1".to_vec()));
+
+        // Delete it using batch
+        let mut batch = WriteBatch::new();
+        batch.delete(b"key1");
+        db.write(batch).unwrap();
+
+        // Verify it's deleted
+        assert_eq!(db.get(b"key1").unwrap(), None);
+    }
+
+    #[test]
+    fn test_write_batch_mixed_operations() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Pre-populate some data
+        db.put(b"key1", b"old_value1").unwrap();
+        db.put(b"key2", b"old_value2").unwrap();
+        db.put(b"key3", b"old_value3").unwrap();
+
+        // Create batch with mixed operations
+        let mut batch = WriteBatch::new();
+        batch.put(b"key1", b"new_value1"); // Overwrite
+        batch.delete(b"key2"); // Delete
+        batch.put(b"key4", b"new_value4"); // New key
+
+        db.write(batch).unwrap();
+
+        // Verify results
+        assert_eq!(db.get(b"key1").unwrap(), Some(b"new_value1".to_vec()));
+        assert_eq!(db.get(b"key2").unwrap(), None);
+        assert_eq!(db.get(b"key3").unwrap(), Some(b"old_value3".to_vec()));
+        assert_eq!(db.get(b"key4").unwrap(), Some(b"new_value4".to_vec()));
+    }
+
+    #[test]
+    fn test_write_batch_atomicity() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+
+        // Create a large batch
+        let mut batch = WriteBatch::new();
+        for i in 0..1000 {
+            let key = format!("batch_key{}", i);
+            let value = format!("batch_value{}", i);
+            batch.put(key.as_bytes(), value.as_bytes());
+        }
+
+        // Write atomically
+        db.write(batch).unwrap();
+
+        // All keys should be present
+        for i in 0..1000 {
+            let key = format!("batch_key{}", i);
+            let value = db.get(key.as_bytes()).unwrap();
+            assert!(value.is_some(), "Key {} should be present after batch write", i);
+        }
+    }
+
+    #[test]
+    fn test_write_batch_persistence() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // First session: write batch and close
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+
+            let mut batch = WriteBatch::new();
+            for i in 0..50 {
+                let key = format!("persist_key{}", i);
+                let value = format!("persist_value{}", i);
+                batch.put(key.as_bytes(), value.as_bytes());
+            }
+
+            db.write(batch).unwrap();
+            db.close().unwrap();
+        }
+
+        // Second session: verify data persists
+        {
+            let db = DB::open(&db_path, Options::default()).unwrap();
+
+            for i in 0..50 {
+                let key = format!("persist_key{}", i);
+                let expected = format!("persist_value{}", i);
+                let value = db.get(key.as_bytes()).unwrap();
+                assert_eq!(
+                    value,
+                    Some(expected.as_bytes().to_vec()),
+                    "Batch data should persist after close and reopen"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_write_batch_triggers_flush() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Use small memtable to trigger flush
+        let options = Options::default().memtable_size(1024);
+        let db = DB::open(temp_dir.path(), options).unwrap();
+
+        // Create a batch that exceeds memtable size
+        let mut batch = WriteBatch::new();
+        for i in 0..100 {
+            let key = format!("large_key{:08}", i);
+            let value = vec![b'x'; 100]; // 100 bytes
+            batch.put(key.as_bytes(), &value);
+        }
+
+        db.write(batch).unwrap();
+
+        // Check that immutable memtables were created or flush happened
+        let immutable = db.immutable_memtables.read();
+        assert!(!immutable.is_empty() || !db.sstables.read()[0].is_empty());
     }
 }

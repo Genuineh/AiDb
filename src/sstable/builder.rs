@@ -145,6 +145,12 @@ impl SSTableBuilder {
                 .map_err(|e| Error::internal(format!("Compression failed: {}", e)))?;
         }
 
+        #[cfg(feature = "lz4-compression")]
+        if self.compression == CompressionType::Lz4 {
+            compressed_data = lz4::block::compress(&block_data, None, false)
+                .map_err(|e| Error::internal(format!("LZ4 compression failed: {}", e)))?;
+        }
+
         // Write block data
         let block_offset = self.data_block_offset;
         let block_size = compressed_data.len() as u64;

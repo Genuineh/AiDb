@@ -227,7 +227,8 @@ impl SSTableReader {
         let compression = CompressionType::from_u8(compression_type)
             .ok_or_else(|| Error::corruption("Invalid compression type"))?;
 
-        let decompressed = match compression {
+        #[allow(unused_mut)]
+        let mut decompressed = match compression {
             CompressionType::None => data.to_vec(),
             #[cfg(feature = "snappy")]
             CompressionType::Snappy => snap::raw::Decoder::new()
@@ -237,7 +238,23 @@ impl SSTableReader {
             CompressionType::Snappy => {
                 return Err(Error::internal("Snappy compression not enabled"));
             }
+            #[allow(unreachable_patterns)]
+            _ => {
+                // This handles any compression type not explicitly matched above
+                // Including Lz4 when the feature is not enabled
+                return Err(Error::internal(format!(
+                    "Unsupported compression type: {}",
+                    compression_type
+                )));
+            }
         };
+
+        // Handle Lz4 compression if the feature is enabled
+        #[cfg(feature = "lz4-compression")]
+        if let CompressionType::Lz4 = compression {
+            decompressed = lz4::block::decompress(data, None)
+                .map_err(|e| Error::internal(format!("LZ4 decompression failed: {}", e)))?;
+        }
 
         Ok(Bytes::from(decompressed))
     }

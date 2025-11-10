@@ -42,6 +42,9 @@ pub use footer::{BlockHandle, Footer};
 pub use index::IndexBlock;
 pub use reader::SSTableReader;
 
+// Re-export CompressionType from config
+pub use crate::config::CompressionType;
+
 /// Default block size (4KB)
 pub const DEFAULT_BLOCK_SIZE: usize = 4096;
 
@@ -50,35 +53,3 @@ pub const FOOTER_SIZE: usize = 48;
 
 /// Magic number for SSTable files
 pub const MAGIC_NUMBER: u64 = 0x5441424c455f5353; // "SSTABLE_" in hex
-
-/// Block compression type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompressionType {
-    /// No compression
-    None = 0,
-    /// Snappy compression
-    Snappy = 1,
-}
-
-impl CompressionType {
-    /// Convert from u8
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(CompressionType::None),
-            1 => Some(CompressionType::Snappy),
-            _ => None,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_compression_type() {
-        assert_eq!(CompressionType::from_u8(0), Some(CompressionType::None));
-        assert_eq!(CompressionType::from_u8(1), Some(CompressionType::Snappy));
-        assert_eq!(CompressionType::from_u8(2), None);
-    }
-}
