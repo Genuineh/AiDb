@@ -140,9 +140,39 @@ impl Options {
         self
     }
 
+    /// Sets whether to error if the database already exists.
+    pub fn error_if_exists(mut self, value: bool) -> Self {
+        self.error_if_exists = value;
+        self
+    }
+
     /// Sets the MemTable size threshold.
     pub fn memtable_size(mut self, size: usize) -> Self {
         self.memtable_size = size;
+        self
+    }
+
+    /// Sets the Level 0 compaction threshold.
+    pub fn level0_compaction_threshold(mut self, threshold: usize) -> Self {
+        self.level0_compaction_threshold = threshold;
+        self
+    }
+
+    /// Sets the level size multiplier.
+    pub fn level_size_multiplier(mut self, multiplier: usize) -> Self {
+        self.level_size_multiplier = multiplier;
+        self
+    }
+
+    /// Sets the base level size (Level 1 target size).
+    pub fn base_level_size(mut self, size: usize) -> Self {
+        self.base_level_size = size;
+        self
+    }
+
+    /// Sets the maximum number of levels.
+    pub fn max_levels(mut self, levels: usize) -> Self {
+        self.max_levels = levels;
         self
     }
 
@@ -158,6 +188,18 @@ impl Options {
         self
     }
 
+    /// Enables or disables bloom filters.
+    pub fn use_bloom_filter(mut self, value: bool) -> Self {
+        self.use_bloom_filter = value;
+        self
+    }
+
+    /// Sets the bloom filter false positive rate.
+    pub fn bloom_filter_fp_rate(mut self, rate: f64) -> Self {
+        self.bloom_filter_fp_rate = rate;
+        self
+    }
+
     /// Sets the compression algorithm.
     pub fn compression(mut self, compression: CompressionType) -> Self {
         self.compression = compression;
@@ -168,6 +210,87 @@ impl Options {
     pub fn use_wal(mut self, value: bool) -> Self {
         self.use_wal = value;
         self
+    }
+
+    /// Enables or disables WAL sync.
+    pub fn sync_wal(mut self, value: bool) -> Self {
+        self.sync_wal = value;
+        self
+    }
+
+    /// Sets the number of background compaction threads.
+    pub fn compaction_threads(mut self, threads: usize) -> Self {
+        self.compaction_threads = threads;
+        self
+    }
+
+    /// Creates a minimal configuration for testing or development.
+    /// 
+    /// This uses smaller sizes and disables features that slow down tests.
+    pub fn for_testing() -> Self {
+        Self {
+            create_if_missing: true,
+            error_if_exists: false,
+            memtable_size: 64 * 1024,          // 64KB
+            level0_compaction_threshold: 2,
+            level_size_multiplier: 10,
+            base_level_size: 1024 * 1024,      // 1MB
+            max_levels: 4,
+            block_size: 1024,                   // 1KB
+            block_cache_size: 1024 * 1024,     // 1MB
+            use_bloom_filter: false,            // Disable for faster tests
+            bloom_filter_fp_rate: 0.01,
+            compression: CompressionType::None, // Disable for faster tests
+            use_wal: true,
+            sync_wal: false,                    // Disable for faster tests
+            compaction_threads: 1,
+        }
+    }
+
+    /// Creates a configuration optimized for high write throughput.
+    /// 
+    /// This uses larger buffers and less aggressive compaction.
+    pub fn for_high_write_throughput() -> Self {
+        Self {
+            create_if_missing: true,
+            error_if_exists: false,
+            memtable_size: 16 * 1024 * 1024,   // 16MB
+            level0_compaction_threshold: 8,     // More files before compaction
+            level_size_multiplier: 10,
+            base_level_size: 100 * 1024 * 1024, // 100MB
+            max_levels: 7,
+            block_size: 16 * 1024,              // 16KB
+            block_cache_size: 16 * 1024 * 1024, // 16MB
+            use_bloom_filter: true,
+            bloom_filter_fp_rate: 0.01,
+            compression: CompressionType::default(),
+            use_wal: true,
+            sync_wal: false,                    // Trade durability for speed
+            compaction_threads: 2,
+        }
+    }
+
+    /// Creates a configuration optimized for read-heavy workloads.
+    /// 
+    /// This uses larger caches and bloom filters.
+    pub fn for_high_read_throughput() -> Self {
+        Self {
+            create_if_missing: true,
+            error_if_exists: false,
+            memtable_size: 4 * 1024 * 1024,     // 4MB
+            level0_compaction_threshold: 4,
+            level_size_multiplier: 10,
+            base_level_size: 10 * 1024 * 1024,  // 10MB
+            max_levels: 7,
+            block_size: 8 * 1024,               // 8KB
+            block_cache_size: 64 * 1024 * 1024, // 64MB - large cache
+            use_bloom_filter: true,
+            bloom_filter_fp_rate: 0.001,        // Lower FP rate
+            compression: CompressionType::default(),
+            use_wal: true,
+            sync_wal: true,
+            compaction_threads: 2,
+        }
     }
 
     /// Validates the options and returns an error if any are invalid.
@@ -185,6 +308,19 @@ impl Options {
             return Err(crate::Error::invalid_argument(
                 "bloom_filter_fp_rate must be between 0 and 1",
             ));
+        }
+        if self.level0_compaction_threshold == 0 {
+            return Err(crate::Error::invalid_argument(
+                "level0_compaction_threshold must be > 0",
+            ));
+        }
+        if self.level_size_multiplier == 0 {
+            return Err(crate::Error::invalid_argument(
+                "level_size_multiplier must be > 0",
+            ));
+        }
+        if self.base_level_size == 0 {
+            return Err(crate::Error::invalid_argument("base_level_size must be > 0"));
         }
         Ok(())
     }
@@ -224,6 +360,119 @@ mod tests {
 
         opts.memtable_size = 1024;
         opts.bloom_filter_fp_rate = 1.5;
+        assert!(opts.validate().is_err());
+    }
+
+    #[test]
+    fn test_for_testing_config() {
+        let opts = Options::for_testing();
+        assert_eq!(opts.memtable_size, 64 * 1024);
+        assert_eq!(opts.block_size, 1024);
+        assert!(!opts.use_bloom_filter);
+        assert_eq!(opts.compression, CompressionType::None);
+        assert!(!opts.sync_wal);
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn test_for_high_write_throughput_config() {
+        let opts = Options::for_high_write_throughput();
+        assert_eq!(opts.memtable_size, 16 * 1024 * 1024);
+        assert_eq!(opts.level0_compaction_threshold, 8);
+        assert!(!opts.sync_wal);
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn test_for_high_read_throughput_config() {
+        let opts = Options::for_high_read_throughput();
+        assert_eq!(opts.block_cache_size, 64 * 1024 * 1024);
+        assert!(opts.use_bloom_filter);
+        assert_eq!(opts.bloom_filter_fp_rate, 0.001);
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn test_all_builder_methods() {
+        let opts = Options::new()
+            .create_if_missing(false)
+            .error_if_exists(true)
+            .memtable_size(1024)
+            .level0_compaction_threshold(5)
+            .level_size_multiplier(8)
+            .base_level_size(2048)
+            .max_levels(5)
+            .block_size(512)
+            .block_cache_size(1024)
+            .use_bloom_filter(false)
+            .bloom_filter_fp_rate(0.05)
+            .compression(CompressionType::None)
+            .use_wal(false)
+            .sync_wal(false)
+            .compaction_threads(4);
+
+        assert!(!opts.create_if_missing);
+        assert!(opts.error_if_exists);
+        assert_eq!(opts.memtable_size, 1024);
+        assert_eq!(opts.level0_compaction_threshold, 5);
+        assert_eq!(opts.level_size_multiplier, 8);
+        assert_eq!(opts.base_level_size, 2048);
+        assert_eq!(opts.max_levels, 5);
+        assert_eq!(opts.block_size, 512);
+        assert_eq!(opts.block_cache_size, 1024);
+        assert!(!opts.use_bloom_filter);
+        assert_eq!(opts.bloom_filter_fp_rate, 0.05);
+        assert_eq!(opts.compression, CompressionType::None);
+        assert!(!opts.use_wal);
+        assert!(!opts.sync_wal);
+        assert_eq!(opts.compaction_threads, 4);
+    }
+
+    #[test]
+    fn test_validation_comprehensive() {
+        let mut opts = Options::default();
+        
+        // Valid config
+        assert!(opts.validate().is_ok());
+        
+        // Invalid memtable_size
+        opts = Options::default();
+        opts.memtable_size = 0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid block_size
+        opts = Options::default();
+        opts.block_size = 0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid max_levels
+        opts = Options::default();
+        opts.max_levels = 0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid bloom_filter_fp_rate (too low)
+        opts = Options::default();
+        opts.bloom_filter_fp_rate = 0.0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid bloom_filter_fp_rate (too high)
+        opts = Options::default();
+        opts.bloom_filter_fp_rate = 1.0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid level0_compaction_threshold
+        opts = Options::default();
+        opts.level0_compaction_threshold = 0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid level_size_multiplier
+        opts = Options::default();
+        opts.level_size_multiplier = 0;
+        assert!(opts.validate().is_err());
+        
+        // Invalid base_level_size
+        opts = Options::default();
+        opts.base_level_size = 0;
         assert!(opts.validate().is_err());
     }
 }
