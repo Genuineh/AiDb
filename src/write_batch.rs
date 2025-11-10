@@ -30,9 +30,17 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteOp {
     /// Put operation with key and value
-    Put { key: Vec<u8>, value: Vec<u8> },
+    Put {
+        /// Key to insert
+        key: Vec<u8>,
+        /// Value to associate with the key
+        value: Vec<u8>,
+    },
     /// Delete operation with key
-    Delete { key: Vec<u8> },
+    Delete {
+        /// Key to delete
+        key: Vec<u8>,
+    },
 }
 
 /// WriteBatch accumulates a sequence of write operations to be applied atomically.
@@ -162,11 +170,6 @@ impl WriteBatch {
     /// Returns an iterator over the operations in the batch.
     pub(crate) fn iter(&self) -> impl Iterator<Item = &WriteOp> {
         self.operations.iter()
-    }
-
-    /// Consumes the batch and returns the operations.
-    pub(crate) fn into_operations(self) -> VecDeque<WriteOp> {
-        self.operations
     }
 }
 

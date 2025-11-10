@@ -1931,6 +1931,6 @@ mod tests {
 
         // Check that immutable memtables were created or flush happened
         let immutable = db.immutable_memtables.read();
-        assert!(!immutable.is_empty() || db.sstables.read()[0].len() > 0);
+        assert!(!immutable.is_empty() || !db.sstables.read()[0].is_empty());
     }
 }
