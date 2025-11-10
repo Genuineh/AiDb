@@ -17,9 +17,11 @@ use crate::{Result, DB};
 ///
 /// ```rust,no_run
 /// use aidb::{DB, Options};
+/// use std::sync::Arc;
 ///
 /// # fn main() -> Result<(), aidb::Error> {
 /// let db = DB::open("./data", Options::default())?;
+/// let db = Arc::new(db);
 ///
 /// db.put(b"key1", b"value1")?;
 ///
