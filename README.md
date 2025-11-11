@@ -204,7 +204,7 @@ async fn main() -> Result<()> {
 
 **最新成就**: Week 13-14压缩和优化完成！WriteBatch、Snappy压缩集成、完整基准测试套件。
 
-完整进度查看：[TODO.md](TODO.md) | [Week 13-14完成总结](WEEK_13_14_COMPLETION_SUMMARY.md)
+完整进度查看：[TODO.md](TODO.md) | [Week 13-14完成总结](docs/completions/WEEK_13_14_COMPLETION_SUMMARY.md)
 
 ## 📚 文档导航
 

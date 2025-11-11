@@ -7,78 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- GitHub Actions CI/CD pipeline
-  - Automated testing on multiple platforms (Linux, macOS, Windows)
-  - Multi-version Rust testing (stable, beta, nightly)
-  - Code quality checks (clippy, rustfmt)
-  - Security scanning (cargo-audit, cargo-deny, CodeQL)
-  - Code coverage reporting with Codecov
-- Automated release workflow
-  - Multi-platform binary builds (x86_64, ARM64)
-  - Automatic GitHub Releases
-  - crates.io publishing
-- Dependabot configuration for automated dependency updates
-- PR and Issue templates for better workflow management
-- Comprehensive CI/CD documentation
-- Flush functionality implementation
-  - MemTable freeze mechanism
-  - Automatic flush when MemTable is full
-  - Manual flush API
-  - WAL rotation after flush
-  - Data persistence and recovery
-- 5 additional tests for empty SSTable prevention (total: 96 tests)
-- Example program demonstrating tombstone flush behavior
+## [0.1.0] - 2025-11-11
 
-### Changed
-- Updated README with CI badges
-- Enhanced documentation structure
-- Improved README with flush functionality documentation
+AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产就绪的单机 LSM-Tree 存储引擎。
 
-### Fixed
-- **Empty SSTable Prevention**: Fixed bug where `flush_memtable_to_sstable()` was creating empty SSTable files when MemTable contained only tombstones or filtered entries
-  - Now properly checks `entry_count` before creating SSTable
-  - Abandons builder and removes incomplete files when no entries to flush
-  - Prevents wasted disk space and improves read performance
-  - Added comprehensive test coverage (5 new tests)
-  - See `BUG_FIX_EMPTY_SSTABLE.md` for details
+### 🎉 核心功能
 
-## [0.1.0] - 2024-01-XX
+#### 基础组件
+- **WAL (Write-Ahead Log)**: 完整的预写日志实现，确保数据持久化
+- **MemTable**: 基于 SkipList 的内存索引
+- **SSTable**: 分层持久化存储
 
-### Added
-- Initial project setup
-- WAL (Write-Ahead Log) implementation
-  - WAL writer with batch support
-  - WAL reader with recovery
-  - Record format with CRC32 checksum
-  - Sync and fsync support
-- Basic error handling
-- Configuration management
-- Examples and benchmarks
+#### DB 引擎
+- **完整的 CRUD 操作**: Put, Get, Delete
+- **Flush 机制**: 自动和手动 MemTable 刷新
+- **崩溃恢复**: 基于 WAL 的可靠恢复
+- **线程安全**: Arc + RwLock 实现并发访问
 
-### Documentation
-- Architecture design
-- Implementation plan
-- Development guide
-- Contributing guide
+### 🚀 性能优化
+
+- **Compaction**: Leveled Compaction 策略
+- **Bloom Filter**: 减少 90%+ 的无效磁盘读取
+- **Block Cache**: LRU Cache 缓存管理
+- **压缩支持**: Snappy 和 LZ4 压缩算法
+
+### ✨ 高级功能
+
+- **Snapshot**: 点时间一致性读取
+- **Iterator**: 完整遍历和范围查询
+- **WriteBatch**: 原子批量写入
+
+### 📊 测试覆盖
+
+- **315+ 测试用例**: 全面的测试覆盖
+- **代码覆盖率**: > 80%
+- **CI/CD**: 自动化测试和检查
+
+### 📚 文档完善
+
+#### 用户文档
+- **[用户指南](docs/USER_GUIDE.md)**: 完整的使用说明
+- **[最佳实践](docs/BEST_PRACTICES.md)**: 生产环境指南
+- **[性能调优指南](docs/PERFORMANCE_TUNING.md)**: 深度性能优化
+
+#### 技术文档
+- **[架构设计](docs/ARCHITECTURE.md)**: 系统架构说明
+- **[实施计划](docs/IMPLEMENTATION.md)**: 开发路线图
+- **[设计决策](docs/DESIGN_DECISIONS.md)**: 技术选型说明
+
+#### 示例代码
+- **[examples/README.md](examples/README.md)**: 9 个完整示例
+
+### 🎯 性能指标
+
+单机性能（NVMe SSD）：
+- 顺序写入: ~140K ops/s
+- 随机写入: ~70K ops/s  
+- 随机读取: ~140K ops/s
+
+### 🏗️ 项目组织
+
+- 文档整理至 `docs/completions/`
+- 清晰的目录结构
+- 完整的索引文档
+
+### 🐛 Bug 修复
+
+- 修复 WAL 恢复逻辑
+- 修复空 SSTable 处理
+- 修复 SSTable 管理
+- 修复数据恢复问题
+
+### 🔒 安全性
+
+- CRC32 校验
+- 线程安全
+- 崩溃恢复
+- 安全扫描
 
 ---
 
-## Release Types
-
-- **Major (X.0.0)**: Breaking changes
-- **Minor (0.X.0)**: New features, backwards compatible
-- **Patch (0.0.X)**: Bug fixes, backwards compatible
-
-## Categories
-
-- **Added**: New features
-- **Changed**: Changes in existing functionality
-- **Deprecated**: Soon-to-be removed features
-- **Removed**: Removed features
-- **Fixed**: Bug fixes
-- **Security**: Security improvements
-- **Performance**: Performance improvements
-
-[Unreleased]: https://github.com/yourusername/aidb/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/yourusername/aidb/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Genuineh/aidb/releases/tag/v0.1.0

@@ -148,7 +148,7 @@
   - [x] 测试并发写入+flush
   - [x] 测试多次flush
   
-完成详情：见 [FLUSH_COMPLETION_SUMMARY.md](FLUSH_COMPLETION_SUMMARY.md)
+完成详情：见 [FLUSH_COMPLETION_SUMMARY.md](docs/completions/FLUSH_COMPLETION_SUMMARY.md)
 
 **测试和修复** (Day 22-28) - 预计7天 ✅ **已完成**
 - [x] **端到端测试**
@@ -199,7 +199,7 @@
   - [x] 生成性能报告
   - ℹ️  注：基准测试通过手动触发的 GitHub Actions workflow 运行
 
-完成详情：见 [TESTING_COMPLETION_SUMMARY.md](TESTING_COMPLETION_SUMMARY.md)
+完成详情：见 [TESTING_COMPLETION_SUMMARY.md](docs/completions/TESTING_COMPLETION_SUMMARY.md)
 
 ### 阶段B: 性能优化 (Week 7-14)
 
@@ -214,7 +214,7 @@
 - [x] Tombstone处理
 - [ ] 后台Compaction线程（简化为同步实现）
 
-完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](COMPACTION_COMPLETION_SUMMARY.md)
+完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](docs/completions/COMPACTION_COMPLETION_SUMMARY.md)
 
 #### Week 9-10: Bloom Filter ✅ **已完成**
 - [x] BloomFilter数据结构
@@ -224,7 +224,7 @@
 - [x] 集成到SSTableReader
 - [x] 误判率测试
 
-完成详情：见 [BLOOM_FILTER_COMPLETION_SUMMARY.md](BLOOM_FILTER_COMPLETION_SUMMARY.md)
+完成详情：见 [BLOOM_FILTER_COMPLETION_SUMMARY.md](docs/completions/BLOOM_FILTER_COMPLETION_SUMMARY.md)
 
 #### Week 11-12: Block Cache ✅ **已完成**
 - [x] LRU Cache实现
@@ -233,7 +233,7 @@
 - [x] 缓存大小配置
 - [x] 性能测试
 
-完成详情：见 [BLOCK_CACHE_COMPLETION_SUMMARY.md](BLOCK_CACHE_COMPLETION_SUMMARY.md)
+完成详情：见 [BLOCK_CACHE_COMPLETION_SUMMARY.md](docs/completions/BLOCK_CACHE_COMPLETION_SUMMARY.md)
 
 #### Week 13-14: 压缩和优化 ✅ **已完成**
 - [x] Snappy压缩集成
@@ -244,7 +244,7 @@
 - [x] 完整基准测试
 - [x] 性能报告
 
-完成详情：见 [WEEK_13_14_COMPLETION_SUMMARY.md](WEEK_13_14_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_13_14_COMPLETION_SUMMARY.md](docs/completions/WEEK_13_14_COMPLETION_SUMMARY.md)
 
 ### 阶段C: 生产就绪 (Week 15-20)
 
@@ -255,7 +255,7 @@
 - [x] 范围查询
 - [x] 配置优化
 
-完成详情：见 [WEEK_15_16_COMPLETION_SUMMARY.md](WEEK_15_16_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_15_16_COMPLETION_SUMMARY.md](docs/completions/WEEK_15_16_COMPLETION_SUMMARY.md)
 
 #### Week 17-18: 测试完善 ✅ **已完成**
 - [x] 单元测试覆盖率>80%
@@ -264,15 +264,18 @@
 - [x] 故障注入测试
 - [x] 边界条件测试
 
-完成详情：见 [WEEK_17_18_COMPLETION_SUMMARY.md](WEEK_17_18_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_17_18_COMPLETION_SUMMARY.md](docs/completions/WEEK_17_18_COMPLETION_SUMMARY.md)
 
-#### Week 19-20: 文档和发布
-- [ ] API文档完善
-- [ ] 代码示例
-- [ ] 使用指南
-- [ ] 最佳实践文档
-- [ ] 性能调优文档
-- [ ] 发布v0.1.0
+#### Week 19-20: 文档和发布 ✅ **已完成**
+- [x] API文档完善
+- [x] 代码示例
+- [x] 使用指南
+- [x] 最佳实践文档
+- [x] 性能调优文档
+- [x] 文档组织优化
+- [x] 发布v0.1.0准备
+
+完成详情：见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -341,16 +344,18 @@
 ## 📊 进度统计
 
 - **总任务数**: ~200+
-- **已完成**: 128 (新增5个Week 15-16任务)
+- **已完成**: 135 (新增7个Week 19-20任务)
 - **Week 3-4 任务数**: 67 (详细子任务)
 - **Week 7-8 任务数**: 8 (Compaction任务)
 - **Week 9-10 任务数**: 6 (Bloom Filter任务)
 - **Week 11-12 任务数**: 5 (Block Cache任务)
 - **Week 13-14 任务数**: 7 (压缩和优化任务)
 - **Week 15-16 任务数**: 5 (高级功能任务)
+- **Week 17-18 任务数**: 5 (测试完善任务)
+- **Week 19-20 任务数**: 7 (文档和发布任务)
 - **进行中**: 0
-- **待开始**: 72+
-- **完成度**: 64.0%
+- **待开始**: 65+
+- **完成度**: 67.5%
 
 ### Week 3-4 详细统计
 - **DB核心逻辑**: 26/26 任务 ✅ **已完成**
@@ -378,9 +383,9 @@
 
 ## 🎯 里程碑
 
-- [ ] M1: MVP可运行 (Week 6)
-- [ ] M2: 单机性能达标 (Week 14)
-- [ ] M3: 单机生产就绪 (Week 20)
+- [ ] M1: MVP可运行 (Week 6) ✅ 已完成
+- [ ] M2: 单机性能达标 (Week 14) ✅ 已完成
+- [x] M3: 单机生产就绪 (Week 20) ✅ **刚完成！**
 - [ ] M4: RPC通信完成 (Week 24)
 - [ ] M5: 集群路由完成 (Week 28)
 - [ ] M6: 多Shard运行 (Week 34)
