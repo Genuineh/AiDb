@@ -148,7 +148,7 @@
   - [x] 测试并发写入+flush
   - [x] 测试多次flush
   
-完成详情：见 [FLUSH_COMPLETION_SUMMARY.md](FLUSH_COMPLETION_SUMMARY.md)
+完成详情：见 [FLUSH_COMPLETION_SUMMARY.md](docs/completions/FLUSH_COMPLETION_SUMMARY.md)
 
 **测试和修复** (Day 22-28) - 预计7天 ✅ **已完成**
 - [x] **端到端测试**
@@ -199,7 +199,7 @@
   - [x] 生成性能报告
   - ℹ️  注：基准测试通过手动触发的 GitHub Actions workflow 运行
 
-完成详情：见 [TESTING_COMPLETION_SUMMARY.md](TESTING_COMPLETION_SUMMARY.md)
+完成详情：见 [TESTING_COMPLETION_SUMMARY.md](docs/completions/TESTING_COMPLETION_SUMMARY.md)
 
 ### 阶段B: 性能优化 (Week 7-14)
 
@@ -214,7 +214,7 @@
 - [x] Tombstone处理
 - [ ] 后台Compaction线程（简化为同步实现）
 
-完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](COMPACTION_COMPLETION_SUMMARY.md)
+完成详情：见 [COMPACTION_COMPLETION_SUMMARY.md](docs/completions/COMPACTION_COMPLETION_SUMMARY.md)
 
 #### Week 9-10: Bloom Filter ✅ **已完成**
 - [x] BloomFilter数据结构
@@ -224,7 +224,7 @@
 - [x] 集成到SSTableReader
 - [x] 误判率测试
 
-完成详情：见 [BLOOM_FILTER_COMPLETION_SUMMARY.md](BLOOM_FILTER_COMPLETION_SUMMARY.md)
+完成详情：见 [BLOOM_FILTER_COMPLETION_SUMMARY.md](docs/completions/BLOOM_FILTER_COMPLETION_SUMMARY.md)
 
 #### Week 11-12: Block Cache ✅ **已完成**
 - [x] LRU Cache实现
@@ -233,7 +233,7 @@
 - [x] 缓存大小配置
 - [x] 性能测试
 
-完成详情：见 [BLOCK_CACHE_COMPLETION_SUMMARY.md](BLOCK_CACHE_COMPLETION_SUMMARY.md)
+完成详情：见 [BLOCK_CACHE_COMPLETION_SUMMARY.md](docs/completions/BLOCK_CACHE_COMPLETION_SUMMARY.md)
 
 #### Week 13-14: 压缩和优化 ✅ **已完成**
 - [x] Snappy压缩集成
@@ -244,7 +244,7 @@
 - [x] 完整基准测试
 - [x] 性能报告
 
-完成详情：见 [WEEK_13_14_COMPLETION_SUMMARY.md](WEEK_13_14_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_13_14_COMPLETION_SUMMARY.md](docs/completions/WEEK_13_14_COMPLETION_SUMMARY.md)
 
 ### 阶段C: 生产就绪 (Week 15-20)
 
@@ -255,7 +255,7 @@
 - [x] 范围查询
 - [x] 配置优化
 
-完成详情：见 [WEEK_15_16_COMPLETION_SUMMARY.md](WEEK_15_16_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_15_16_COMPLETION_SUMMARY.md](docs/completions/WEEK_15_16_COMPLETION_SUMMARY.md)
 
 #### Week 17-18: 测试完善 ✅ **已完成**
 - [x] 单元测试覆盖率>80%
@@ -264,7 +264,7 @@
 - [x] 故障注入测试
 - [x] 边界条件测试
 
-完成详情：见 [WEEK_17_18_COMPLETION_SUMMARY.md](WEEK_17_18_COMPLETION_SUMMARY.md)
+完成详情：见 [WEEK_17_18_COMPLETION_SUMMARY.md](docs/completions/WEEK_17_18_COMPLETION_SUMMARY.md)
 
 #### Week 19-20: 文档和发布
 - [ ] API文档完善
