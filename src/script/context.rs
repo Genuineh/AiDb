@@ -1,21 +1,20 @@
-//! ScriptContext provides a buffering layer for Lua script operations.
+//! ScriptContext provides transaction support for Lua script operations.
 //!
-//! This module implements the core rollback mechanism by buffering all
-//! write operations in memory until the script completes successfully.
-//! If the script fails, the buffer is discarded, achieving automatic rollback.
+//! This module implements the core rollback mechanism by accumulating all
+//! write operations in a WriteBatch. If the script completes successfully,
+//! the batch is committed atomically. If the script fails, the batch is
+//! discarded, achieving automatic rollback.
 
-use crate::write_batch::{WriteOp, WriteBatch};
+use crate::write_batch::WriteBatch;
 use crate::{Result, DB};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-/// ScriptContext maintains a temporary buffer for operations executed within a Lua script.
+/// ScriptContext maintains a WriteBatch for operations executed within a Lua script.
 ///
-/// All write operations (put/delete) are buffered in memory and only committed
-/// to the database when the script completes successfully. This provides:
+/// All write operations (put/delete) are accumulated in a WriteBatch and only
+/// committed to the database when the script completes successfully. This provides:
 ///
-/// - **Atomicity**: All operations succeed or fail together
-/// - **Isolation**: Uncommitted changes are visible within the script
+/// - **Atomicity**: All operations succeed or fail together via WriteBatch
 /// - **Rollback**: Failed scripts automatically discard all changes
 ///
 /// # Architecture
@@ -23,31 +22,29 @@ use std::sync::{Arc, Mutex};
 /// ```text
 /// Script Operation Flow:
 ///
-/// 1. db.put(key, value)  →  Write to buffer
-/// 2. db.get(key)         →  Check buffer first, then DB
-/// 3. db.delete(key)      →  Write tombstone to buffer
+/// 1. db.put(key, value)  →  Add to WriteBatch
+/// 2. db.get(key)         →  Read from DB directly
+/// 3. db.delete(key)      →  Add delete to WriteBatch
 ///
-/// On success:  Buffer → WriteBatch → DB (atomic commit)
-/// On failure:  Buffer discarded (automatic rollback)
+/// On success:  WriteBatch → DB (atomic commit via db.write())
+/// On failure:  WriteBatch discarded (automatic rollback)
 /// ```
+///
+/// # Note on Read-Your-Writes
+///
+/// The current implementation does **not** support read-your-writes semantics.
+/// This means that `db.get(key)` within a script will not see values written
+/// by `db.put(key, value)` in the same script until the script completes and
+/// commits. This is a known limitation pending WriteBatch query support in AiDb.
+///
+/// For memory-based storage, read-your-writes can be supported by maintaining
+/// a temporary read cache alongside the WriteBatch.
 pub struct ScriptContext {
     /// Reference to the database
     db: Arc<DB>,
     
-    /// Buffered write operations (put/delete)
-    write_buffer: HashMap<Vec<u8>, BufferedValue>,
-    
-    /// Ordered list of operations for WriteBatch conversion
-    operations: Vec<WriteOp>,
-}
-
-/// Represents a buffered value in the script context
-#[derive(Debug, Clone)]
-enum BufferedValue {
-    /// A value to be written
-    Put(Vec<u8>),
-    /// A tombstone (deletion marker)
-    Delete,
+    /// WriteBatch accumulating all write operations
+    batch: WriteBatch,
 }
 
 impl ScriptContext {
@@ -73,15 +70,14 @@ impl ScriptContext {
     pub fn new(db: Arc<DB>) -> Self {
         Self {
             db,
-            write_buffer: HashMap::new(),
-            operations: Vec::new(),
+            batch: WriteBatch::new(),
         }
     }
 
-    /// Buffers a put operation.
+    /// Adds a put operation to the WriteBatch.
     ///
     /// The operation is not immediately written to the database.
-    /// Instead, it's stored in the buffer and will be committed when
+    /// Instead, it's added to the WriteBatch and will be committed when
     /// the script completes successfully.
     ///
     /// # Arguments
@@ -103,21 +99,14 @@ impl ScriptContext {
     /// # }
     /// ```
     pub fn put(&mut self, key: &[u8], value: &[u8]) {
-        let key_vec = key.to_vec();
-        let value_vec = value.to_vec();
-        
-        self.write_buffer.insert(key_vec.clone(), BufferedValue::Put(value_vec.clone()));
-        self.operations.push(WriteOp::Put {
-            key: key_vec,
-            value: value_vec,
-        });
+        self.batch.put(key, value);
     }
 
-    /// Retrieves a value, checking the buffer first before querying the database.
+    /// Retrieves a value directly from the database.
     ///
-    /// This method implements read-your-writes semantics: if a value was
-    /// written earlier in the same script, it will be returned even though
-    /// it hasn't been committed to the database yet.
+    /// **Note**: This method reads directly from the database and does NOT
+    /// see uncommitted writes from the current script. Read-your-writes
+    /// semantics are not currently supported and are pending AiDb improvements.
     ///
     /// # Arguments
     ///
@@ -125,8 +114,8 @@ impl ScriptContext {
     ///
     /// # Returns
     ///
-    /// - `Ok(Some(value))` if the key exists (in buffer or DB)
-    /// - `Ok(None)` if the key doesn't exist or was deleted
+    /// - `Ok(Some(value))` if the key exists in the database
+    /// - `Ok(None)` if the key doesn't exist
     /// - `Err(_)` if there's an I/O error reading from the database
     ///
     /// # Example
@@ -137,31 +126,22 @@ impl ScriptContext {
     /// # use std::sync::Arc;
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
-    /// let mut ctx = ScriptContext::new(Arc::clone(&db));
+    /// let ctx = ScriptContext::new(Arc::clone(&db));
     /// 
-    /// ctx.put(b"key", b"value");
     /// let value = ctx.get(b"key")?;
-    /// assert_eq!(value, Some(b"value".to_vec()));
     /// # Ok(())
     /// # }
     /// ```
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        // First, check the write buffer
-        if let Some(buffered) = self.write_buffer.get(key) {
-            return match buffered {
-                BufferedValue::Put(value) => Ok(Some(value.clone())),
-                BufferedValue::Delete => Ok(None),
-            };
-        }
-
-        // If not in buffer, query the database
+        // Read directly from database
+        // Note: Does not see uncommitted writes in the current script
         self.db.get(key)
     }
 
-    /// Buffers a delete operation.
+    /// Adds a delete operation to the WriteBatch.
     ///
     /// The operation is not immediately applied to the database.
-    /// Instead, a tombstone is stored in the buffer and will be committed
+    /// Instead, it's added to the WriteBatch and will be committed
     /// when the script completes successfully.
     ///
     /// # Arguments
@@ -182,21 +162,18 @@ impl ScriptContext {
     /// # }
     /// ```
     pub fn delete(&mut self, key: &[u8]) {
-        let key_vec = key.to_vec();
-        
-        self.write_buffer.insert(key_vec.clone(), BufferedValue::Delete);
-        self.operations.push(WriteOp::Delete { key: key_vec });
+        self.batch.delete(key);
     }
 
-    /// Commits all buffered operations to the database atomically.
+    /// Commits all operations in the WriteBatch to the database atomically.
     ///
-    /// All operations in the buffer are converted to a WriteBatch and
-    /// applied to the database as a single atomic transaction.
+    /// All operations are applied via `db.write(batch)`, which ensures
+    /// atomicity through AiDb's WriteBatch implementation.
     ///
     /// # Errors
     ///
     /// Returns an error if the database write fails. In this case,
-    /// none of the buffered operations will be applied.
+    /// none of the operations will be applied.
     ///
     /// # Example
     ///
@@ -218,58 +195,12 @@ impl ScriptContext {
     /// # }
     /// ```
     pub fn commit(self) -> Result<()> {
-        if self.operations.is_empty() {
+        if self.batch.is_empty() {
             return Ok(());
         }
 
-        // Convert buffered operations to WriteBatch
-        let mut batch = WriteBatch::new();
-        for op in self.operations {
-            match op {
-                WriteOp::Put { key, value } => {
-                    batch.put(&key, &value);
-                }
-                WriteOp::Delete { key } => {
-                    batch.delete(&key);
-                }
-            }
-        }
-
-        // Atomically apply all operations
-        self.db.write(batch)
-    }
-
-    /// Commits buffered operations from within a Mutex.
-    ///
-    /// This is a helper method for use with Arc<Mutex<ScriptContext>>.
-    pub(crate) fn commit_from_mutex(context: &Arc<Mutex<ScriptContext>>) -> Result<()> {
-        let operations = {
-            let ctx = context.lock().unwrap();
-            ctx.operations.clone()
-        };
-        
-        if operations.is_empty() {
-            return Ok(());
-        }
-
-        let db: Arc<DB> = {
-            let ctx = context.lock().unwrap();
-            Arc::clone(&ctx.db)
-        };
-
-        let mut batch = WriteBatch::new();
-        for op in operations {
-            match op {
-                WriteOp::Put { key, value } => {
-                    batch.put(&key, &value);
-                }
-                WriteOp::Delete { key } => {
-                    batch.delete(&key);
-                }
-            }
-        }
-
-        db.write(batch)
+        // Use AiDb's WriteBatch to commit atomically
+        self.db.write(self.batch)
     }
 
     /// Discards all buffered operations without committing them to the database.
@@ -293,18 +224,29 @@ impl ScriptContext {
     /// # }
     /// ```
     pub fn rollback(self) {
-        // Simply drop the context, discarding all buffered operations
+        // Simply drop the context, discarding the WriteBatch
         drop(self);
     }
 
-    /// Returns the number of buffered operations.
+    /// Returns the number of operations in the WriteBatch.
     pub fn operation_count(&self) -> usize {
-        self.operations.len()
+        self.batch.len()
     }
 
-    /// Returns true if there are no buffered operations.
+    /// Returns true if there are no operations in the WriteBatch.
     pub fn is_empty(&self) -> bool {
-        self.operations.is_empty()
+        self.batch.is_empty()
+    }
+
+    /// Takes the WriteBatch out of the context for manual commit.
+    /// This is useful when the context is held in a Mutex.
+    pub(crate) fn take_batch(&mut self) -> WriteBatch {
+        std::mem::replace(&mut self.batch, WriteBatch::new())
+    }
+
+    /// Returns a reference to the database.
+    pub(crate) fn db(&self) -> &Arc<DB> {
+        &self.db
     }
 }
 
@@ -329,34 +271,17 @@ mod tests {
     }
 
     #[test]
-    fn test_context_put_and_get() {
+    fn test_context_put() {
         let (_dir, db) = setup_db();
         let mut ctx = ScriptContext::new(Arc::clone(&db));
 
         ctx.put(b"key1", b"value1");
         assert_eq!(ctx.operation_count(), 1);
-
-        // Should be able to read from buffer
-        let value = ctx.get(b"key1").unwrap();
-        assert_eq!(value, Some(b"value1".to_vec()));
+        assert!(!ctx.is_empty());
     }
 
     #[test]
-    fn test_context_delete() {
-        let (_dir, db) = setup_db();
-        let mut ctx = ScriptContext::new(Arc::clone(&db));
-
-        // Put then delete
-        ctx.put(b"key1", b"value1");
-        ctx.delete(b"key1");
-
-        // Should return None
-        let value = ctx.get(b"key1").unwrap();
-        assert_eq!(value, None);
-    }
-
-    #[test]
-    fn test_context_read_through_to_db() {
+    fn test_context_read_from_db() {
         let (_dir, db) = setup_db();
 
         // Write directly to DB
@@ -370,24 +295,16 @@ mod tests {
     }
 
     #[test]
-    fn test_context_buffer_overrides_db() {
+    fn test_context_no_read_your_writes() {
         let (_dir, db) = setup_db();
-
-        // Write to DB
-        db.put(b"key1", b"old_value").unwrap();
-
         let mut ctx = ScriptContext::new(Arc::clone(&db));
 
-        // Override in buffer
+        // Write to context (not committed yet)
         ctx.put(b"key1", b"new_value");
 
-        // Should read new value from buffer
+        // Get should NOT see the uncommitted write
         let value = ctx.get(b"key1").unwrap();
-        assert_eq!(value, Some(b"new_value".to_vec()));
-
-        // DB should still have old value
-        let db_value = db.get(b"key1").unwrap();
-        assert_eq!(db_value, Some(b"old_value".to_vec()));
+        assert_eq!(value, None); // Not committed yet, so None
     }
 
     #[test]
@@ -452,23 +369,21 @@ mod tests {
     }
 
     #[test]
-    fn test_context_multiple_operations_same_key() {
+    fn test_context_multiple_operations() {
         let (_dir, db) = setup_db();
         let mut ctx = ScriptContext::new(Arc::clone(&db));
 
-        // Multiple operations on same key
+        // Multiple operations on same key - all will be applied
         ctx.put(b"key", b"value1");
         ctx.put(b"key", b"value2");
         ctx.put(b"key", b"value3");
 
-        // Should return latest value
-        let value = ctx.get(b"key").unwrap();
-        assert_eq!(value, Some(b"value3".to_vec()));
+        assert_eq!(ctx.operation_count(), 3);
 
         // Commit
         ctx.commit().unwrap();
 
-        // DB should have all operations applied
+        // DB should have the final value
         assert_eq!(db.get(b"key").unwrap(), Some(b"value3".to_vec()));
     }
 }
