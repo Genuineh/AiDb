@@ -54,6 +54,7 @@ pub struct LuaExecutor {
 }
 
 /// Database API exposed to Lua scripts
+#[allow(dead_code)]
 struct LuaDbApi {
     context: Arc<Mutex<ScriptContext>>,
 }
