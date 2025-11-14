@@ -41,6 +41,9 @@ pub enum Error {
     /// The database or file is already in use.
     AlreadyExists(String),
 
+    /// A script execution error occurred.
+    ScriptError(String),
+
     /// An internal error occurred.
     Internal(String),
 }
@@ -81,6 +84,7 @@ impl fmt::Display for Error {
                 write!(f, "Checksum mismatch: expected {:#x}, got {:#x}", expected, actual)
             }
             Error::AlreadyExists(msg) => write!(f, "Already exists: {}", msg),
+            Error::ScriptError(msg) => write!(f, "Script error: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
         }
     }
@@ -104,6 +108,12 @@ impl From<io::Error> for Error {
 impl From<bincode::Error> for Error {
     fn from(err: bincode::Error) -> Self {
         Error::Serialization(err.to_string())
+    }
+}
+
+impl From<mlua::Error> for Error {
+    fn from(err: mlua::Error) -> Self {
+        Error::ScriptError(err.to_string())
     }
 }
 

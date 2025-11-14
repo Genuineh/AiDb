@@ -51,6 +51,7 @@ pub mod error;
 pub mod filter;
 pub mod iterator;
 pub mod memtable;
+pub mod script;
 pub mod snapshot;
 pub mod sstable;
 pub mod wal;
@@ -1136,6 +1137,105 @@ impl DB {
     /// cached data.
     pub fn reset_cache_stats(&self) {
         self.block_cache.reset_stats();
+    }
+
+    /// Executes a Lua script with automatic rollback on failure.
+    ///
+    /// The script is executed in a sandboxed Lua environment with access to
+    /// database operations through the `db` API. All operations are buffered
+    /// and only committed if the script completes successfully.
+    ///
+    /// # Available Lua API
+    ///
+    /// - `db.put(key, value)` - Insert or update a key-value pair
+    /// - `db.get(key)` - Retrieve a value by key (returns nil if not found)
+    /// - `db.delete(key)` - Delete a key
+    ///
+    /// # Arguments
+    ///
+    /// * `script` - The Lua script code to execute
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the script executed successfully and changes were committed
+    /// - `Err(_)` if the script failed (changes are automatically rolled back)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The script has syntax errors
+    /// - The script raises a runtime error
+    /// - Database operations fail
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use aidb::{DB, Options};
+    /// use std::sync::Arc;
+    ///
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// let db = Arc::new(DB::open("./data", Options::default())?);
+    ///
+    /// // Execute a script with automatic rollback
+    /// db.execute_script(r#"
+    ///     -- Transfer credits between accounts
+    ///     local balance = db.get("account:1:balance")
+    ///     if tonumber(balance) < 100 then
+    ///         error("Insufficient balance")
+    ///     end
+    ///     
+    ///     db.put("account:1:balance", tostring(tonumber(balance) - 100))
+    ///     db.put("account:2:balance", tostring(tonumber(db.get("account:2:balance")) + 100))
+    /// "#)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn execute_script(self: &Arc<Self>, script: &str) -> Result<()> {
+        use script::LuaExecutor;
+        use std::time::Duration;
+
+        let executor = LuaExecutor::new(Arc::clone(self), Some(Duration::from_secs(30)));
+        executor.execute(script)
+    }
+
+    /// Executes a Lua script and returns its result value.
+    ///
+    /// Similar to `execute_script()`, but captures and returns the script's return value.
+    ///
+    /// # Arguments
+    ///
+    /// * `script` - The Lua script code to execute
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(String))` if the script returned a string value
+    /// - `Ok(None)` if the script returned nil or nothing
+    /// - `Err(_)` if the script failed (changes are rolled back)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use aidb::{DB, Options};
+    /// use std::sync::Arc;
+    ///
+    /// # fn main() -> Result<(), aidb::Error> {
+    /// let db = Arc::new(DB::open("./data", Options::default())?);
+    ///
+    /// let result = db.execute_script_with_result(r#"
+    ///     db.put("counter", "42")
+    ///     return "Operation completed"
+    /// "#)?;
+    ///
+    /// assert_eq!(result, Some("Operation completed".to_string()));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn execute_script_with_result(self: &Arc<Self>, script: &str) -> Result<Option<String>> {
+        use script::LuaExecutor;
+        use std::time::Duration;
+
+        let executor = LuaExecutor::new(Arc::clone(self), Some(Duration::from_secs(30)));
+        executor.execute_with_result(script)
     }
 }
 
