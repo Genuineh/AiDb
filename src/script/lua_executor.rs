@@ -5,7 +5,7 @@
 //! if the script completes successfully.
 
 use crate::script::context::ScriptContext;
-use crate::{Error, Result, WriteBatch, DB};
+use crate::{Error, Result, DB};
 use mlua::Lua;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -53,7 +53,7 @@ use std::time::{Duration, Instant};
 pub struct LuaExecutor {
     /// Reference to the database
     db: Arc<DB>,
-    
+
     /// Maximum script execution time
     timeout: Option<Duration>,
 }
@@ -65,17 +65,21 @@ struct LuaDbApi {
 }
 
 impl LuaDbApi {
-    fn create_api_table<'lua>(lua: &'lua Lua, context: Arc<Mutex<ScriptContext>>) -> mlua::Result<mlua::Table<'lua>> {
+    fn create_api_table<'lua>(
+        lua: &'lua Lua,
+        context: Arc<Mutex<ScriptContext>>,
+    ) -> mlua::Result<mlua::Table<'lua>> {
         let table = lua.create_table()?;
-        
+
         let ctx_put = Arc::clone(&context);
-        let put_fn = lua.create_function(move |_, (key, value): (mlua::String<'_>, mlua::String<'_>)| {
-            let mut ctx = ctx_put.lock().unwrap();
-            ctx.put(key.as_bytes(), value.as_bytes());
-            Ok(())
-        })?;
+        let put_fn =
+            lua.create_function(move |_, (key, value): (mlua::String<'_>, mlua::String<'_>)| {
+                let mut ctx = ctx_put.lock().unwrap();
+                ctx.put(key.as_bytes(), value.as_bytes());
+                Ok(())
+            })?;
         table.set("put", put_fn)?;
-        
+
         let ctx_get = Arc::clone(&context);
         let get_fn = lua.create_function(move |lua, key: mlua::String<'_>| {
             let ctx = ctx_get.lock().unwrap();
@@ -86,7 +90,7 @@ impl LuaDbApi {
             }
         })?;
         table.set("get", get_fn)?;
-        
+
         let ctx_delete = Arc::clone(&context);
         let delete_fn = lua.create_function(move |_, key: mlua::String<'_>| {
             let mut ctx = ctx_delete.lock().unwrap();
@@ -94,7 +98,7 @@ impl LuaDbApi {
             Ok(())
         })?;
         table.set("delete", delete_fn)?;
-        
+
         Ok(table)
     }
 }
@@ -176,21 +180,18 @@ impl LuaExecutor {
     /// ```
     pub fn execute(&self, script: &str) -> Result<()> {
         let start_time = Instant::now();
-        
+
         // Create Lua VM
         let lua = Lua::new();
-        
+
         // Create script context
         let context = Arc::new(Mutex::new(ScriptContext::new(Arc::clone(&self.db))));
-        
+
         // Set up timeout hook if specified
         if let Some(timeout) = self.timeout {
             let timeout_start = start_time;
             lua.set_hook(
-                mlua::HookTriggers {
-                    every_nth_instruction: Some(1000),
-                    ..Default::default()
-                },
+                mlua::HookTriggers { every_nth_instruction: Some(1000), ..Default::default() },
                 move |_lua, _debug| {
                     if timeout_start.elapsed() > timeout {
                         Err(mlua::Error::RuntimeError("Script execution timeout".to_string()))
@@ -204,10 +205,10 @@ impl LuaExecutor {
         // Execute script - create the API as a table
         let result = (|| -> mlua::Result<()> {
             let globals = lua.globals();
-            
+
             // Create db API table with functions
             let db_table = LuaDbApi::create_api_table(&lua, Arc::clone(&context))?;
-            
+
             globals.set("db", db_table)?;
             lua.load(script).exec()
         })();
@@ -220,24 +221,21 @@ impl LuaExecutor {
                 let batch = ctx.take_batch();
                 let db = Arc::clone(ctx.db());
                 drop(ctx);
-                
+
                 if !batch.is_empty() {
                     db.write(batch)?;
                 }
-                
-                log::info!(
-                    "Lua script executed successfully in {:?}",
-                    start_time.elapsed()
-                );
-                
+
+                log::info!("Lua script executed successfully in {:?}", start_time.elapsed());
+
                 Ok(())
             }
             Err(e) => {
                 // Script failed - rollback changes
                 log::warn!("Lua script failed: {}", e);
-                
+
                 // Context is dropped here, automatically rolling back
-                
+
                 Err(Error::ScriptError(format!("Lua script failed: {}", e)))
             }
         }
@@ -279,18 +277,15 @@ impl LuaExecutor {
     /// ```
     pub fn execute_with_result(&self, script: &str) -> Result<Option<String>> {
         let start_time = Instant::now();
-        
+
         let lua = Lua::new();
         let context = Arc::new(Mutex::new(ScriptContext::new(Arc::clone(&self.db))));
-        
+
         // Set up timeout hook
         if let Some(timeout) = self.timeout {
             let timeout_start = start_time;
             lua.set_hook(
-                mlua::HookTriggers {
-                    every_nth_instruction: Some(1000),
-                    ..Default::default()
-                },
+                mlua::HookTriggers { every_nth_instruction: Some(1000), ..Default::default() },
                 move |_lua, _debug| {
                     if timeout_start.elapsed() > timeout {
                         Err(mlua::Error::RuntimeError("Script execution timeout".to_string()))
@@ -304,9 +299,9 @@ impl LuaExecutor {
         // Execute script and capture return value - create API as table
         let result = (|| -> mlua::Result<mlua::Value<'_>> {
             let globals = lua.globals();
-            
+
             let db_table = LuaDbApi::create_api_table(&lua, Arc::clone(&context))?;
-            
+
             globals.set("db", db_table)?;
             lua.load(script).eval::<mlua::Value<'_>>()
         })();
@@ -326,24 +321,21 @@ impl LuaExecutor {
                 let batch = ctx.take_batch();
                 let db = Arc::clone(ctx.db());
                 drop(ctx);
-                
+
                 if !batch.is_empty() {
                     db.write(batch)?;
                 }
-                
-                log::info!(
-                    "Lua script executed successfully in {:?}",
-                    start_time.elapsed()
-                );
-                
+
+                log::info!("Lua script executed successfully in {:?}", start_time.elapsed());
+
                 Ok(return_value)
             }
             Err(e) => {
                 // Script failed - rollback changes
                 log::warn!("Lua script failed: {}", e);
-                
+
                 // Context is dropped here, automatically rolling back
-                
+
                 Err(Error::ScriptError(format!("Lua script failed: {}", e)))
             }
         }
@@ -524,10 +516,7 @@ mod tests {
         for i in 1..=100 {
             let key = format!("key{}", i);
             let expected = format!("value{}", i);
-            assert_eq!(
-                db.get(key.as_bytes()).unwrap(),
-                Some(expected.as_bytes().to_vec())
-            );
+            assert_eq!(db.get(key.as_bytes()).unwrap(), Some(expected.as_bytes().to_vec()));
         }
     }
 

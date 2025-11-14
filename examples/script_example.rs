@@ -3,7 +3,7 @@
 //! This example demonstrates how to use Lua scripting with automatic rollback
 //! in AiDb. Scripts that fail will automatically rollback all changes.
 
-use aidb::{DB, Options};
+use aidb::{Options, DB};
 use std::sync::Arc;
 
 fn main() -> Result<(), aidb::Error> {
@@ -15,15 +15,21 @@ fn main() -> Result<(), aidb::Error> {
     // Example 1: Successful script (all changes committed)
     println!("Example 1: Successful transfer");
     println!("-----------------------------------");
-    
+
     // Initialize accounts
     db.put(b"account:alice:balance", b"1000")?;
     db.put(b"account:bob:balance", b"500")?;
-    
+
     println!("Initial balances:");
-    println!("  Alice: {} credits", String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap()));
-    println!("  Bob:   {} credits", String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap()));
-    
+    println!(
+        "  Alice: {} credits",
+        String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap())
+    );
+    println!(
+        "  Bob:   {} credits",
+        String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap())
+    );
+
     // Transfer 200 credits from Alice to Bob
     let script = r#"
         -- Read current balances
@@ -41,25 +47,37 @@ fn main() -> Result<(), aidb::Error> {
         
         return "Transfer successful"
     "#;
-    
+
     match db.execute_script_with_result(script) {
         Ok(result) => {
             println!("\nScript result: {:?}", result);
             println!("\nAfter transfer:");
-            println!("  Alice: {} credits", String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap()));
-            println!("  Bob:   {} credits", String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap()));
+            println!(
+                "  Alice: {} credits",
+                String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap())
+            );
+            println!(
+                "  Bob:   {} credits",
+                String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap())
+            );
         }
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     // Example 2: Failed script (all changes rolled back)
     println!("\n\nExample 2: Failed transfer (insufficient balance)");
     println!("---------------------------------------------------");
-    
+
     println!("Before attempt:");
-    println!("  Alice: {} credits", String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap()));
-    println!("  Bob:   {} credits", String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap()));
-    
+    println!(
+        "  Alice: {} credits",
+        String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap())
+    );
+    println!(
+        "  Bob:   {} credits",
+        String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap())
+    );
+
     // Try to transfer 1000 credits (will fail)
     let script = r#"
         local alice_balance = tonumber(db.get("account:alice:balance"))
@@ -74,20 +92,26 @@ fn main() -> Result<(), aidb::Error> {
         
         return "Transfer successful"
     "#;
-    
+
     match db.execute_script_with_result(script) {
         Ok(result) => println!("\nScript result: {:?}", result),
         Err(e) => println!("\nScript failed (as expected): {}", e),
     }
-    
+
     println!("\nAfter failed attempt (balances unchanged due to rollback):");
-    println!("  Alice: {} credits", String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap()));
-    println!("  Bob:   {} credits", String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap()));
-    
+    println!(
+        "  Alice: {} credits",
+        String::from_utf8_lossy(&db.get(b"account:alice:balance")?.unwrap())
+    );
+    println!(
+        "  Bob:   {} credits",
+        String::from_utf8_lossy(&db.get(b"account:bob:balance")?.unwrap())
+    );
+
     // Example 3: Complex script with multiple operations
     println!("\n\nExample 3: Batch update with validation");
     println!("------------------------------------------");
-    
+
     let script = r#"
         -- Initialize order items
         db.put("order:1:item", "laptop")
@@ -108,7 +132,7 @@ fn main() -> Result<(), aidb::Error> {
         
         return "Total: $" .. total
     "#;
-    
+
     match db.execute_script_with_result(script) {
         Ok(result) => {
             println!("Script result: {:?}", result);
@@ -128,11 +152,11 @@ fn main() -> Result<(), aidb::Error> {
         }
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     // Close the database
     db.close()?;
-    
+
     println!("\n=== Example completed successfully ===");
-    
+
     Ok(())
 }

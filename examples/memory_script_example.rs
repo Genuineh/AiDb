@@ -4,7 +4,7 @@
 //! read-your-writes semantics. Scripts can read their own uncommitted writes.
 
 use aidb::script::MemoryScriptContext;
-use aidb::{DB, Options};
+use aidb::{Options, DB};
 use std::sync::Arc;
 
 fn main() -> Result<(), aidb::Error> {
@@ -70,18 +70,22 @@ fn main() -> Result<(), aidb::Error> {
             let name_key = format!("cart:item{}:name", i);
 
             let name = ctx.get(name_key.as_bytes())?.unwrap();
-            let price: i32 = String::from_utf8_lossy(
-                &ctx.get(price_key.as_bytes())?.unwrap()
-            ).parse().unwrap();
-            let qty: i32 = String::from_utf8_lossy(
-                &ctx.get(qty_key.as_bytes())?.unwrap()
-            ).parse().unwrap();
+            let price: i32 = String::from_utf8_lossy(&ctx.get(price_key.as_bytes())?.unwrap())
+                .parse()
+                .unwrap();
+            let qty: i32 =
+                String::from_utf8_lossy(&ctx.get(qty_key.as_bytes())?.unwrap()).parse().unwrap();
 
             let item_total = price * qty;
             total += item_total;
 
-            println!("  Item {}: {} x ${} = ${}", i, 
-                     String::from_utf8_lossy(&name), qty, item_total);
+            println!(
+                "  Item {}: {} x ${} = ${}",
+                i,
+                String::from_utf8_lossy(&name),
+                qty,
+                item_total
+            );
         }
 
         println!("  Total: ${}", total);

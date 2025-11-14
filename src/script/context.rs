@@ -42,7 +42,7 @@ use std::sync::Arc;
 pub struct ScriptContext {
     /// Reference to the database
     db: Arc<DB>,
-    
+
     /// WriteBatch accumulating all write operations
     batch: WriteBatch,
 }
@@ -92,10 +92,10 @@ pub struct ScriptContext {
 pub struct MemoryScriptContext {
     /// Reference to the database
     db: Arc<DB>,
-    
+
     /// WriteBatch accumulating all write operations
     batch: WriteBatch,
-    
+
     /// In-memory cache for read-your-writes support
     cache: HashMap<Vec<u8>, CachedValue>,
 }
@@ -130,10 +130,7 @@ impl ScriptContext {
     /// # }
     /// ```
     pub fn new(db: Arc<DB>) -> Self {
-        Self {
-            db,
-            batch: WriteBatch::new(),
-        }
+        Self { db, batch: WriteBatch::new() }
     }
 
     /// Adds a put operation to the WriteBatch.
@@ -189,7 +186,7 @@ impl ScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let ctx = ScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// let value = ctx.get(b"key")?;
     /// # Ok(())
     /// # }
@@ -246,11 +243,11 @@ impl ScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let mut ctx = ScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// ctx.put(b"key1", b"value1");
     /// ctx.put(b"key2", b"value2");
     /// ctx.delete(b"key3");
-    /// 
+    ///
     /// // Commit all operations atomically
     /// ctx.commit()?;
     /// # Ok(())
@@ -279,7 +276,7 @@ impl ScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let mut ctx = ScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// ctx.put(b"key", b"value");
     /// ctx.rollback(); // Discard the operation
     /// # Ok(())
@@ -340,11 +337,7 @@ impl MemoryScriptContext {
     /// # }
     /// ```
     pub fn new(db: Arc<DB>) -> Self {
-        Self {
-            db,
-            batch: WriteBatch::new(),
-            cache: HashMap::new(),
-        }
+        Self { db, batch: WriteBatch::new(), cache: HashMap::new() }
     }
 
     /// Adds a put operation to the WriteBatch and updates the cache.
@@ -373,7 +366,7 @@ impl MemoryScriptContext {
     pub fn put(&mut self, key: &[u8], value: &[u8]) {
         // Update cache for read-your-writes
         self.cache.insert(key.to_vec(), CachedValue::Put(value.to_vec()));
-        
+
         // Add to WriteBatch for atomic commit
         self.batch.put(key, value);
     }
@@ -403,9 +396,9 @@ impl MemoryScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let mut ctx = MemoryScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// ctx.put(b"key", b"value");
-    /// 
+    ///
     /// // Read-your-writes: can see the uncommitted value
     /// let value = ctx.get(b"key")?;
     /// assert_eq!(value, Some(b"value".to_vec()));
@@ -450,7 +443,7 @@ impl MemoryScriptContext {
     pub fn delete(&mut self, key: &[u8]) {
         // Update cache to mark as deleted
         self.cache.insert(key.to_vec(), CachedValue::Delete);
-        
+
         // Add to WriteBatch for atomic commit
         self.batch.delete(key);
     }
@@ -475,11 +468,11 @@ impl MemoryScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let mut ctx = MemoryScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// ctx.put(b"key1", b"value1");
     /// ctx.put(b"key2", b"value2");
     /// ctx.delete(b"key3");
-    /// 
+    ///
     /// // Commit all operations atomically
     /// ctx.commit()?;
     /// # Ok(())
@@ -508,7 +501,7 @@ impl MemoryScriptContext {
     /// # fn main() -> Result<(), aidb::Error> {
     /// # let db = Arc::new(DB::open("./data", Options::default())?);
     /// let mut ctx = MemoryScriptContext::new(Arc::clone(&db));
-    /// 
+    ///
     /// ctx.put(b"key", b"value");
     /// ctx.rollback(); // Discard the operation and cache
     /// # Ok(())
@@ -816,4 +809,3 @@ mod tests {
         assert_eq!(db.get(b"balance:2").unwrap(), Some(b"700".to_vec()));
     }
 }
-
