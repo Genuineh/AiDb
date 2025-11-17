@@ -3,9 +3,9 @@
 //! A Replica node provides a cache layer in front of a Primary node.
 //! Cache hits are served directly, while cache misses are forwarded to the Primary.
 
-use std::sync::Arc;
-use std::collections::HashMap;
 use parking_lot::RwLock;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tonic::transport::Channel;
 
 use crate::cluster::rpc::proto::{self, storage_client::StorageClient};
@@ -28,11 +28,7 @@ pub struct LruCache {
 impl LruCache {
     /// Create a new LRU cache with given capacity
     pub fn new(capacity: usize) -> Self {
-        Self {
-            capacity,
-            cache: HashMap::new(),
-            access_list: Vec::new(),
-        }
+        Self { capacity, cache: HashMap::new(), access_list: Vec::new() }
     }
 
     /// Get a value from the cache
@@ -52,10 +48,7 @@ impl LruCache {
     pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
         // If key already exists, update it
         if self.cache.contains_key(&key) {
-            self.cache.insert(key.clone(), CacheEntry {
-                value,
-                access_count: 1,
-            });
+            self.cache.insert(key.clone(), CacheEntry { value, access_count: 1 });
             self.access_list.retain(|k| k != &key);
             self.access_list.push(key);
             return;
@@ -70,10 +63,7 @@ impl LruCache {
         }
 
         // Insert new entry
-        self.cache.insert(key.clone(), CacheEntry {
-            value,
-            access_count: 1,
-        });
+        self.cache.insert(key.clone(), CacheEntry { value, access_count: 1 });
         self.access_list.push(key);
     }
 
@@ -103,14 +93,20 @@ impl LruCache {
 /// Statistics for Replica node
 #[derive(Debug, Default, Clone)]
 pub struct ReplicaStats {
+    /// Total number of requests received
     pub total_requests: u64,
+    /// Number of cache hits
     pub cache_hits: u64,
+    /// Number of cache misses
     pub cache_misses: u64,
+    /// Number of requests forwarded to Primary
     pub forwarded_requests: u64,
+    /// Number of errors encountered
     pub errors: u64,
 }
 
 impl ReplicaStats {
+    /// Calculate the cache hit rate
     pub fn hit_rate(&self) -> f64 {
         if self.total_requests == 0 {
             0.0
@@ -129,10 +125,7 @@ pub struct ReplicaNode {
 
 impl ReplicaNode {
     /// Create a new Replica node
-    pub async fn new(
-        primary_addr: String,
-        cache_capacity: usize,
-    ) -> Result<Self> {
+    pub async fn new(primary_addr: String, cache_capacity: usize) -> Result<Self> {
         let primary_client = StorageClient::connect(primary_addr)
             .await
             .map_err(|e| Error::Network(format!("Failed to connect to primary: {}", e)))?;
@@ -158,9 +151,7 @@ impl ReplicaNode {
         self.stats.write().cache_misses += 1;
         self.stats.write().forwarded_requests += 1;
 
-        let request = tonic::Request::new(proto::GetRequest {
-            key: key.to_vec(),
-        });
+        let request = tonic::Request::new(proto::GetRequest { key: key.to_vec() });
 
         match self.primary_client.get(request).await {
             Ok(response) => {
@@ -188,10 +179,8 @@ impl ReplicaNode {
         // Invalidate cache entry
         self.cache.write().invalidate(key);
 
-        let request = tonic::Request::new(proto::PutRequest {
-            key: key.to_vec(),
-            value: value.to_vec(),
-        });
+        let request =
+            tonic::Request::new(proto::PutRequest { key: key.to_vec(), value: value.to_vec() });
 
         match self.primary_client.put(request).await {
             Ok(response) => {
@@ -218,9 +207,7 @@ impl ReplicaNode {
         // Invalidate cache entry
         self.cache.write().invalidate(key);
 
-        let request = tonic::Request::new(proto::DeleteRequest {
-            key: key.to_vec(),
-        });
+        let request = tonic::Request::new(proto::DeleteRequest { key: key.to_vec() });
 
         match self.primary_client.delete(request).await {
             Ok(response) => {
@@ -257,23 +244,22 @@ impl ReplicaNode {
     /// Warm up the cache with frequently accessed keys
     pub async fn warmup(&mut self, keys: Vec<Vec<u8>>) -> Result<usize> {
         let mut warmed = 0;
-        
+
         for key in keys {
             match self.get(&key).await {
                 Ok(Some(_)) => warmed += 1,
-                Ok(None) => {},
-                Err(_) => {},
+                Ok(None) => {}
+                Err(_) => {}
             }
         }
-        
+
         Ok(warmed)
     }
 
     /// Health check - forwards to Primary
     pub async fn health_check(&mut self) -> Result<bool> {
-        let request = tonic::Request::new(proto::HealthCheckRequest {
-            service: "storage".to_string(),
-        });
+        let request =
+            tonic::Request::new(proto::HealthCheckRequest { service: "storage".to_string() });
 
         match self.primary_client.health_check(request).await {
             Ok(response) => {

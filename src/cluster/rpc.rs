@@ -6,6 +6,7 @@
 use tonic::Status;
 
 // Include the generated protobuf code
+#[allow(missing_docs)]
 pub mod proto {
     tonic::include_proto!("aidb");
 }
@@ -15,9 +16,4 @@ pub use proto::*;
 /// Convert AiDb errors to gRPC Status
 pub fn to_status(err: crate::error::Error) -> Status {
     Status::internal(err.to_string())
-}
-
-/// Convert Result to gRPC Result with Status
-pub fn to_result<T>(result: Result<T, crate::error::Error>) -> Result<T, Status> {
-    result.map_err(to_status)
 }

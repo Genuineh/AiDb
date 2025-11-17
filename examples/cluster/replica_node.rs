@@ -13,16 +13,16 @@ use tokio::time::sleep;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    
+
     println!("Starting Replica node...");
-    
+
     // Connect to primary node
     let primary_addr = "http://127.0.0.1:50051".to_string();
     let cache_capacity = 1000; // Cache up to 1000 entries
-    
+
     let mut replica = ReplicaNode::new(primary_addr, cache_capacity).await?;
     println!("Replica node connected to primary");
-    
+
     // Check if primary is healthy
     match replica.health_check().await {
         Ok(true) => println!("Primary node is healthy"),
@@ -32,16 +32,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     }
-    
+
     // Warm up cache with some keys
     println!("Warming up cache...");
-    let warmup_keys = vec![
-        b"hello".to_vec(),
-        b"foo".to_vec(),
-    ];
+    let warmup_keys = vec![b"hello".to_vec(), b"foo".to_vec()];
     let warmed = replica.warmup(warmup_keys).await?;
     println!("Warmed up {} keys", warmed);
-    
+
     // Simulate some read operations
     println!("\nSimulating read operations...");
     for _ in 0..5 {
@@ -51,10 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(None) => println!("Key not found"),
             Err(e) => eprintln!("Error: {}", e),
         }
-        
+
         sleep(Duration::from_secs(1)).await;
     }
-    
+
     // Print statistics
     let stats = replica.stats();
     println!("\n=== Replica Statistics ===");
@@ -64,6 +61,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Hit rate: {:.2}%", stats.hit_rate() * 100.0);
     println!("Forwarded requests: {}", stats.forwarded_requests);
     println!("Cache size: {}", replica.cache_size());
-    
+
     Ok(())
 }
