@@ -50,11 +50,7 @@ impl HealthChecker {
     /// * `coordinator` - The coordinator to monitor
     /// * `config` - Health check configuration
     pub fn new(coordinator: Arc<Coordinator>, config: HealthCheckConfig) -> Self {
-        Self {
-            coordinator,
-            config,
-            running: Arc::new(parking_lot::RwLock::new(false)),
-        }
+        Self { coordinator, config, running: Arc::new(parking_lot::RwLock::new(false)) }
     }
 
     /// Start the health checker
@@ -88,7 +84,7 @@ impl HealthChecker {
                 }
 
                 let shards = coordinator.list_shards();
-                
+
                 for shard_info in shards {
                     let shard_id = shard_info.id.clone();
                     let address = format!("http://{}", shard_info.address);
@@ -99,7 +95,7 @@ impl HealthChecker {
                     if is_healthy {
                         // Reset failure count
                         failure_counts.insert(shard_id.clone(), 0);
-                        
+
                         // Increment success count
                         let success_count = success_counts.entry(shard_id.clone()).or_insert(0);
                         *success_count += 1;
@@ -113,20 +109,26 @@ impl HealthChecker {
                     } else {
                         // Reset success count
                         success_counts.insert(shard_id.clone(), 0);
-                        
+
                         // Increment failure count
                         let failure_count = failure_counts.entry(shard_id.clone()).or_insert(0);
                         *failure_count += 1;
 
-                        log::warn!("Health check failed for shard {} (failures: {})", 
-                                   shard_id, failure_count);
+                        log::warn!(
+                            "Health check failed for shard {} (failures: {})",
+                            shard_id,
+                            failure_count
+                        );
 
                         // If enough failures and currently marked healthy, mark as unhealthy
                         if *failure_count >= config.failure_threshold && shard_info.healthy {
                             coordinator.mark_unhealthy(&shard_id);
-                            log::error!("Shard {} marked unhealthy after {} consecutive failures", 
-                                       shard_id, failure_count);
-                            
+                            log::error!(
+                                "Shard {} marked unhealthy after {} consecutive failures",
+                                shard_id,
+                                failure_count
+                            );
+
                             // Optionally auto-remove unhealthy shard
                             // coordinator.unregister_shard(&shard_id);
                         }
@@ -154,10 +156,8 @@ impl HealthChecker {
     /// # Returns
     /// `true` if the shard is healthy, `false` otherwise
     async fn check_shard_health(address: &str, timeout: Duration) -> bool {
-        let connect_result = tokio::time::timeout(
-            timeout,
-            StorageClient::connect(address.to_string())
-        ).await;
+        let connect_result =
+            tokio::time::timeout(timeout, StorageClient::connect(address.to_string())).await;
 
         let mut client = match connect_result {
             Ok(Ok(client)) => client,
@@ -172,14 +172,9 @@ impl HealthChecker {
         };
 
         // Perform health check RPC
-        let request = tonic::Request::new(HealthCheckRequest {
-            service: "aidb".to_string(),
-        });
+        let request = tonic::Request::new(HealthCheckRequest { service: "aidb".to_string() });
 
-        let check_result = tokio::time::timeout(
-            timeout,
-            client.health_check(request)
-        ).await;
+        let check_result = tokio::time::timeout(timeout, client.health_check(request)).await;
 
         match check_result {
             Ok(Ok(response)) => {
@@ -223,7 +218,7 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(150));
         let config = HealthCheckConfig::default();
         let checker = HealthChecker::new(coordinator, config);
-        
+
         assert!(!checker.is_running());
     }
 
@@ -237,15 +232,15 @@ mod tests {
             success_threshold: 1,
         };
         let checker = HealthChecker::new(coordinator, config);
-        
+
         checker.start();
         assert!(checker.is_running());
-        
+
         // Wait a bit for the task to start
         tokio::time::sleep(Duration::from_millis(50)).await;
-        
+
         checker.stop();
-        
+
         // Wait for the task to stop
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(!checker.is_running());
@@ -255,9 +250,10 @@ mod tests {
     async fn test_check_shard_health_invalid_address() {
         let result = HealthChecker::check_shard_health(
             "http://invalid-address-that-does-not-exist:99999",
-            Duration::from_secs(1)
-        ).await;
-        
+            Duration::from_secs(1),
+        )
+        .await;
+
         assert!(!result);
     }
 }

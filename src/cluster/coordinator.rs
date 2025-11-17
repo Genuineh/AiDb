@@ -8,8 +8,8 @@
 
 use super::consistent_hash::{ConsistentHashRing, ShardId};
 use super::rpc::proto::{
-    storage_client::StorageClient, GetRequest, GetResponse, PutRequest, PutResponse,
-    DeleteRequest, DeleteResponse,
+    storage_client::StorageClient, DeleteRequest, DeleteResponse, GetRequest, GetResponse,
+    PutRequest, PutResponse,
 };
 use crate::error::Result;
 use parking_lot::RwLock;
@@ -33,12 +33,7 @@ pub struct ShardInfo {
 impl ShardInfo {
     /// Create a new shard info
     pub fn new(id: ShardId, address: String) -> Self {
-        Self {
-            id,
-            address,
-            healthy: true,
-            request_count: 0,
-        }
+        Self { id, address, healthy: true, request_count: 0 }
     }
 }
 
@@ -79,7 +74,7 @@ impl Coordinator {
 
         // Create shard info
         let shard_info = ShardInfo::new(shard_id.clone(), address.clone());
-        
+
         // Store shard info
         {
             let mut shards = self.shards.write();
@@ -87,9 +82,10 @@ impl Coordinator {
         }
 
         // Create client connection
-        let client = StorageClient::connect(address.clone()).await
-            .map_err(|e| crate::error::Error::ClusterError(format!("Failed to connect to shard: {}", e)))?;
-        
+        let client = StorageClient::connect(address.clone()).await.map_err(|e| {
+            crate::error::Error::ClusterError(format!("Failed to connect to shard: {}", e))
+        })?;
+
         {
             let mut clients = self.clients.write();
             clients.insert(shard_id.clone(), client);
@@ -151,7 +147,8 @@ impl Coordinator {
     /// # Returns
     /// The response from the shard
     pub async fn get(&self, key: &[u8]) -> Result<GetResponse> {
-        let shard_id = self.route_key(key)
+        let shard_id = self
+            .route_key(key)
             .ok_or_else(|| crate::error::Error::ClusterError("No shards available".to_string()))?;
 
         // Increment request count
@@ -162,14 +159,15 @@ impl Coordinator {
             }
         }
 
-        let mut client = self.get_client(&shard_id)
-            .ok_or_else(|| crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id)))?;
+        let mut client = self.get_client(&shard_id).ok_or_else(|| {
+            crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id))
+        })?;
 
-        let request = tonic::Request::new(GetRequest {
-            key: key.to_vec(),
-        });
+        let request = tonic::Request::new(GetRequest { key: key.to_vec() });
 
-        let response = client.get(request).await
+        let response = client
+            .get(request)
+            .await
             .map_err(|e| crate::error::Error::ClusterError(format!("RPC error: {}", e)))?;
 
         Ok(response.into_inner())
@@ -184,7 +182,8 @@ impl Coordinator {
     /// # Returns
     /// The response from the shard
     pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<PutResponse> {
-        let shard_id = self.route_key(key)
+        let shard_id = self
+            .route_key(key)
             .ok_or_else(|| crate::error::Error::ClusterError("No shards available".to_string()))?;
 
         // Increment request count
@@ -195,15 +194,15 @@ impl Coordinator {
             }
         }
 
-        let mut client = self.get_client(&shard_id)
-            .ok_or_else(|| crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id)))?;
+        let mut client = self.get_client(&shard_id).ok_or_else(|| {
+            crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id))
+        })?;
 
-        let request = tonic::Request::new(PutRequest {
-            key: key.to_vec(),
-            value: value.to_vec(),
-        });
+        let request = tonic::Request::new(PutRequest { key: key.to_vec(), value: value.to_vec() });
 
-        let response = client.put(request).await
+        let response = client
+            .put(request)
+            .await
             .map_err(|e| crate::error::Error::ClusterError(format!("RPC error: {}", e)))?;
 
         Ok(response.into_inner())
@@ -217,7 +216,8 @@ impl Coordinator {
     /// # Returns
     /// The response from the shard
     pub async fn delete(&self, key: &[u8]) -> Result<DeleteResponse> {
-        let shard_id = self.route_key(key)
+        let shard_id = self
+            .route_key(key)
             .ok_or_else(|| crate::error::Error::ClusterError("No shards available".to_string()))?;
 
         // Increment request count
@@ -228,14 +228,15 @@ impl Coordinator {
             }
         }
 
-        let mut client = self.get_client(&shard_id)
-            .ok_or_else(|| crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id)))?;
+        let mut client = self.get_client(&shard_id).ok_or_else(|| {
+            crate::error::Error::ClusterError(format!("Client not found for shard: {}", shard_id))
+        })?;
 
-        let request = tonic::Request::new(DeleteRequest {
-            key: key.to_vec(),
-        });
+        let request = tonic::Request::new(DeleteRequest { key: key.to_vec() });
 
-        let response = client.delete(request).await
+        let response = client
+            .delete(request)
+            .await
             .map_err(|e| crate::error::Error::ClusterError(format!("RPC error: {}", e)))?;
 
         Ok(response.into_inner())
@@ -291,7 +292,7 @@ mod tests {
     #[test]
     fn test_route_key() {
         let coordinator = Coordinator::new(150);
-        
+
         // No shards registered yet
         assert_eq!(coordinator.route_key(b"test_key"), None);
     }
@@ -299,10 +300,10 @@ mod tests {
     #[test]
     fn test_shard_registration_unregistration() {
         let coordinator = Coordinator::new(150);
-        
+
         // Initially no shards
         assert_eq!(coordinator.shard_count(), 0);
-        
+
         // Manually add to hash ring for testing (without async connect)
         {
             let mut ring = coordinator.hash_ring.write();
@@ -310,15 +311,18 @@ mod tests {
         }
         {
             let mut shards = coordinator.shards.write();
-            shards.insert("shard1".to_string(), ShardInfo::new("shard1".to_string(), "addr1".to_string()));
+            shards.insert(
+                "shard1".to_string(),
+                ShardInfo::new("shard1".to_string(), "addr1".to_string()),
+            );
         }
-        
+
         assert_eq!(coordinator.shard_count(), 1);
-        
+
         // Should route to shard1
         let shard = coordinator.route_key(b"test_key");
         assert_eq!(shard, Some("shard1".to_string()));
-        
+
         // Unregister
         coordinator.unregister_shard("shard1");
         assert_eq!(coordinator.shard_count(), 0);
@@ -328,14 +332,20 @@ mod tests {
     #[test]
     fn test_list_shards() {
         let coordinator = Coordinator::new(150);
-        
+
         // Add some shards manually for testing
         {
             let mut shards = coordinator.shards.write();
-            shards.insert("shard1".to_string(), ShardInfo::new("shard1".to_string(), "addr1".to_string()));
-            shards.insert("shard2".to_string(), ShardInfo::new("shard2".to_string(), "addr2".to_string()));
+            shards.insert(
+                "shard1".to_string(),
+                ShardInfo::new("shard1".to_string(), "addr1".to_string()),
+            );
+            shards.insert(
+                "shard2".to_string(),
+                ShardInfo::new("shard2".to_string(), "addr2".to_string()),
+            );
         }
-        
+
         let shard_list = coordinator.list_shards();
         assert_eq!(shard_list.len(), 2);
     }
@@ -343,22 +353,25 @@ mod tests {
     #[test]
     fn test_mark_healthy_unhealthy() {
         let coordinator = Coordinator::new(150);
-        
+
         // Add shard
         {
             let mut shards = coordinator.shards.write();
-            shards.insert("shard1".to_string(), ShardInfo::new("shard1".to_string(), "addr1".to_string()));
+            shards.insert(
+                "shard1".to_string(),
+                ShardInfo::new("shard1".to_string(), "addr1".to_string()),
+            );
         }
-        
+
         // Initially healthy
         let info = coordinator.get_shard_stats("shard1").unwrap();
         assert!(info.healthy);
-        
+
         // Mark unhealthy
         coordinator.mark_unhealthy("shard1");
         let info = coordinator.get_shard_stats("shard1").unwrap();
         assert!(!info.healthy);
-        
+
         // Mark healthy again
         coordinator.mark_healthy("shard1");
         let info = coordinator.get_shard_stats("shard1").unwrap();
@@ -368,7 +381,7 @@ mod tests {
     #[test]
     fn test_routing_with_multiple_shards() {
         let coordinator = Coordinator::new(150);
-        
+
         // Add multiple shards
         {
             let mut ring = coordinator.hash_ring.write();
@@ -378,16 +391,25 @@ mod tests {
         }
         {
             let mut shards = coordinator.shards.write();
-            shards.insert("shard1".to_string(), ShardInfo::new("shard1".to_string(), "addr1".to_string()));
-            shards.insert("shard2".to_string(), ShardInfo::new("shard2".to_string(), "addr2".to_string()));
-            shards.insert("shard3".to_string(), ShardInfo::new("shard3".to_string(), "addr3".to_string()));
+            shards.insert(
+                "shard1".to_string(),
+                ShardInfo::new("shard1".to_string(), "addr1".to_string()),
+            );
+            shards.insert(
+                "shard2".to_string(),
+                ShardInfo::new("shard2".to_string(), "addr2".to_string()),
+            );
+            shards.insert(
+                "shard3".to_string(),
+                ShardInfo::new("shard3".to_string(), "addr3".to_string()),
+            );
         }
-        
+
         // All keys should route to one of the shards
         let shard1 = coordinator.route_key(b"key1");
         let shard2 = coordinator.route_key(b"key2");
         let shard3 = coordinator.route_key(b"key3");
-        
+
         assert!(shard1.is_some());
         assert!(shard2.is_some());
         assert!(shard3.is_some());

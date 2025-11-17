@@ -39,4 +39,4 @@ pub use consistent_hash::{ConsistentHashRing, ShardId};
 pub use coordinator::{Coordinator, ShardInfo};
 
 #[cfg(feature = "cluster")]
-pub use health::{HealthChecker, HealthCheckConfig};
+pub use health::{HealthCheckConfig, HealthChecker};
