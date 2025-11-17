@@ -154,21 +154,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 更多示例请查看 [examples/](examples/) 目录。
 
-### 集群使用（待实现）
+### 集群使用（RPC 网络层已实现）
+
+#### Primary 节点
 ```rust
-use aidb::cluster::{Coordinator, CoordinatorConfig};
+use aidb::cluster::PrimaryNode;
+use aidb::{DB, Options};
+use std::sync::Arc;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // 连接Coordinator
-    let coordinator = Coordinator::connect("coordinator:8080").await?;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 创建数据库
+    let db = DB::open("./data", Options::default())?;
+    let db = Arc::new(db);
     
-    // 使用方式与单机版相同
-    coordinator.put(b"key", b"value").await?;
-    let value = coordinator.get(b"key").await?;
+    // 创建并启动 Primary 节点
+    let primary = PrimaryNode::new(db);
+    let addr = "127.0.0.1:50051".parse()?;
+    primary.serve(addr).await?;
     
     Ok(())
 }
+```
+
+#### Replica 节点
+```rust
+use aidb::cluster::ReplicaNode;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 连接到 Primary，创建缓存容量为1000的 Replica
+    let mut replica = ReplicaNode::new(
+        "http://127.0.0.1:50051".to_string(),
+        1000,
+    ).await?;
+    
+    // 使用方式与单机版相同
+    replica.put(b"key", b"value").await?;
+    let value = replica.get(b"key").await?;
+    
+    // 查看缓存统计
+    let stats = replica.stats();
+    println!("Hit rate: {:.2}%", stats.hit_rate() * 100.0);
+    
+    Ok(())
+}
+```
+
+更多集群示例请查看 [examples/cluster/](examples/cluster/) 目录。
+
+注意：集群功能需要启用 `cluster` feature：
+```bash
+cargo build --features cluster
 ```
 
 ## 📊 性能目标
@@ -189,7 +226,7 @@ async fn main() -> Result<()> {
 
 ## 📅 项目状态
 
-**当前阶段**: 🚧 阶段B - 性能优化
+**当前阶段**: 🚧 阶段1 - RPC网络层
 
 - ✅ 项目基础设施
 - ✅ WAL实现
@@ -199,10 +236,12 @@ async fn main() -> Result<()> {
 - ✅ Compaction实现
 - ✅ Bloom Filter实现
 - ✅ Block Cache实现
-- ✅ 压缩和优化（刚完成！）
-- ⏳ 高级功能开发
+- ✅ 压缩和优化
+- ✅ 高级功能开发
+- ✅ RPC网络层 ✅ **刚完成！**
+- ⏳ Coordinator开发
 
-**最新成就**: Week 13-14压缩和优化完成！WriteBatch、Snappy压缩集成、完整基准测试套件。
+**最新成就**: Week 21-23 RPC网络层完成！Primary/Replica节点实现，gRPC通信，7个测试全部通过。
 
 完整进度查看：[TODO.md](TODO.md) | [Week 13-14完成总结](docs/completions/WEEK_13_14_COMPLETION_SUMMARY.md)
 
@@ -278,9 +317,9 @@ aidb/
 - [ ] 文档和发布
 
 ### 阶段1: RPC网络层 (Week 21-24)
-- [ ] gRPC框架
-- [ ] Primary节点RPC服务
-- [ ] Replica节点缓存和转发
+- [x] gRPC框架 ✅ **已完成**
+- [x] Primary节点RPC服务 ✅ **已完成**
+- [x] Replica节点缓存和转发 ✅ **已完成**
 
 ### 阶段2: 分布式协调 (Week 25-34)
 - [ ] Coordinator路由

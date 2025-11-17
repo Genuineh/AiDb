@@ -39,6 +39,8 @@ jobs:
               - 'benches/**'
               - 'examples/**'
               - 'tests/**'
+              - 'proto/**'
+              - 'build.rs'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'
@@ -63,6 +65,15 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+
+      - name: Install Protocol Buffers Compiler
+        run: |
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            brew install protobuf
+          fi
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -108,6 +119,11 @@ jobs:
         with:
           components: clippy
 
+      - name: Install Protocol Buffers Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -133,6 +149,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+
+      - name: Install Protocol Buffers Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
       - name: Check code formatting
         run: |
@@ -176,6 +197,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Protocol Buffers Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
       - name: Cache dependencies
         uses: actions/cache@v4

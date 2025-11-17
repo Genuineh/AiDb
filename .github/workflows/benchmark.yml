@@ -45,6 +45,11 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Install Protocol Buffers Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
