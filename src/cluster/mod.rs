@@ -27,6 +27,9 @@ pub mod coordinator;
 pub mod health;
 
 #[cfg(feature = "cluster")]
+pub mod shard_group;
+
+#[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
 #[cfg(feature = "cluster")]
@@ -40,3 +43,8 @@ pub use coordinator::{Coordinator, ShardInfo};
 
 #[cfg(feature = "cluster")]
 pub use health::{HealthCheckConfig, HealthChecker};
+
+#[cfg(feature = "cluster")]
+pub use shard_group::{
+    NodeInfo, NodeState, ShardGroup, ShardGroupManager, ShardGroupState,
+};
