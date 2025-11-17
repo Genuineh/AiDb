@@ -46,6 +46,9 @@ pub enum Error {
 
     /// A network or RPC error occurred.
     Network(String),
+
+    /// A cluster operation error occurred.
+    ClusterError(String),
 }
 
 impl Error {
@@ -86,6 +89,7 @@ impl fmt::Display for Error {
             Error::AlreadyExists(msg) => write!(f, "Already exists: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
             Error::Network(msg) => write!(f, "Network error: {}", msg),
+            Error::ClusterError(msg) => write!(f, "Cluster error: {}", msg),
         }
     }
 }
