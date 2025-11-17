@@ -8,6 +8,8 @@
 
 #[cfg(feature = "cluster")]
 use aidb::cluster::{Coordinator, NodeState, ShardGroupManager, ShardGroupState};
+#[cfg(feature = "cluster")]
+use std::collections::HashMap;
 
 // ============================================================================
 // Week 31-32: Multi-Shard Startup Tests
