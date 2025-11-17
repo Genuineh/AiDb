@@ -36,11 +36,28 @@ lz4 = { version = "1.24", optional = true }
 log = "0.4"
 env_logger = "0.11"
 
+# RPC/gRPC (optional, for cluster mode)
+tonic = { version = "0.11", optional = true }
+prost = { version = "0.12", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tower = { version = "0.4", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+
 [dev-dependencies]
 # Testing
 tempfile = "3.8"
 rand = "0.9"
 proptest = "1.4"
+
+# RPC testing
+tonic = "0.11"
+prost = "0.12"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tokio-stream = "0.1"
+
+[build-dependencies]
+tonic-build = "0.11"
 
 # Benchmarking
 criterion = { version = "0.7", features = ["html_reports"] }
@@ -49,6 +66,7 @@ criterion = { version = "0.7", features = ["html_reports"] }
 default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
+cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
 
 [[bench]]
 name = "write_bench"

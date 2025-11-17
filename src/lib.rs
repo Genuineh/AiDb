@@ -56,6 +56,10 @@ pub mod sstable;
 pub mod wal;
 pub mod write_batch;
 
+// Cluster module (optional, enabled with "cluster" feature)
+#[cfg(feature = "cluster")]
+pub mod cluster;
+
 // Re-exports
 pub use config::Options;
 pub use error::{Error, Result};

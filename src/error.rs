@@ -43,6 +43,9 @@ pub enum Error {
 
     /// An internal error occurred.
     Internal(String),
+
+    /// A network or RPC error occurred.
+    Network(String),
 }
 
 impl Error {
@@ -82,6 +85,7 @@ impl fmt::Display for Error {
             }
             Error::AlreadyExists(msg) => write!(f, "Already exists: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+            Error::Network(msg) => write!(f, "Network error: {}", msg),
         }
     }
 }
