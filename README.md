@@ -226,7 +226,7 @@ cargo build --features cluster
 
 ## 📅 项目状态
 
-**当前阶段**: 🚧 阶段1 - RPC网络层
+**当前阶段**: 🚧 阶段3 - Shard Group
 
 - ✅ 项目基础设施
 - ✅ WAL实现
@@ -238,12 +238,13 @@ cargo build --features cluster
 - ✅ Block Cache实现
 - ✅ 压缩和优化
 - ✅ 高级功能开发
-- ✅ RPC网络层 ✅ **刚完成！**
-- ⏳ Coordinator开发
+- ✅ RPC网络层
+- ✅ Coordinator实现
+- ⏳ Shard Group开发
 
-**最新成就**: Week 21-23 RPC网络层完成！Primary/Replica节点实现，gRPC通信，7个测试全部通过。
+**最新成就**: Week 25-28 Coordinator完成！一致性哈希、路由管理、健康检查实现，37个测试全部通过。
 
-完整进度查看：[TODO.md](TODO.md) | [Week 13-14完成总结](docs/completions/WEEK_13_14_COMPLETION_SUMMARY.md)
+完整进度查看：[TODO.md](TODO.md) | [Coordinator完成总结](docs/completions/COORDINATOR_COMPLETION_SUMMARY.md)
 
 ## 📚 文档导航
 
@@ -301,7 +302,7 @@ aidb/
 
 ## 🗺️ Roadmap
 
-### 阶段0: 单机版 (Week 1-20) - 当前
+### 阶段0: 单机版 (Week 1-20) ✅ **已完成**
 - [x] 项目初始化
 - [x] WAL实现
 - [x] MemTable实现  
@@ -311,23 +312,28 @@ aidb/
 - [x] Compaction实现
 - [x] Bloom Filter实现
 - [x] Block Cache实现
-- [x] 压缩和优化 ✅ **刚完成**
-- [ ] 高级功能
-- [ ] 测试完善
-- [ ] 文档和发布
+- [x] 压缩和优化
+- [x] 高级功能
+- [x] 测试完善
+- [x] 文档和发布
 
-### 阶段1: RPC网络层 (Week 21-24)
-- [x] gRPC框架 ✅ **已完成**
-- [x] Primary节点RPC服务 ✅ **已完成**
-- [x] Replica节点缓存和转发 ✅ **已完成**
+### 阶段1: RPC网络层 (Week 21-24) ✅ **已完成**
+- [x] gRPC框架
+- [x] Primary节点RPC服务
+- [x] Replica节点缓存和转发
 
-### 阶段2: 分布式协调 (Week 25-34)
-- [ ] Coordinator路由
-- [ ] 一致性哈希
-- [ ] 健康检查
+### 阶段2: 分布式协调 (Week 25-28) ✅ **已完成**
+- [x] Coordinator路由
+- [x] 一致性哈希
+- [x] 健康检查
+
+### 阶段3: Shard Group (Week 29-34) - 当前
+- [ ] ShardGroup管理
 - [ ] 多Shard协同
+- [ ] 性能优化
+- [ ] 集成测试
 
-### 阶段3-6: 完善功能 (Week 35-48)
+### 阶段4-6: 完善功能 (Week 35-48)
 - [ ] 备份恢复
 - [ ] 弹性伸缩
 - [ ] 监控告警

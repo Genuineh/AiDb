@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🚀 分布式集群功能 (Week 21-28)
+
+#### RPC 网络层 (Week 21-24) ✅
+- **Primary 节点**: 完整的 gRPC 服务实现，支持所有 DB 操作
+- **Replica 节点**: LRU 缓存实现，智能转发机制
+- **协议定义**: 8个 RPC 方法，包括流式扫描
+- **连接管理**: 连接池和自动重连
+- **测试**: 7个集成测试全部通过
+
+#### Coordinator (Week 25-28) ✅
+- **一致性哈希**: 虚拟节点实现，负载均衡
+- **路由管理**: Shard 注册和键路由
+- **健康检查**: 自动故障检测和状态管理
+- **请求转发**: GET/PUT/DELETE 操作转发
+- **测试**: 37个测试全部通过
+
+### 📊 里程碑
+- ✅ M4: RPC通信完成 (Week 24)
+- ✅ M5: 集群路由完成 (Week 28)
+
 ## [0.1.0] - 2025-11-11
 
 AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产就绪的单机 LSM-Tree 存储引擎。
