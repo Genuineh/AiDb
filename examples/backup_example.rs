@@ -23,8 +23,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let storage = LocalFileStorage::new("./example_backups");
     let backup_manager = BackupManager::new(storage);
 
-    let backup_id = backup_manager
-        .create_backup_with_description(&db, Some("Example backup".to_string()))?;
+    let backup_id =
+        backup_manager.create_backup_with_description(&db, Some("Example backup".to_string()))?;
     println!("   Backup created: {}\n", backup_id);
 
     // List backups
@@ -47,7 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Restore from backup
     println!("5. Restoring from backup...");
-    RecoveryManager::restore(&backup_manager, &backup_id, std::path::Path::new("./example_restored"))?;
+    RecoveryManager::restore(
+        &backup_manager,
+        &backup_id,
+        std::path::Path::new("./example_restored"),
+    )?;
     println!("   Database restored to ./example_restored\n");
 
     // Open restored database and verify data

@@ -37,9 +37,9 @@ impl RecoveryManager {
         target_path: &Path,
     ) -> Result<()> {
         // Get backup info
-        let backup_info = backup_manager.get_backup_info(backup_id).ok_or_else(|| {
-            Error::NotFound(format!("Backup not found: {}", backup_id))
-        })?;
+        let backup_info = backup_manager
+            .get_backup_info(backup_id)
+            .ok_or_else(|| Error::NotFound(format!("Backup not found: {}", backup_id)))?;
 
         // Create target directory
         if target_path.exists() {
@@ -76,9 +76,9 @@ impl RecoveryManager {
         backup_manager: &BackupManager<S>,
         backup_id: &BackupId,
     ) -> Result<()> {
-        let backup_info = backup_manager.get_backup_info(backup_id).ok_or_else(|| {
-            Error::NotFound(format!("Backup not found: {}", backup_id))
-        })?;
+        let backup_info = backup_manager
+            .get_backup_info(backup_id)
+            .ok_or_else(|| Error::NotFound(format!("Backup not found: {}", backup_id)))?;
 
         let storage = backup_manager.storage();
 
@@ -146,7 +146,7 @@ impl RecoveryManager {
 mod tests {
     use super::*;
     use crate::backup::storage::LocalFileStorage;
-    use crate::{DB, Options};
+    use crate::{Options, DB};
     use tempfile::TempDir;
 
     #[test]

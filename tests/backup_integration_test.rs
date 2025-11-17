@@ -166,7 +166,7 @@ fn test_backup_with_concurrent_writes() {
 
     let db_clone = Arc::clone(&db);
     let manager_clone = Arc::clone(&manager);
-    let backup_thread = std::thread::spawn(move || manager_clone.create_backup(&*db_clone));
+    let backup_thread = std::thread::spawn(move || manager_clone.create_backup(&db_clone));
 
     // Write more data concurrently
     for i in 100..200 {

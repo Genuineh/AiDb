@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
 /// Helper to create a test DB
+#[allow(dead_code)]
 async fn create_test_db() -> (Arc<DB>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let options = Options::default();

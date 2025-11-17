@@ -122,7 +122,7 @@ impl Default for RetentionPolicy {
         Self {
             min_count: 3,
             max_count: Some(30),
-            min_age_seconds: 24 * 3600,      // 1 day
+            min_age_seconds: 24 * 3600,        // 1 day
             max_age_seconds: Some(30 * 86400), // 30 days
         }
     }
@@ -289,8 +289,7 @@ mod tests {
 
         // Add 3 backups
         for i in 1..=3 {
-            let mut backup =
-                BackupInfo::new(format!("backup-{:03}", i), i as u64 * 100, BackupType::Full);
+            let mut backup = BackupInfo::new(format!("backup-{:03}", i), i * 100, BackupType::Full);
             backup.created_at = i; // Old timestamps
             metadata.add_backup(backup);
         }
