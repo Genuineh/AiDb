@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 #[cfg(feature = "cluster")]
-use tokio::time::sleep;
+use tokio::time::{sleep, Duration};
 
 /// Helper to create a test DB
 #[allow(dead_code)]
