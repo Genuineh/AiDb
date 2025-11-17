@@ -225,11 +225,7 @@ mod tests {
         let expected = 1000 / 3;
         for (_, count) in distribution {
             let variance = (count as i32 - expected).abs() as f64 / expected as f64;
-            assert!(
-                variance < 0.5,
-                "Distribution variance too high: {}",
-                variance
-            );
+            assert!(variance < 0.5, "Distribution variance too high: {}", variance);
         }
     }
 

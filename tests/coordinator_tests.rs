@@ -112,12 +112,7 @@ fn test_consistent_hash_load_distribution() {
     let expected = 3000 / 3;
     for (shard_id, count) in distribution {
         let variance = (count as i32 - expected).abs() as f64 / expected as f64;
-        assert!(
-            variance < 0.3,
-            "Shard {} has variance {} which is too high",
-            shard_id,
-            variance
-        );
+        assert!(variance < 0.3, "Shard {} has variance {} which is too high", shard_id, variance);
     }
 }
 
