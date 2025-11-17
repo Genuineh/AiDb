@@ -199,7 +199,7 @@ aidb/
 
 | 文档 | 最后更新 |
 |------|---------|
-| README.md | 2025-11-11 |
+| README.md | 2025-11-17 ✅ |
 | docs/ARCHITECTURE.md | 2025-11-04 |
 | docs/IMPLEMENTATION.md | 2025-11-05 |
 | docs/DESIGN_DECISIONS.md | 2025-11-04 |
@@ -207,8 +207,8 @@ aidb/
 | docs/WAL_IMPLEMENTATION.md | 2025-11-05 ✅ |
 | docs/MEMTABLE_IMPLEMENTATION.md | 2025-11-06 ✅ |
 | docs/SSTABLE_IMPLEMENTATION.md | 2025-11-06 ✅ |
-| docs/completions/ | 2025-11-11 ✅ |
-| TODO.md | 2025-11-11 |
+| docs/completions/ | 2025-11-17 ✅ |
+| TODO.md | 2025-11-17 ✅ |
 
 ---
 
