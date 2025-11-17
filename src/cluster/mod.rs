@@ -45,6 +45,4 @@ pub use coordinator::{Coordinator, ShardInfo};
 pub use health::{HealthCheckConfig, HealthChecker};
 
 #[cfg(feature = "cluster")]
-pub use shard_group::{
-    NodeInfo, NodeState, ShardGroup, ShardGroupManager, ShardGroupState,
-};
+pub use shard_group::{NodeInfo, NodeState, ShardGroup, ShardGroupManager, ShardGroupState};

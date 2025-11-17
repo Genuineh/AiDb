@@ -52,13 +52,7 @@ pub struct NodeInfo {
 impl NodeInfo {
     /// Create a new node info
     pub fn new(id: String, address: String, is_primary: bool) -> Self {
-        Self {
-            id,
-            address,
-            state: NodeState::Starting,
-            request_count: 0,
-            is_primary,
-        }
+        Self { id, address, state: NodeState::Starting, request_count: 0, is_primary }
     }
 }
 
@@ -164,10 +158,7 @@ impl ShardGroup {
         }
 
         self.replicas.remove(node_id).ok_or_else(|| {
-            Error::ClusterError(format!(
-                "Replica {} not found in shard group {}",
-                node_id, self.id
-            ))
+            Error::ClusterError(format!("Replica {} not found in shard group {}", node_id, self.id))
         })?;
 
         log::info!("Removed replica {} from shard group {}", node_id, self.id);
@@ -220,19 +211,12 @@ impl ShardGroup {
     /// Update the overall shard group state based on node states
     fn update_group_state(&mut self) {
         // If shutting down or stopped, don't change state
-        if matches!(
-            self.state,
-            ShardGroupState::ShuttingDown | ShardGroupState::Stopped
-        ) {
+        if matches!(self.state, ShardGroupState::ShuttingDown | ShardGroupState::Stopped) {
             return;
         }
 
         // Check primary state
-        let primary_healthy = self
-            .primary
-            .as_ref()
-            .map(|p| p.state.is_serving())
-            .unwrap_or(false);
+        let primary_healthy = self.primary.as_ref().map(|p| p.state.is_serving()).unwrap_or(false);
 
         if !primary_healthy {
             self.state = ShardGroupState::Degraded;
@@ -244,10 +228,7 @@ impl ShardGroup {
 
     /// Start the shard group
     pub fn start(&mut self) -> Result<()> {
-        if !matches!(
-            self.state,
-            ShardGroupState::Initializing | ShardGroupState::Stopped
-        ) {
+        if !matches!(self.state, ShardGroupState::Initializing | ShardGroupState::Stopped) {
             return Err(Error::ClusterError(format!(
                 "Cannot start shard group {} in state {:?}",
                 self.id, self.state
@@ -300,10 +281,7 @@ impl ShardGroup {
 
     /// Get the number of healthy nodes
     pub fn healthy_node_count(&self) -> usize {
-        self.all_nodes()
-            .iter()
-            .filter(|n| n.state.is_serving())
-            .count()
+        self.all_nodes().iter().filter(|n| n.state.is_serving()).count()
     }
 }
 
@@ -316,9 +294,7 @@ pub struct ShardGroupManager {
 impl ShardGroupManager {
     /// Create a new shard group manager
     pub fn new() -> Self {
-        Self {
-            groups: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { groups: Arc::new(RwLock::new(HashMap::new())) }
     }
 
     /// Create a new shard group
@@ -327,12 +303,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Unique identifier for the shard group
     pub fn create_group(&self, shard_id: ShardId) -> Result<()> {
         let mut groups = self.groups.write();
-        
+
         if groups.contains_key(&shard_id) {
-            return Err(Error::ClusterError(format!(
-                "Shard group {} already exists",
-                shard_id
-            )));
+            return Err(Error::ClusterError(format!("Shard group {} already exists", shard_id)));
         }
 
         let group = ShardGroup::new(shard_id.clone());
@@ -347,15 +320,15 @@ impl ShardGroupManager {
     /// * `shard_id` - Identifier of the shard group to remove
     pub fn remove_group(&self, shard_id: &str) -> Result<()> {
         let mut groups = self.groups.write();
-        
+
         // Stop the group first if it exists
         if let Some(group) = groups.get_mut(shard_id) {
             group.stop()?;
         }
 
-        groups.remove(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        groups
+            .remove(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         log::info!("Removed shard group {}", shard_id);
         Ok(())
@@ -367,16 +340,11 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     /// * `node_id` - Node identifier
     /// * `address` - Network address of the node
-    pub fn set_primary(
-        &self,
-        shard_id: &str,
-        node_id: String,
-        address: String,
-    ) -> Result<()> {
+    pub fn set_primary(&self, shard_id: &str, node_id: String, address: String) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.set_primary(node_id, address)
     }
@@ -387,16 +355,11 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     /// * `node_id` - Node identifier
     /// * `address` - Network address of the node
-    pub fn add_replica(
-        &self,
-        shard_id: &str,
-        node_id: String,
-        address: String,
-    ) -> Result<()> {
+    pub fn add_replica(&self, shard_id: &str, node_id: String, address: String) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.add_replica(node_id, address)
     }
@@ -408,9 +371,9 @@ impl ShardGroupManager {
     /// * `node_id` - Node identifier to remove
     pub fn remove_replica(&self, shard_id: &str, node_id: &str) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.remove_replica(node_id)
     }
@@ -421,9 +384,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     pub fn start_group(&self, shard_id: &str) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.start()
     }
@@ -434,9 +397,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     pub fn stop_group(&self, shard_id: &str) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.stop()
     }
@@ -447,16 +410,11 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     /// * `node_id` - Node identifier
     /// * `state` - New state for the node
-    pub fn update_node_state(
-        &self,
-        shard_id: &str,
-        node_id: &str,
-        state: NodeState,
-    ) -> Result<()> {
+    pub fn update_node_state(&self, shard_id: &str, node_id: &str, state: NodeState) -> Result<()> {
         let mut groups = self.groups.write();
-        let group = groups.get_mut(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get_mut(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         group.update_node_state(node_id, state)
     }
@@ -476,9 +434,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     pub fn get_group_nodes(&self, shard_id: &str) -> Result<Vec<NodeInfo>> {
         let groups = self.groups.read();
-        let group = groups.get(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         Ok(group.all_nodes().into_iter().cloned().collect())
     }
@@ -501,9 +459,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     pub fn get_primary(&self, shard_id: &str) -> Result<Option<NodeInfo>> {
         let groups = self.groups.read();
-        let group = groups.get(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         Ok(group.primary().cloned())
     }
@@ -514,9 +472,9 @@ impl ShardGroupManager {
     /// * `shard_id` - Shard group identifier
     pub fn get_replicas(&self, shard_id: &str) -> Result<Vec<NodeInfo>> {
         let groups = self.groups.read();
-        let group = groups.get(shard_id).ok_or_else(|| {
-            Error::ClusterError(format!("Shard group {} not found", shard_id))
-        })?;
+        let group = groups
+            .get(shard_id)
+            .ok_or_else(|| Error::ClusterError(format!("Shard group {} not found", shard_id)))?;
 
         Ok(group.replicas().into_iter().cloned().collect())
     }
@@ -552,7 +510,7 @@ mod tests {
     #[test]
     fn test_shard_group_set_primary() {
         let mut group = ShardGroup::new("shard1".to_string());
-        
+
         group
             .set_primary("primary1".to_string(), "127.0.0.1:50051".to_string())
             .unwrap();
@@ -629,15 +587,11 @@ mod tests {
         assert_eq!(group.state(), ShardGroupState::Running);
 
         // Mark primary as unhealthy
-        group
-            .update_node_state("primary1", NodeState::Unhealthy)
-            .unwrap();
+        group.update_node_state("primary1", NodeState::Unhealthy).unwrap();
         assert_eq!(group.state(), ShardGroupState::Degraded);
 
         // Mark primary as healthy again
-        group
-            .update_node_state("primary1", NodeState::Healthy)
-            .unwrap();
+        group.update_node_state("primary1", NodeState::Healthy).unwrap();
         assert_eq!(group.state(), ShardGroupState::Running);
     }
 
@@ -682,10 +636,7 @@ mod tests {
 
         // Start group
         manager.start_group("shard1").unwrap();
-        assert_eq!(
-            manager.get_group("shard1"),
-            Some(ShardGroupState::Running)
-        );
+        assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 
         // Check nodes
         let nodes = manager.get_group_nodes("shard1").unwrap();
@@ -699,10 +650,7 @@ mod tests {
 
         // Stop group
         manager.stop_group("shard1").unwrap();
-        assert_eq!(
-            manager.get_group("shard1"),
-            Some(ShardGroupState::Stopped)
-        );
+        assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Stopped));
     }
 
     #[test]
@@ -731,23 +679,14 @@ mod tests {
         manager.start_group("shard1").unwrap();
 
         // Update node state
-        manager
-            .update_node_state("shard1", "primary1", NodeState::Unhealthy)
-            .unwrap();
+        manager.update_node_state("shard1", "primary1", NodeState::Unhealthy).unwrap();
 
-        assert_eq!(
-            manager.get_group("shard1"),
-            Some(ShardGroupState::Degraded)
-        );
+        assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Degraded));
     }
 
     #[test]
     fn test_node_info_creation() {
-        let node = NodeInfo::new(
-            "node1".to_string(),
-            "127.0.0.1:50051".to_string(),
-            true,
-        );
+        let node = NodeInfo::new("node1".to_string(), "127.0.0.1:50051".to_string(), true);
 
         assert_eq!(node.id, "node1");
         assert_eq!(node.address, "127.0.0.1:50051");
@@ -791,9 +730,7 @@ mod tests {
         assert_eq!(group.healthy_node_count(), 2);
 
         // Mark primary as unhealthy
-        group
-            .update_node_state("primary1", NodeState::Unhealthy)
-            .unwrap();
+        group.update_node_state("primary1", NodeState::Unhealthy).unwrap();
         assert_eq!(group.healthy_node_count(), 1);
     }
 }

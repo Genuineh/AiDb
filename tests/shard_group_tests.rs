@@ -41,24 +41,15 @@ fn test_shard_group_lifecycle() {
         .unwrap();
 
     // Initially in Initializing state
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Initializing)
-    );
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Initializing));
 
     // Start the group
     manager.start_group("shard1").unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Running)
-    );
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 
     // Stop the group
     manager.stop_group("shard1").unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Stopped)
-    );
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Stopped));
 
     // Remove the group
     manager.remove_group("shard1").unwrap();
@@ -86,11 +77,8 @@ fn test_shard_group_primary_management() {
     assert!(primary.is_primary);
 
     // Cannot set primary twice
-    let result = manager.set_primary(
-        "shard1",
-        "primary2".to_string(),
-        "127.0.0.1:50052".to_string(),
-    );
+    let result =
+        manager.set_primary("shard1", "primary2".to_string(), "127.0.0.1:50052".to_string());
     assert!(result.is_err());
 }
 
@@ -149,37 +137,19 @@ fn test_shard_group_state_transitions() {
 
     // Start group
     manager.start_group("shard1").unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Running)
-    );
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 
     // Mark primary as unhealthy - should become degraded
-    manager
-        .update_node_state("shard1", "primary1", NodeState::Unhealthy)
-        .unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Degraded)
-    );
+    manager.update_node_state("shard1", "primary1", NodeState::Unhealthy).unwrap();
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Degraded));
 
     // Mark primary as healthy - should become running again
-    manager
-        .update_node_state("shard1", "primary1", NodeState::Healthy)
-        .unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Running)
-    );
+    manager.update_node_state("shard1", "primary1", NodeState::Healthy).unwrap();
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 
     // Mark replica as unhealthy - should stay running (replicas don't affect state)
-    manager
-        .update_node_state("shard1", "replica1", NodeState::Unhealthy)
-        .unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Running)
-    );
+    manager.update_node_state("shard1", "replica1", NodeState::Unhealthy).unwrap();
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 }
 
 #[cfg(feature = "cluster")]
@@ -219,11 +189,7 @@ fn test_multiple_shard_groups() {
         let shard_id = format!("shard{}", i);
         manager.create_group(shard_id.clone()).unwrap();
         manager
-            .set_primary(
-                &shard_id,
-                format!("primary{}", i),
-                format!("127.0.0.1:5005{}", i),
-            )
+            .set_primary(&shard_id, format!("primary{}", i), format!("127.0.0.1:5005{}", i))
             .unwrap();
 
         // Add 2 replicas per shard
@@ -251,10 +217,7 @@ fn test_multiple_shard_groups() {
     for i in 1..=5 {
         let shard_id = format!("shard{}", i);
         manager.start_group(&shard_id).unwrap();
-        assert_eq!(
-            manager.get_group(&shard_id),
-            Some(ShardGroupState::Running)
-        );
+        assert_eq!(manager.get_group(&shard_id), Some(ShardGroupState::Running));
     }
 
     // List all groups
@@ -285,11 +248,8 @@ fn test_shard_group_error_cases() {
     assert!(result.is_err());
 
     // Cannot add replica before setting primary (allowed in current design, but let's test it works)
-    let result = manager.add_replica(
-        "shard1",
-        "replica1".to_string(),
-        "127.0.0.1:50052".to_string(),
-    );
+    let result =
+        manager.add_replica("shard1", "replica1".to_string(), "127.0.0.1:50052".to_string());
     assert!(result.is_ok());
 
     // Cannot remove non-existent replica
@@ -374,10 +334,7 @@ fn test_shard_group_cannot_start_twice() {
 
     // Start once - should succeed
     manager.start_group("shard1").unwrap();
-    assert_eq!(
-        manager.get_group("shard1"),
-        Some(ShardGroupState::Running)
-    );
+    assert_eq!(manager.get_group("shard1"), Some(ShardGroupState::Running));
 
     // Try to start again - should fail
     let result = manager.start_group("shard1");
@@ -424,14 +381,10 @@ fn test_multi_shard_group_coordination_basic() {
     for i in 0..shard_count {
         let shard_id = format!("shard{}", i);
         manager.create_group(shard_id.clone()).unwrap();
-        
+
         // Add primary
         manager
-            .set_primary(
-                &shard_id,
-                format!("primary-{}", i),
-                format!("127.0.0.1:{}", 50051 + i),
-            )
+            .set_primary(&shard_id, format!("primary-{}", i), format!("127.0.0.1:{}", 50051 + i))
             .unwrap();
 
         // Add replicas
@@ -452,10 +405,7 @@ fn test_multi_shard_group_coordination_basic() {
     // Verify all shards are running
     for i in 0..shard_count {
         let shard_id = format!("shard{}", i);
-        assert_eq!(
-            manager.get_group(&shard_id),
-            Some(ShardGroupState::Running)
-        );
+        assert_eq!(manager.get_group(&shard_id), Some(ShardGroupState::Running));
     }
 
     // Verify total node count
