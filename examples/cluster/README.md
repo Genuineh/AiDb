@@ -1,22 +1,29 @@
 # AiDb Cluster Mode
 
-This directory contains the RPC network layer implementation for AiDb's distributed mode.
+This directory contains the distributed cluster implementation for AiDb, including RPC networking, consistent hashing, and cluster coordination.
 
 ## Architecture
 
-AiDb cluster consists of two types of nodes:
+AiDb cluster consists of three types of components:
 
 ### Primary Node
 - Hosts the full LSM-tree database with persistence
 - Serves all read and write operations via gRPC
 - Provides health check and statistics endpoints
-- Single source of truth for all data
+- Single source of truth for all data in a shard
 
 ### Replica Node
 - Maintains an LRU cache of frequently accessed data
 - Forwards cache misses to the Primary node
 - Invalidates cache on write operations
 - Significantly reduces load on Primary for read-heavy workloads
+
+### Coordinator (New in Week 25-28)
+- Routes requests to appropriate shards using consistent hashing
+- Manages shard registration and discovery
+- Performs health checks and failure detection
+- Provides load balancing across shards
+- Transparent request forwarding
 
 ## Quick Start
 
@@ -54,6 +61,19 @@ This demonstrates:
 - GET, PUT, DELETE operations
 - Streaming SCAN operation
 - Error handling
+
+### 4. Run the Coordinator Demo (New!)
+
+```bash
+cargo run --example coordinator_demo --features cluster
+```
+
+This demonstrates:
+- Starting multiple primary nodes (shards)
+- Coordinator-based request routing
+- Consistent hashing with load balancing
+- Health checking and failure detection
+- Automatic request forwarding
 
 ## API Overview
 
@@ -125,6 +145,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+#### Coordinator (New!)
+
+```rust
+use aidb::cluster::{Coordinator, HealthChecker, HealthCheckConfig};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create coordinator with 150 virtual nodes per shard
+    let coordinator = Arc::new(Coordinator::new(150));
+    
+    // Register shards
+    coordinator.register_shard(
+        "shard1".to_string(),
+        "http://127.0.0.1:50051".to_string()
+    ).await?;
+    
+    coordinator.register_shard(
+        "shard2".to_string(),
+        "http://127.0.0.1:50052".to_string()
+    ).await?;
+    
+    // Start health checker
+    let health_checker = HealthChecker::new(
+        coordinator.clone(),
+        HealthCheckConfig::default()
+    );
+    health_checker.start();
+    
+    // Use coordinator to access data
+    coordinator.put(b"key", b"value").await?;
+    let response = coordinator.get(b"key").await?;
+    
+    if response.found {
+        println!("Value: {:?}", response.value);
+    }
+    
+    Ok(())
+}
+```
+
 ## Features
 
 ### Primary Node Features
@@ -142,6 +203,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ Cache warming strategies
 - ✅ Hit rate tracking
 - ✅ Connection pooling to Primary
+
+### Coordinator Features (New!)
+- ✅ Consistent hashing with virtual nodes
+- ✅ Automatic shard registration/discovery
+- ✅ Request routing and load balancing
+- ✅ Health checking and failure detection
+- ✅ Transparent request forwarding
+- ✅ O(log N) routing performance
 
 ## Performance Characteristics
 
@@ -164,18 +233,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Testing
 
-Run the cluster tests:
+Run all cluster tests:
 
 ```bash
-cargo test --features cluster --test cluster_rpc_tests
+cargo test --features cluster
 ```
 
-This runs 7 integration tests covering:
-- Primary node RPC operations
-- Replica cache behavior
-- Cache invalidation
-- Cache warming
-- Health checks
+Run specific test suites:
+
+```bash
+# RPC network tests
+cargo test --features cluster --test cluster_rpc_tests
+
+# Coordinator tests (Week 25-28)
+cargo test --features cluster --test coordinator_tests
+```
+
+### Test Coverage
+- **RPC Tests**: 7 tests covering Primary/Replica operations
+- **Coordinator Tests**: 37 tests covering consistent hashing, routing, and health checking
+- **Total**: 344+ tests passing across the entire project
 
 ## Configuration
 
@@ -203,23 +280,51 @@ let replica = ReplicaNode::new(
 ).await?;
 ```
 
+### Coordinator Configuration (New!)
+
+```rust
+use std::time::Duration;
+
+// Create coordinator with virtual nodes
+let coordinator = Coordinator::new(150); // 150 virtual nodes per shard
+
+// Configure health checker
+let health_config = HealthCheckConfig {
+    check_interval: Duration::from_secs(10),
+    timeout: Duration::from_secs(5),
+    failure_threshold: 3,
+    success_threshold: 2,
+};
+let health_checker = HealthChecker::new(coordinator.clone(), health_config);
+```
+
 ## Limitations & Future Work
 
 ### Current Limitations
-- Single Primary (no Primary-Primary replication)
-- No automatic failover
+- Single Primary per shard (no Primary-Primary replication)
+- No automatic failover for Primary nodes
 - Cache invalidation is immediate (no TTL)
-- No compression on wire (Week 24)
+- Manual shard registration (no auto-discovery)
 
-### Planned Enhancements (Week 24)
-- [ ] Connection pool optimization
-- [ ] Batch request APIs
-- [ ] Compression for large values
-- [ ] Performance benchmarks
-- [ ] Load balancing across multiple Replicas
+### Completed (Week 21-28)
+- ✅ RPC framework with gRPC/tonic
+- ✅ Primary and Replica nodes
+- ✅ Connection pooling
+- ✅ Consistent hashing
+- ✅ Coordinator for routing
+- ✅ Health checking and failure detection
+
+### Planned Enhancements (Week 29+)
+- [ ] Shard group management
+- [ ] Multi-shard transactions
+- [ ] Automatic rebalancing
+- [ ] Backup and recovery
+- [ ] Dynamic scaling
+- [ ] Auto-discovery of shards
 
 ## See Also
 
 - [Implementation Plan](../../docs/IMPLEMENTATION.md) - Full 48-week roadmap
-- [Architecture](../../docs/ARCHITECTURE.md) - System design
-- [TODO](../../TODO.md) - Task tracking
+- [TODO](../../TODO.md) - Task tracking and progress
+- [Coordinator Completion Summary](../../docs/completions/COORDINATOR_COMPLETION_SUMMARY.md) - Week 25-28 details
+- [Architecture Documentation](../../docs/) - System design documents
