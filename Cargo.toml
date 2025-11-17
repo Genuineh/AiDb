@@ -92,6 +92,11 @@ name = "rpc_client"
 path = "examples/cluster/rpc_client.rs"
 required-features = ["cluster"]
 
+[[example]]
+name = "coordinator_demo"
+path = "examples/cluster/coordinator_demo.rs"
+required-features = ["cluster"]
+
 [profile.release]
 opt-level = 3
 lto = true
