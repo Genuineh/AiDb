@@ -12,7 +12,6 @@ use prometheus::{
 };
 use std::sync::Arc;
 
-#[allow(missing_docs)]
 lazy_static! {
     // Request metrics - operations per second and latency
     pub static ref REQUEST_COUNTER: CounterVec = register_counter_vec!(
