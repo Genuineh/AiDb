@@ -34,6 +34,9 @@ pub mod shard_group;
 pub mod scaling;
 
 #[cfg(feature = "cluster")]
+pub mod autoscaler;
+
+#[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
 #[cfg(feature = "cluster")]
@@ -53,3 +56,6 @@ pub use shard_group::{NodeInfo, NodeState, ShardGroup, ShardGroupManager, ShardG
 
 #[cfg(feature = "cluster")]
 pub use scaling::{ScalingConfig, ScalingManager, ScalingStats};
+
+#[cfg(feature = "cluster")]
+pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
