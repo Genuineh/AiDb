@@ -271,6 +271,8 @@ cargo build --features cluster
 - **[完成总结](docs/completions/)** - 各阶段完成总结
 
 ### 运维文档
+- **[💡 傻瓜式运维指南](docs/FOOLPROOF_OPS_GUIDE.md)** - ⭐ 一键启动/停止/扩容集群
+- **[管理工具指南](docs/monitoring/ADMIN_TOOL_GUIDE.md)** - aidb-admin 完整文档
 - **[备份恢复指南](docs/BACKUP_RECOVERY.md)** - 备份恢复操作手册
 - **[性能调优指南](docs/PERFORMANCE_TUNING.md)** - 深度性能优化
 - **[监控配置](docs/monitoring/)** - Prometheus和Grafana配置
