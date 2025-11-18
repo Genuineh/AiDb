@@ -46,6 +46,13 @@ tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 
+# Metrics and monitoring (optional, for monitoring features)
+prometheus = { version = "0.13", optional = true }
+lazy_static = { version = "1.4", optional = true }
+hyper = { version = "1.5", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio"], optional = true }
+http-body-util = { version = "0.1", optional = true }
+
 [dev-dependencies]
 # Testing
 tempfile = "3.8"
@@ -70,6 +77,7 @@ default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
+monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 
 [[bench]]
 name = "write_bench"
@@ -99,6 +107,12 @@ required-features = ["cluster"]
 name = "coordinator_demo"
 path = "examples/cluster/coordinator_demo.rs"
 required-features = ["cluster"]
+
+# Monitoring examples (require --features monitoring)
+[[example]]
+name = "metrics_server"
+path = "examples/monitoring/metrics_server.rs"
+required-features = ["monitoring"]
 
 [profile.release]
 opt-level = 3
