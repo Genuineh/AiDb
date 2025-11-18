@@ -1,0 +1,190 @@
+{
+  "dashboard": {
+    "title": "AiDb System Overview",
+    "tags": ["aidb", "system"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "title": "Request Rate (QPS)",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(aidb_requests_total{status=\"success\"}[5m])) by (operation)",
+            "legendFormat": "{{operation}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Operations/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Request Latency (P99)",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, rate(aidb_request_duration_seconds_bucket[5m])) by (operation)",
+            "legendFormat": "{{operation}} P99",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(aidb_request_duration_seconds_bucket[5m])) by (operation)",
+            "legendFormat": "{{operation}} P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(aidb_request_duration_seconds_bucket[5m])) by (operation)",
+            "legendFormat": "{{operation}} P50",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(aidb_errors_total[5m])) by (operation)",
+            "legendFormat": "{{operation}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Errors/sec"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "name": "High Error Rate",
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [10]},
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"type": "avg"},
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Memory Usage",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "aidb_memory_bytes",
+            "legendFormat": "{{component}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "bytes", "label": "Memory"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Disk Usage",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "aidb_disk_bytes",
+            "legendFormat": "{{path}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "bytes", "label": "Disk"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Cache Hit Rate",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "rate(aidb_cache_hits_total[5m]) / (rate(aidb_cache_hits_total[5m]) + rate(aidb_cache_misses_total[5m]))",
+            "legendFormat": "{{cache_type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "Hit Rate", "max": 1, "min": 0},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "SSTables by Level",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "aidb_sstables_total",
+            "legendFormat": "Level {{level}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Count"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Compaction Activity",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "rate(aidb_compactions_total[5m])",
+            "legendFormat": "Level {{level}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Compactions/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "WAL Size",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "aidb_wal_size_bytes",
+            "legendFormat": "WAL",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "bytes", "label": "Size"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}

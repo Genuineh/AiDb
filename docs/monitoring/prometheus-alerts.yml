@@ -1,0 +1,208 @@
+# Prometheus Alert Rules for AiDb
+
+groups:
+  # Critical Alerts - Immediate action required
+  - name: aidb_critical
+    interval: 10s
+    rules:
+      # High error rate
+      - alert: AiDbHighErrorRate
+        expr: rate(aidb_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: aidb
+        annotations:
+          summary: "AiDb: High error rate detected"
+          description: "Error rate is {{ $value | humanize }} errors/sec for instance {{ $labels.instance }}"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#high-error-rate"
+
+      # No healthy nodes
+      - alert: AiDbNoHealthyNodes
+        expr: sum(aidb_cluster_nodes{status="healthy"}) < 1
+        for: 1m
+        labels:
+          severity: critical
+          component: aidb
+        annotations:
+          summary: "AiDb: No healthy nodes available"
+          description: "Cluster has no healthy nodes - service is down"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#no-healthy-nodes"
+
+      # Disk almost full
+      - alert: AiDbDiskAlmostFull
+        expr: aidb_disk_bytes / (100 * 1024 * 1024 * 1024) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: aidb
+        annotations:
+          summary: "AiDb: Disk usage critical (>90%)"
+          description: "Disk at {{ $labels.path }} is {{ $value | humanizePercentage }} full"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#disk-full"
+
+      # Data loss risk
+      - alert: AiDbWALSyncFailing
+        expr: rate(aidb_errors_total{operation="wal_sync"}[5m]) > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: aidb
+        annotations:
+          summary: "AiDb: WAL sync failures detected"
+          description: "WAL sync is failing - risk of data loss"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#wal-sync-failure"
+
+  # Warning Alerts - Action needed soon
+  - name: aidb_warning
+    interval: 30s
+    rules:
+      # High P99 latency
+      - alert: AiDbHighLatency
+        expr: histogram_quantile(0.99, rate(aidb_request_duration_seconds_bucket[5m])) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: High latency detected"
+          description: "P99 latency is {{ $value | humanizeDuration }} for {{ $labels.operation }}"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#high-latency"
+
+      # High memory usage
+      - alert: AiDbHighMemoryUsage
+        expr: aidb_memory_bytes{component="memtable"} > (1024 * 1024 * 1024)
+        for: 5m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: High memory usage"
+          description: "MemTable memory usage is {{ $value | humanize1024 }} (>1GB)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#high-memory"
+
+      # Low cache hit rate
+      - alert: AiDbLowCacheHitRate
+        expr: |
+          rate(aidb_cache_hits_total[5m]) / 
+          (rate(aidb_cache_hits_total[5m]) + rate(aidb_cache_misses_total[5m])) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (<50%)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#low-cache-hit-rate"
+
+      # Slow compaction
+      - alert: AiDbSlowCompaction
+        expr: histogram_quantile(0.99, rate(aidb_compaction_duration_seconds_bucket[5m])) > 300
+        for: 10m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Slow compaction detected"
+          description: "P99 compaction time is {{ $value | humanizeDuration }} (>5min)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#slow-compaction"
+
+      # Many Level 0 tables
+      - alert: AiDbManyLevel0Tables
+        expr: aidb_sstables_total{level="0"} > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Many Level 0 SSTables"
+          description: "{{ $value }} Level 0 SSTables (>10) - compaction may be falling behind"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#many-level0-tables"
+
+      # Disk usage high
+      - alert: AiDbDiskUsageHigh
+        expr: aidb_disk_bytes / (100 * 1024 * 1024 * 1024) > 0.75
+        for: 15m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Disk usage high (>75%)"
+          description: "Disk at {{ $labels.path }} is {{ $value | humanizePercentage }} full"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#disk-usage-high"
+
+      # Backup failures
+      - alert: AiDbBackupFailing
+        expr: rate(aidb_backups_total{status="error"}[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Backup failures detected"
+          description: "Backups are failing - check backup system"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#backup-failures"
+
+      # Unhealthy replicas
+      - alert: AiDbUnhealthyReplicas
+        expr: aidb_cluster_nodes{node_type="replica",status="unhealthy"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: aidb
+        annotations:
+          summary: "AiDb: Unhealthy replicas detected"
+          description: "{{ $value }} replicas are unhealthy"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#unhealthy-replicas"
+
+  # Info Alerts - Informational, may need attention
+  - name: aidb_info
+    interval: 60s
+    rules:
+      # Large WAL file
+      - alert: AiDbLargeWAL
+        expr: aidb_wal_size_bytes > (100 * 1024 * 1024)
+        for: 10m
+        labels:
+          severity: info
+          component: aidb
+        annotations:
+          summary: "AiDb: Large WAL file"
+          description: "WAL size is {{ $value | humanize1024 }} (>100MB) - consider flush"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#large-wal"
+
+      # Compaction needed
+      - alert: AiDbCompactionNeeded
+        expr: sum(aidb_sstable_size_bytes{level="0"}) > (1024 * 1024 * 1024)
+        for: 30m
+        labels:
+          severity: info
+          component: aidb
+        annotations:
+          summary: "AiDb: Level 0 size large"
+          description: "Level 0 total size is {{ $value | humanize1024 }} (>1GB)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#compaction-needed"
+
+      # Slow flush operations
+      - alert: AiDbSlowFlush
+        expr: histogram_quantile(0.99, rate(aidb_flush_duration_seconds_bucket[5m])) > 10
+        for: 15m
+        labels:
+          severity: info
+          component: aidb
+        annotations:
+          summary: "AiDb: Slow flush operations"
+          description: "P99 flush time is {{ $value | humanizeDuration }} (>10s)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#slow-flush"
+
+      # High request rate
+      - alert: AiDbHighRequestRate
+        expr: sum(rate(aidb_requests_total[5m])) > 10000
+        for: 5m
+        labels:
+          severity: info
+          component: aidb
+        annotations:
+          summary: "AiDb: High request rate"
+          description: "Request rate is {{ $value | humanize }} ops/sec (>10k)"
+          runbook_url: "https://github.com/yourusername/aidb/wiki/Runbooks#high-request-rate"
