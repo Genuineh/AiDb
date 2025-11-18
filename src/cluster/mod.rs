@@ -7,6 +7,7 @@
 //! - Consistent hashing for key routing
 //! - Coordinator for cluster management
 //! - Health checking and failure detection
+//! - Elastic scaling for dynamic cluster resizing
 
 #[cfg(feature = "cluster")]
 pub mod rpc;
@@ -30,6 +31,9 @@ pub mod health;
 pub mod shard_group;
 
 #[cfg(feature = "cluster")]
+pub mod scaling;
+
+#[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
 #[cfg(feature = "cluster")]
@@ -46,3 +50,6 @@ pub use health::{HealthCheckConfig, HealthChecker};
 
 #[cfg(feature = "cluster")]
 pub use shard_group::{NodeInfo, NodeState, ShardGroup, ShardGroupManager, ShardGroupState};
+
+#[cfg(feature = "cluster")]
+pub use scaling::{ScalingConfig, ScalingManager, ScalingStats};
