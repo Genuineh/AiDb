@@ -9,8 +9,8 @@
 #[cfg(feature = "cluster")]
 mod autoscaler_integration_tests {
     use aidb::cluster::{
-        AutoScaler, Coordinator, ScalingDecision, ScalingManager, ScalingPolicy,
-        ShardGroupManager, SystemMetrics,
+        AutoScaler, Coordinator, ScalingDecision, ScalingManager, ScalingPolicy, ShardGroupManager,
+        SystemMetrics,
     };
     use std::sync::Arc;
     use std::time::Duration;

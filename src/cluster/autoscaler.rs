@@ -116,7 +116,6 @@ impl Default for ScalingPolicy {
 }
 
 impl ScalingPolicy {
-
     /// Create a conservative scaling policy
     pub fn conservative() -> Self {
         Self {
