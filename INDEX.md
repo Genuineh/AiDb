@@ -2,14 +2,17 @@
 
 欢迎！这是AiDb项目的完整文档导航。
 
+**🎉 项目状态**: 生产就绪 - 所有核心功能已完成！
+
 ## 🚀 快速开始
 
 | 文档 | 内容 | 适合人群 |
 |------|------|---------|
-| [README.md](README.md) | 项目介绍、快速开始 | 所有人 |
+| [README.md](README.md) | 项目介绍、快速开始 | 所有人 ⭐ |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 完整使用指南 | 用户 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计 | 开发者、架构师 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发指南 | 贡献者 |
-| [TODO.md](TODO.md) | 当前任务 | 贡献者 |
+| [TODO.md](TODO.md) | 当前任务（99%完成） | 贡献者 |
 
 ## 📚 核心文档
 
@@ -39,6 +42,34 @@
   - InternalKey格式详解
   - 并发访问和MVCC支持
   - 使用示例和性能特点
+
+- **[docs/SSTABLE_IMPLEMENTATION.md](docs/SSTABLE_IMPLEMENTATION.md)** ✅
+  - SSTable架构设计
+  - Block格式和索引
+  - Bloom Filter集成
+  - 压缩和优化
+
+### 运维文档
+
+- **[docs/BACKUP_RECOVERY.md](docs/BACKUP_RECOVERY.md)** ✅
+  - 备份策略和配置
+  - 恢复流程和验证
+  - 最佳实践
+
+- **[docs/PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md)** ✅
+  - 性能调优指南
+  - 配置参数说明
+  - 常见问题优化
+
+- **[docs/BEST_PRACTICES.md](docs/BEST_PRACTICES.md)** ✅
+  - 生产环境指南
+  - 安全性建议
+  - 监控和告警
+
+- **[docs/monitoring/](docs/monitoring/)** ✅
+  - Prometheus配置
+  - Grafana仪表盘
+  - 告警规则
 
 ### 实施和开发
 
@@ -94,15 +125,28 @@ aidb/
     ├── IMPLEMENTATION.md  # 实施计划 ⭐ 开发路线
     ├── DESIGN_DECISIONS.md # 设计决策
     ├── DEVELOPMENT.md     # 开发指南 ⭐ 参与开发
+    ├── USER_GUIDE.md      # 用户指南 ⭐ 使用说明
+    ├── BEST_PRACTICES.md  # 最佳实践 ⭐ 生产环境
+    ├── PERFORMANCE_TUNING.md # 性能调优
+    ├── BACKUP_RECOVERY.md # 备份恢复指南
     ├── WAL_IMPLEMENTATION.md # WAL实现 ✅
     ├── MEMTABLE_IMPLEMENTATION.md # MemTable实现 ✅
     ├── SSTABLE_IMPLEMENTATION.md # SSTable实现 ✅
     │
     ├── completions/       # 完成总结文档
     │   ├── README.md      # 完成总结索引
+    │   ├── MONITORING_OPERATIONS_COMPLETION_SUMMARY.md # Week 45-48 ✅
+    │   ├── SCALING_COMPLETION_SUMMARY.md # Week 41-44 ✅
+    │   ├── BACKUP_RECOVERY_COMPLETION_SUMMARY.md # Week 35-40 ✅
+    │   ├── SHARD_GROUP_COMPLETION_SUMMARY.md # Week 29-34 ✅
+    │   ├── COORDINATOR_COMPLETION_SUMMARY.md # Week 25-28 ✅
     │   └── ... (各阶段完成报告)
     │
-    └── archive/           # 历史文档
+    ├── monitoring/        # 监控配置 ✅
+    │   ├── grafana/      # Grafana仪表盘
+    │   └── prometheus/   # Prometheus规则
+    │
+    └── archive/           # 历史文档 📦
         ├── README.md
         └── ... (演进过程中的文档)
 ```
@@ -197,18 +241,25 @@ aidb/
 
 文档持续更新中，如有问题或建议，欢迎提Issue。
 
-| 文档 | 最后更新 |
-|------|---------|
-| README.md | 2025-11-17 ✅ |
-| docs/ARCHITECTURE.md | 2025-11-04 |
-| docs/IMPLEMENTATION.md | 2025-11-05 |
-| docs/DESIGN_DECISIONS.md | 2025-11-04 |
-| docs/DEVELOPMENT.md | 2025-11-04 |
-| docs/WAL_IMPLEMENTATION.md | 2025-11-05 ✅ |
-| docs/MEMTABLE_IMPLEMENTATION.md | 2025-11-06 ✅ |
-| docs/SSTABLE_IMPLEMENTATION.md | 2025-11-06 ✅ |
-| docs/completions/ | 2025-11-17 ✅ |
-| TODO.md | 2025-11-17 ✅ |
+| 文档 | 最后更新 | 状态 |
+|------|---------|------|
+| README.md | 2025-11-18 | ✅ 已更新 |
+| CHANGELOG.md | 2025-11-18 | ✅ 已更新 |
+| TODO.md | 2025-11-18 | ✅ 已更新 |
+| docs/ARCHITECTURE.md | 2025-11-04 | ✅ 最新 |
+| docs/IMPLEMENTATION.md | 2025-11-05 | ✅ 最新 |
+| docs/DESIGN_DECISIONS.md | 2025-11-04 | ✅ 最新 |
+| docs/DEVELOPMENT.md | 2025-11-04 | ✅ 最新 |
+| docs/USER_GUIDE.md | 2025-11-11 | ✅ 最新 |
+| docs/BEST_PRACTICES.md | 2025-11-11 | ✅ 最新 |
+| docs/PERFORMANCE_TUNING.md | 2025-11-11 | ✅ 最新 |
+| docs/BACKUP_RECOVERY.md | 2025-11-17 | ✅ 最新 |
+| docs/WAL_IMPLEMENTATION.md | 2025-11-05 | ✅ 最新 |
+| docs/MEMTABLE_IMPLEMENTATION.md | 2025-11-06 | ✅ 最新 |
+| docs/SSTABLE_IMPLEMENTATION.md | 2025-11-06 | ✅ 最新 |
+| docs/completions/ | 2025-11-18 | ✅ 最新 |
+| docs/monitoring/ | 2025-11-18 | ✅ 最新 |
+| docs/archive/ | 2025-11-06 | 📦 归档 |
 
 ---
 
