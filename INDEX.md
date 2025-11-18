@@ -51,6 +51,15 @@
 
 ### 运维文档
 
+- **[💡 傻瓜式运维指南](docs/FOOLPROOF_OPS_GUIDE.md)** ⭐ NEW!
+  - 一键启动/停止/扩容集群
+  - 无需技术细节即可完成日常运维
+  - 完整的命令行工具指南
+
+- **[docs/monitoring/ADMIN_TOOL_GUIDE.md](docs/monitoring/ADMIN_TOOL_GUIDE.md)** ✅
+  - aidb-admin 完整命令参考
+  - 所有管理功能详解
+
 - **[docs/BACKUP_RECOVERY.md](docs/BACKUP_RECOVERY.md)** ✅
   - 备份策略和配置
   - 恢复流程和验证
