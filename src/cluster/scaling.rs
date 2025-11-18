@@ -11,7 +11,7 @@ use super::consistent_hash::ShardId;
 use super::coordinator::Coordinator;
 use super::rpc::proto::storage_client::StorageClient;
 
-use super::shard_group::{ShardGroupManager, NodeState};
+use super::shard_group::{NodeState, ShardGroupManager};
 use crate::error::{Error, Result};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -114,12 +114,7 @@ impl ScalingManager {
         shard_manager: Arc<ShardGroupManager>,
         config: ScalingConfig,
     ) -> Self {
-        Self {
-            coordinator,
-            shard_manager,
-            config,
-            stats: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { coordinator, shard_manager, config, stats: Arc::new(RwLock::new(HashMap::new())) }
     }
 
     /// Create a scaling manager with default configuration
@@ -149,7 +144,7 @@ impl ScalingManager {
         migrate_data: bool,
     ) -> Result<ScalingStats> {
         log::info!("Adding new shard: {} at {}", shard_id, primary_address);
-        
+
         let mut stats = ScalingStats::new();
         let operation_id = format!("add_shard_{}", shard_id);
 
@@ -164,8 +159,7 @@ impl ScalingManager {
 
         // Step 2: Set primary node
         let primary_id = format!("{}_primary", shard_id);
-        self.shard_manager
-            .set_primary(&shard_id, primary_id, primary_address.clone())?;
+        self.shard_manager.set_primary(&shard_id, primary_id, primary_address.clone())?;
         log::info!("Set primary for shard {}: {}", shard_id, primary_address);
 
         // Step 3: Start the shard group
@@ -194,7 +188,7 @@ impl ScalingManager {
 
         stats.complete();
         self.stats.write().insert(operation_id, stats.clone());
-        
+
         log::info!(
             "Successfully added shard: {} (migrated {} keys, {} bytes in {} ms)",
             shard_id,
@@ -202,7 +196,7 @@ impl ScalingManager {
             stats.bytes_migrated,
             stats.duration_ms()
         );
-        
+
         Ok(stats)
     }
 
@@ -219,7 +213,7 @@ impl ScalingManager {
     /// * `migrate_data` - Whether to migrate data before removal
     pub async fn remove_shard(&self, shard_id: &str, migrate_data: bool) -> Result<ScalingStats> {
         log::info!("Removing shard: {}", shard_id);
-        
+
         let mut stats = ScalingStats::new();
         let operation_id = format!("remove_shard_{}", shard_id);
 
@@ -267,7 +261,7 @@ impl ScalingManager {
 
         stats.complete();
         self.stats.write().insert(operation_id, stats.clone());
-        
+
         log::info!(
             "Successfully removed shard: {} (migrated {} keys, {} bytes in {} ms)",
             shard_id,
@@ -275,7 +269,7 @@ impl ScalingManager {
             stats.bytes_migrated,
             stats.duration_ms()
         );
-        
+
         Ok(stats)
     }
 
@@ -284,11 +278,7 @@ impl ScalingManager {
     /// # Arguments
     /// * `shard_id` - Shard group identifier
     /// * `replica_address` - Network address for the replica node
-    pub async fn add_replica(
-        &self,
-        shard_id: &str,
-        replica_address: String,
-    ) -> Result<()> {
+    pub async fn add_replica(&self, shard_id: &str, replica_address: String) -> Result<()> {
         log::info!("Adding replica to shard {}: {}", shard_id, replica_address);
 
         // Validation: Check if shard exists
@@ -299,7 +289,7 @@ impl ScalingManager {
         // Validation: Check max replicas
         let nodes = self.shard_manager.get_group_nodes(shard_id)?;
         let replica_count = nodes.iter().filter(|n| !n.is_primary).count();
-        
+
         if replica_count >= self.config.max_replicas_per_group {
             return Err(Error::ClusterError(format!(
                 "Cannot add replica: shard {} already has maximum replicas ({})",
@@ -313,7 +303,7 @@ impl ScalingManager {
         // Add replica to shard group
         self.shard_manager
             .add_replica(shard_id, replica_id.clone(), replica_address.clone())?;
-        
+
         // Mark replica as healthy
         self.shard_manager
             .update_node_state(shard_id, &replica_id, NodeState::Healthy)?;
@@ -324,7 +314,7 @@ impl ScalingManager {
             shard_id,
             replica_address
         );
-        
+
         Ok(())
     }
 
@@ -344,7 +334,7 @@ impl ScalingManager {
         // Validation: Check minimum replicas (if configured)
         let nodes = self.shard_manager.get_group_nodes(shard_id)?;
         let replica_count = nodes.iter().filter(|n| !n.is_primary).count();
-        
+
         if replica_count <= self.config.min_replicas_per_group {
             return Err(Error::ClusterError(format!(
                 "Cannot remove replica: shard {} requires minimum {} replicas",
@@ -355,12 +345,8 @@ impl ScalingManager {
         // Remove replica from shard group
         self.shard_manager.remove_replica(shard_id, replica_id)?;
 
-        log::info!(
-            "Successfully removed replica {} from shard {}",
-            replica_id,
-            shard_id
-        );
-        
+        log::info!("Successfully removed replica {} from shard {}", replica_id, shard_id);
+
         Ok(())
     }
 
@@ -384,10 +370,7 @@ impl ScalingManager {
 
         // This is a placeholder - actual implementation would require
         // scan/iterator support on the storage nodes
-        log::info!(
-            "Data migration to {} is a placeholder in this implementation",
-            new_shard_id
-        );
+        log::info!("Data migration to {} is a placeholder in this implementation", new_shard_id);
         log::info!(
             "In production, this would scan existing shards and migrate keys that now belong to {}",
             new_shard_id
@@ -415,10 +398,7 @@ impl ScalingManager {
 
         // This is a placeholder - actual implementation would require
         // scan/iterator support on the storage nodes
-        log::info!(
-            "Data migration from {} is a placeholder in this implementation",
-            shard_id
-        );
+        log::info!("Data migration from {} is a placeholder in this implementation", shard_id);
         log::info!(
             "In production, this would scan the shard and migrate all keys to their new shards"
         );
@@ -468,7 +448,7 @@ impl ScalingManager {
     /// Validate cluster health before performing operations
     pub fn validate_cluster_health(&self) -> Result<()> {
         let groups = self.shard_manager.list_groups();
-        
+
         if groups.is_empty() {
             return Err(Error::ClusterError("No shard groups in cluster".to_string()));
         }
@@ -476,7 +456,7 @@ impl ScalingManager {
         for shard_id in groups {
             let nodes = self.shard_manager.get_group_nodes(&shard_id)?;
             let healthy_count = nodes.iter().filter(|n| n.state == NodeState::Healthy).count();
-            
+
             if healthy_count == 0 {
                 return Err(Error::ClusterError(format!(
                     "Shard {} has no healthy nodes",
@@ -529,7 +509,7 @@ mod tests {
         let mut stats = ScalingStats::new();
         std::thread::sleep(std::time::Duration::from_millis(10));
         stats.complete();
-        
+
         assert!(stats.end_time_ms > stats.start_time_ms);
         assert!(stats.duration_ms() >= 10);
     }
@@ -539,7 +519,7 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let config = ScalingConfig::default();
-        
+
         let manager = ScalingManager::new(coordinator, shard_manager, config);
         assert_eq!(manager.list_operations().len(), 0);
     }
@@ -548,7 +528,7 @@ mod tests {
     fn test_scaling_manager_with_defaults() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        
+
         let manager = ScalingManager::with_defaults(coordinator, shard_manager);
         assert_eq!(manager.list_operations().len(), 0);
     }
@@ -557,7 +537,7 @@ mod tests {
     fn test_validate_cluster_health_empty() {
         let manager = ScalingManager::default();
         let result = manager.validate_cluster_health();
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("No shard groups"));
     }
@@ -572,11 +552,9 @@ mod tests {
         shard_manager.create_group("shard1".to_string()).unwrap();
 
         // Try to add duplicate - should fail
-        let result = manager.add_shard(
-            "shard1".to_string(),
-            "127.0.0.1:5001".to_string(),
-            false,
-        ).await;
+        let result = manager
+            .add_shard("shard1".to_string(), "127.0.0.1:5001".to_string(), false)
+            .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already exists"));
@@ -587,17 +565,17 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let config = ScalingConfig {
-            min_shard_groups: 0,  // Set to 0 so we can test the "not found" case
+            min_shard_groups: 0, // Set to 0 so we can test the "not found" case
             ..Default::default()
         };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Create one shard so we pass the min count check
         shard_manager.create_group("shard1".to_string()).unwrap();
-        
+
         // Try to remove nonexistent shard - should fail with "not found"
         let result = manager.remove_shard("nonexistent", false).await;
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -606,10 +584,7 @@ mod tests {
     async fn test_remove_shard_min_count() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_shard_groups: 2,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_shard_groups: 2, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Create only one shard
@@ -625,11 +600,8 @@ mod tests {
     #[tokio::test]
     async fn test_add_replica_to_nonexistent_shard() {
         let manager = ScalingManager::default();
-        
-        let result = manager.add_replica(
-            "nonexistent",
-            "127.0.0.1:6001".to_string(),
-        ).await;
+
+        let result = manager.add_replica("nonexistent", "127.0.0.1:6001".to_string()).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
@@ -639,10 +611,7 @@ mod tests {
     async fn test_add_replica_max_limit() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            max_replicas_per_group: 0,
-            ..Default::default()
-        };
+        let config = ScalingConfig { max_replicas_per_group: 0, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Create shard with primary
@@ -684,10 +653,7 @@ mod tests {
     async fn test_remove_replica_min_limit() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_replicas_per_group: 1,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_replicas_per_group: 1, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Create shard with primary but no replicas
@@ -706,7 +672,7 @@ mod tests {
     #[test]
     fn test_operation_stats_tracking() {
         let manager = ScalingManager::default();
-        
+
         // Initially no operations
         assert_eq!(manager.list_operations().len(), 0);
 

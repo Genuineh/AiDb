@@ -8,11 +8,8 @@
 
 #[cfg(feature = "cluster")]
 mod scaling_integration_tests {
-    use aidb::cluster::{
-        Coordinator, ScalingConfig, ScalingManager, ShardGroupManager,
-    };
+    use aidb::cluster::{Coordinator, ScalingConfig, ScalingManager, ShardGroupManager};
     use std::sync::Arc;
-    use tokio;
 
     #[tokio::test]
     async fn test_add_shard_basic() {
@@ -48,11 +45,9 @@ mod scaling_integration_tests {
         for i in 1..=3 {
             let shard_id = format!("shard{}", i);
             let address = format!("127.0.0.1:500{}", i);
-            
-            let _result = manager
-                .add_shard(shard_id.clone(), address, false)
-                .await;
-            
+
+            let _result = manager.add_shard(shard_id.clone(), address, false).await;
+
             // Verify each shard was created (regardless of connection success)
             // In real scenarios, the primary nodes would be running
         }
@@ -69,10 +64,7 @@ mod scaling_integration_tests {
     async fn test_remove_shard_basic() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_shard_groups: 1,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_shard_groups: 1, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Add two shards first
@@ -101,10 +93,7 @@ mod scaling_integration_tests {
     async fn test_cannot_remove_last_shard() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_shard_groups: 1,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_shard_groups: 1, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Add one shard
@@ -115,7 +104,7 @@ mod scaling_integration_tests {
         // Try to remove it - should fail
         let result = manager.remove_shard("shard1", false).await;
         assert!(result.is_err());
-        
+
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("minimum shard count"));
 
@@ -135,9 +124,7 @@ mod scaling_integration_tests {
             .await;
 
         // Add a replica
-        let result = manager
-            .add_replica("shard1", "127.0.0.1:6001".to_string())
-            .await;
+        let result = manager.add_replica("shard1", "127.0.0.1:6001".to_string()).await;
 
         assert!(result.is_ok());
 
@@ -151,10 +138,7 @@ mod scaling_integration_tests {
     async fn test_add_multiple_replicas() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            max_replicas_per_group: 3,
-            ..Default::default()
-        };
+        let config = ScalingConfig { max_replicas_per_group: 3, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Add a shard first
@@ -179,10 +163,7 @@ mod scaling_integration_tests {
     async fn test_cannot_exceed_max_replicas() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            max_replicas_per_group: 2,
-            ..Default::default()
-        };
+        let config = ScalingConfig { max_replicas_per_group: 2, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Add a shard
@@ -197,7 +178,7 @@ mod scaling_integration_tests {
         // Try to add one more - should fail
         let result = manager.add_replica("shard1", "127.0.0.1:6003".to_string()).await;
         assert!(result.is_err());
-        
+
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("maximum replicas"));
 
@@ -217,10 +198,8 @@ mod scaling_integration_tests {
         let _result = manager
             .add_shard("shard1".to_string(), "127.0.0.1:5001".to_string(), false)
             .await;
-        
-        let _result = manager
-            .add_replica("shard1", "127.0.0.1:6001".to_string())
-            .await;
+
+        let _result = manager.add_replica("shard1", "127.0.0.1:6001".to_string()).await;
 
         // Verify replica exists
         let nodes_before = shard_manager.get_group_nodes("shard1").unwrap();
@@ -242,17 +221,14 @@ mod scaling_integration_tests {
     async fn test_cannot_remove_below_min_replicas() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_replicas_per_group: 2,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_replicas_per_group: 2, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Add a shard and replicas
         let _result = manager
             .add_shard("shard1".to_string(), "127.0.0.1:5001".to_string(), false)
             .await;
-        
+
         let _r1 = manager.add_replica("shard1", "127.0.0.1:6001".to_string()).await;
         let _r2 = manager.add_replica("shard1", "127.0.0.1:6002".to_string()).await;
 
@@ -265,7 +241,7 @@ mod scaling_integration_tests {
         let replica_id = nodes.iter().find(|n| !n.is_primary).unwrap().id.clone();
         let result = manager.remove_replica("shard1", &replica_id).await;
         assert!(result.is_err());
-        
+
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("minimum"));
 
@@ -293,19 +269,18 @@ mod scaling_integration_tests {
         // Note: In a test environment without running servers, the operation will
         // fail at coordinator registration, so stats won't be recorded.
         // This is expected behavior - stats are only recorded for successful operations.
-        
+
         // For this test, we'll verify the behavior is consistent
         let ops = manager.list_operations();
-        
+
         // If the operation succeeded (unlikely in test), verify stats
-        if ops.len() > 0 {
+        if !ops.is_empty() {
             let stats = manager.get_operation_stats(&ops[0]);
             assert!(stats.is_some());
             let stats = stats.unwrap();
-            assert!(stats.duration_ms() >= 0);
             assert!(stats.start_time_ms > 0);
         }
-        
+
         // The important thing is that clear_stats works
         manager.clear_stats();
         assert_eq!(manager.list_operations().len(), 0);
@@ -338,10 +313,7 @@ mod scaling_integration_tests {
     async fn test_scale_out_then_scale_in() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let config = ScalingConfig {
-            min_shard_groups: 1,
-            ..Default::default()
-        };
+        let config = ScalingConfig { min_shard_groups: 1, ..Default::default() };
         let manager = ScalingManager::new(coordinator, shard_manager.clone(), config);
 
         // Scale out: Add 3 shards
@@ -368,9 +340,7 @@ mod scaling_integration_tests {
         let shard_manager = Arc::new(ShardGroupManager::new());
         let manager = ScalingManager::with_defaults(coordinator, shard_manager);
 
-        let result = manager
-            .add_replica("nonexistent", "127.0.0.1:6001".to_string())
-            .await;
+        let result = manager.add_replica("nonexistent", "127.0.0.1:6001".to_string()).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
@@ -390,7 +360,6 @@ mod scaling_integration_tests {
 
     #[tokio::test]
     async fn test_clear_stats() {
-        use aidb::cluster::ScalingStats;
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let manager = ScalingManager::with_defaults(coordinator, shard_manager);
@@ -401,13 +370,13 @@ mod scaling_integration_tests {
         // In a real scenario, successful operations would record stats
         // For this test, we just verify that clear_stats() works correctly
         // by checking the initial and final state
-        
+
         // Clear stats (even though empty)
         manager.clear_stats();
 
         // Should still have no stats
         assert_eq!(manager.list_operations().len(), 0);
-        
+
         // Verify get_operation_stats returns None for non-existent operation
         assert!(manager.get_operation_stats("nonexistent").is_none());
     }

@@ -9,21 +9,18 @@
 #[cfg(feature = "cluster")]
 mod autoscaler_integration_tests {
     use aidb::cluster::{
-        AutoScaler, Coordinator, ScalingConfig, ScalingDecision, ScalingManager, ScalingPolicy,
+        AutoScaler, Coordinator, ScalingDecision, ScalingManager, ScalingPolicy,
         ShardGroupManager, SystemMetrics,
     };
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio;
 
     #[test]
     fn test_autoscaler_creation() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -35,10 +32,8 @@ mod autoscaler_integration_tests {
     fn test_enable_disable() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -58,10 +53,8 @@ mod autoscaler_integration_tests {
     fn test_update_and_retrieve_metrics() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -84,10 +77,8 @@ mod autoscaler_integration_tests {
     fn test_aggregate_metrics_single_shard() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -106,10 +97,8 @@ mod autoscaler_integration_tests {
     fn test_aggregate_metrics_multiple_shards() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -147,10 +136,8 @@ mod autoscaler_integration_tests {
     fn test_evaluate_when_disabled() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -168,16 +155,11 @@ mod autoscaler_integration_tests {
     fn test_evaluate_scale_out_condition() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         // Use aggressive policy with fewer evaluation periods
-        let policy = ScalingPolicy {
-            min_evaluation_periods: 2,
-            ..ScalingPolicy::aggressive()
-        };
+        let policy = ScalingPolicy { min_evaluation_periods: 2, ..ScalingPolicy::aggressive() };
         let autoscaler = AutoScaler::new(scaling_manager, shard_manager, policy);
 
         autoscaler.enable();
@@ -200,16 +182,11 @@ mod autoscaler_integration_tests {
     fn test_evaluate_scale_in_condition() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         // Use aggressive policy with fewer evaluation periods
-        let policy = ScalingPolicy {
-            min_evaluation_periods: 2,
-            ..ScalingPolicy::aggressive()
-        };
+        let policy = ScalingPolicy { min_evaluation_periods: 2, ..ScalingPolicy::aggressive() };
         let autoscaler = AutoScaler::new(scaling_manager, shard_manager, policy);
 
         autoscaler.enable();
@@ -236,15 +213,10 @@ mod autoscaler_integration_tests {
     fn test_evaluation_periods_reset_on_mixed_conditions() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
-        let policy = ScalingPolicy {
-            min_evaluation_periods: 3,
-            ..ScalingPolicy::default()
-        };
+        let policy = ScalingPolicy { min_evaluation_periods: 3, ..ScalingPolicy::default() };
         let autoscaler = AutoScaler::new(scaling_manager, shard_manager, policy);
 
         autoscaler.enable();
@@ -287,10 +259,8 @@ mod autoscaler_integration_tests {
     fn test_different_policy_types() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator.clone(),
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator.clone(), shard_manager.clone()));
 
         // Test default policy
         let default_autoscaler = AutoScaler::new(
@@ -308,32 +278,21 @@ mod autoscaler_integration_tests {
             ScalingPolicy::conservative(),
         );
         assert_eq!(conservative_autoscaler.policy().name, "conservative");
-        assert_eq!(
-            conservative_autoscaler.policy().cpu_threshold.scale_out,
-            90.0
-        );
+        assert_eq!(conservative_autoscaler.policy().cpu_threshold.scale_out, 90.0);
 
         // Test aggressive policy
-        let aggressive_autoscaler = AutoScaler::new(
-            scaling_manager,
-            shard_manager,
-            ScalingPolicy::aggressive(),
-        );
+        let aggressive_autoscaler =
+            AutoScaler::new(scaling_manager, shard_manager, ScalingPolicy::aggressive());
         assert_eq!(aggressive_autoscaler.policy().name, "aggressive");
-        assert_eq!(
-            aggressive_autoscaler.policy().cpu_threshold.scale_out,
-            70.0
-        );
+        assert_eq!(aggressive_autoscaler.policy().cpu_threshold.scale_out, 70.0);
     }
 
     #[test]
     fn test_clear_metrics() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -356,10 +315,8 @@ mod autoscaler_integration_tests {
     fn test_cooldown_period() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let policy = ScalingPolicy {
             cooldown_duration: Duration::from_secs(60),
@@ -431,10 +388,8 @@ mod autoscaler_integration_tests {
     async fn test_execute_when_disabled() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
 
@@ -448,10 +403,8 @@ mod autoscaler_integration_tests {
     async fn test_execute_no_action_needed() {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
-        let scaling_manager = Arc::new(ScalingManager::with_defaults(
-            coordinator,
-            shard_manager.clone(),
-        ));
+        let scaling_manager =
+            Arc::new(ScalingManager::with_defaults(coordinator, shard_manager.clone()));
 
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
         autoscaler.enable();

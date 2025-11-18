@@ -32,6 +32,12 @@ pub struct SystemMetrics {
     pub timestamp: Instant,
 }
 
+impl Default for SystemMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SystemMetrics {
     /// Create new metrics with current timestamp
     pub fn new() -> Self {
@@ -95,9 +101,8 @@ pub struct ScalingPolicy {
     pub min_evaluation_periods: usize,
 }
 
-impl ScalingPolicy {
-    /// Create a default scaling policy
-    pub fn default() -> Self {
+impl Default for ScalingPolicy {
+    fn default() -> Self {
         Self {
             name: "default".to_string(),
             cpu_threshold: MetricThreshold::new(80.0, 30.0),
@@ -108,6 +113,9 @@ impl ScalingPolicy {
             min_evaluation_periods: 3,
         }
     }
+}
+
+impl ScalingPolicy {
 
     /// Create a conservative scaling policy
     pub fn conservative() -> Self {
@@ -278,7 +286,7 @@ impl AutoScaler {
     /// Get aggregated metrics across all shards
     pub fn get_aggregate_metrics(&self) -> SystemMetrics {
         let state = self.state.read();
-        
+
         if state.metrics.is_empty() {
             return SystemMetrics::new();
         }
@@ -368,23 +376,23 @@ impl AutoScaler {
             ScalingDecision::ScaleOut => {
                 log::info!("Executing scale-out operation");
                 self.perform_scale_out().await?;
-                
+
                 // Update last scaling time and reset periods
                 let mut state = self.state.write();
                 state.last_scaling_time = Some(Instant::now());
                 state.reset_periods();
-                
+
                 Ok(ScalingDecision::ScaleOut)
             }
             ScalingDecision::ScaleIn => {
                 log::info!("Executing scale-in operation");
                 self.perform_scale_in().await?;
-                
+
                 // Update last scaling time and reset periods
                 let mut state = self.state.write();
                 state.last_scaling_time = Some(Instant::now());
                 state.reset_periods();
-                
+
                 Ok(ScalingDecision::ScaleIn)
             }
             _ => Ok(decision),
@@ -399,11 +407,7 @@ impl AutoScaler {
 
         log::info!("Auto-scaling: Adding shard {} at {}", new_shard_id, new_address);
 
-        match self
-            .scaling_manager
-            .add_shard(new_shard_id.clone(), new_address, true)
-            .await
-        {
+        match self.scaling_manager.add_shard(new_shard_id.clone(), new_address, true).await {
             Ok(stats) => {
                 log::info!(
                     "Auto-scaling: Successfully added shard {} (migrated {} keys)",
@@ -422,18 +426,14 @@ impl AutoScaler {
     /// Perform scale-in by removing a shard
     async fn perform_scale_in(&self) -> Result<()> {
         let shards = self.shard_manager.list_groups();
-        
+
         // Find the shard with lowest load
         let target_shard = {
             let state = self.state.read();
             shards
                 .iter()
                 .min_by_key(|shard_id| {
-                    state
-                        .metrics
-                        .get(*shard_id)
-                        .map(|m| m.qps)
-                        .unwrap_or(u64::MAX)
+                    state.metrics.get(*shard_id).map(|m| m.qps).unwrap_or(u64::MAX)
                 })
                 .cloned()
         };
@@ -468,7 +468,7 @@ impl AutoScaler {
     /// Get time until cooldown expires
     pub fn time_until_cooldown_expires(&self) -> Option<Duration> {
         let state = self.state.read();
-        
+
         if let Some(last_time) = state.last_scaling_time {
             let elapsed = last_time.elapsed();
             if elapsed < self.policy.cooldown_duration {
@@ -508,7 +508,7 @@ mod tests {
         let mut metrics = SystemMetrics::new();
         metrics.storage_bytes = 500;
         metrics.storage_capacity_bytes = 1000;
-        
+
         assert_eq!(metrics.storage_percent(), 50.0);
     }
 
@@ -516,7 +516,7 @@ mod tests {
     fn test_system_metrics_stale() {
         let mut metrics = SystemMetrics::new();
         metrics.timestamp = Instant::now() - Duration::from_secs(120);
-        
+
         assert!(metrics.is_stale(Duration::from_secs(60)));
         assert!(!metrics.is_stale(Duration::from_secs(180)));
     }
@@ -549,11 +549,11 @@ mod tests {
     fn test_policy_should_scale_out() {
         let policy = ScalingPolicy::default();
         let mut metrics = SystemMetrics::new();
-        
+
         // Below threshold - no scale out
         metrics.cpu_percent = 50.0;
         assert!(!policy.should_scale_out(&metrics));
-        
+
         // Above threshold - scale out
         metrics.cpu_percent = 85.0;
         assert!(policy.should_scale_out(&metrics));
@@ -563,7 +563,7 @@ mod tests {
     fn test_policy_should_scale_in() {
         let policy = ScalingPolicy::default();
         let mut metrics = SystemMetrics::new();
-        
+
         // Above threshold - no scale in
         metrics.cpu_percent = 50.0;
         metrics.memory_percent = 50.0;
@@ -571,7 +571,7 @@ mod tests {
         metrics.storage_bytes = 500;
         metrics.storage_capacity_bytes = 1000;
         assert!(!policy.should_scale_in(&metrics));
-        
+
         // Below all thresholds - scale in
         metrics.cpu_percent = 20.0;
         metrics.memory_percent = 20.0;
@@ -585,14 +585,11 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         assert!(!autoscaler.is_enabled());
     }
 
@@ -601,19 +598,16 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         assert!(!autoscaler.is_enabled());
-        
+
         autoscaler.enable();
         assert!(autoscaler.is_enabled());
-        
+
         autoscaler.disable();
         assert!(!autoscaler.is_enabled());
     }
@@ -623,20 +617,17 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         let mut metrics = SystemMetrics::new();
         metrics.cpu_percent = 75.0;
         metrics.qps = 5000;
-        
+
         autoscaler.update_metrics("shard1".to_string(), metrics.clone());
-        
+
         let retrieved = autoscaler.get_metrics("shard1");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().cpu_percent, 75.0);
@@ -647,28 +638,25 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         // Add metrics for two shards
         let mut metrics1 = SystemMetrics::new();
         metrics1.cpu_percent = 60.0;
         metrics1.qps = 2000;
-        
+
         let mut metrics2 = SystemMetrics::new();
         metrics2.cpu_percent = 80.0;
         metrics2.qps = 3000;
-        
+
         autoscaler.update_metrics("shard1".to_string(), metrics1);
         autoscaler.update_metrics("shard2".to_string(), metrics2);
-        
+
         let aggregate = autoscaler.get_aggregate_metrics();
-        
+
         // Average CPU: (60 + 80) / 2 = 70
         assert_eq!(aggregate.cpu_percent, 70.0);
         // Total QPS: 2000 + 3000 = 5000
@@ -680,14 +668,11 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         let decision = autoscaler.evaluate();
         assert_eq!(decision, ScalingDecision::NoAction);
     }
@@ -697,29 +682,23 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
-        let policy = ScalingPolicy {
-            min_evaluation_periods: 2,
-            ..ScalingPolicy::default()
-        };
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
+        let policy = ScalingPolicy { min_evaluation_periods: 2, ..ScalingPolicy::default() };
         let autoscaler = AutoScaler::new(scaling_manager, shard_manager, policy);
-        
+
         autoscaler.enable();
-        
+
         // Set high CPU metrics
         let mut metrics = SystemMetrics::new();
         metrics.cpu_percent = 90.0;
         autoscaler.update_metrics("shard1".to_string(), metrics);
-        
+
         // First evaluation - not enough periods
         let decision1 = autoscaler.evaluate();
         assert_eq!(decision1, ScalingDecision::NoAction);
-        
+
         // Second evaluation - enough periods
         let decision2 = autoscaler.evaluate();
         assert_eq!(decision2, ScalingDecision::ScaleOut);
@@ -730,21 +709,18 @@ mod tests {
         let coordinator = Arc::new(Coordinator::new(100));
         let shard_manager = Arc::new(ShardGroupManager::new());
         let scaling_config = ScalingConfig::default();
-        let scaling_manager = Arc::new(ScalingManager::new(
-            coordinator,
-            shard_manager.clone(),
-            scaling_config,
-        ));
-        
+        let scaling_manager =
+            Arc::new(ScalingManager::new(coordinator, shard_manager.clone(), scaling_config));
+
         let autoscaler = AutoScaler::with_defaults(scaling_manager, shard_manager);
-        
+
         let metrics = SystemMetrics::new();
         autoscaler.update_metrics("shard1".to_string(), metrics);
-        
+
         assert!(autoscaler.get_metrics("shard1").is_some());
-        
+
         autoscaler.clear_metrics();
-        
+
         assert!(autoscaler.get_metrics("shard1").is_none());
     }
 }
