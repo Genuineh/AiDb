@@ -44,6 +44,7 @@
 #![warn(rust_2018_idioms)]
 
 // Module declarations
+pub mod backup;
 pub mod cache;
 pub mod compaction;
 pub mod config;
@@ -1140,6 +1141,53 @@ impl DB {
     /// cached data.
     pub fn reset_cache_stats(&self) {
         self.block_cache.reset_stats();
+    }
+
+    // Backup-related helper methods
+
+    /// Get the database path.
+    pub fn get_path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Get the current sequence number.
+    pub fn get_sequence(&self) -> u64 {
+        self.sequence.load(Ordering::SeqCst)
+    }
+
+    /// List all SSTable files in the database.
+    pub fn list_sstable_files(&self) -> Result<Vec<String>> {
+        let mut files = Vec::new();
+        let sstables = self.sstables.read();
+
+        for level_tables in sstables.iter() {
+            for table in level_tables.iter() {
+                if let Some(filename) = table.file_path().file_name() {
+                    if let Some(name) = filename.to_str() {
+                        files.push(name.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(files)
+    }
+
+    /// List all WAL files in the database.
+    pub fn list_wal_files(&self) -> Result<Vec<String>> {
+        let mut files = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&self.path) {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    if wal::parse_wal_filename(filename).is_some() {
+                        files.push(filename.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(files)
     }
 }
 

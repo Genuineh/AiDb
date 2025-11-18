@@ -11,13 +11,13 @@ use aidb::cluster::{
 };
 use aidb::{Options, DB};
 use std::sync::Arc;
-use std::time::Duration;
 use tempfile::TempDir;
 
 #[cfg(feature = "cluster")]
-use tokio::time::sleep;
+use tokio::time::{sleep, Duration};
 
 /// Helper to create a test DB
+#[allow(dead_code)]
 async fn create_test_db() -> (Arc<DB>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let options = Options::default();
