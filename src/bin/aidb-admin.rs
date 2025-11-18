@@ -178,8 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize logger
     if cli.verbose {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-            .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     } else {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }
@@ -263,11 +262,7 @@ fn handle_cluster_command(
                 println!("  Status: Healthy");
             }
         }
-        ClusterCommands::AddNode {
-            address,
-            node_type,
-            shard_id,
-        } => {
+        ClusterCommands::AddNode { address, node_type, shard_id } => {
             println!("Adding node to cluster...");
             println!("  Address: {}", address);
             println!("  Type: {}", node_type);
@@ -346,11 +341,7 @@ fn handle_backup_command(
     db: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        BackupCommands::Create {
-            output,
-            description,
-            compress,
-        } => {
+        BackupCommands::Create { output, description, compress } => {
             let db_path = db.ok_or("Database path required (use --db)")?;
 
             println!("Creating backup...");
@@ -377,11 +368,13 @@ fn handle_backup_command(
                     0..=20 => "Creating snapshot...".to_string(),
                     21..=60 => "Copying SSTables...".to_string(),
                     61..=80 => "Copying WAL...".to_string(),
-                    81..=95 => if compress {
-                        "Compressing...".to_string()
-                    } else {
-                        "Writing metadata...".to_string()
-                    },
+                    81..=95 => {
+                        if compress {
+                            "Compressing...".to_string()
+                        } else {
+                            "Writing metadata...".to_string()
+                        }
+                    }
                     _ => "Finalizing...".to_string(),
                 });
                 std::thread::sleep(std::time::Duration::from_millis(30));
@@ -407,14 +400,7 @@ fn handle_backup_command(
             let mut table = Table::new();
 
             if detailed {
-                table.set_header(vec![
-                    "ID",
-                    "Timestamp",
-                    "Size",
-                    "Files",
-                    "Description",
-                    "Status",
-                ]);
+                table.set_header(vec!["ID", "Timestamp", "Size", "Files", "Description", "Status"]);
                 table
                     .add_row(vec![
                         "1",
@@ -452,11 +438,7 @@ fn handle_backup_command(
             println!();
             println!("Total: 3 backups (363 MB)");
         }
-        BackupCommands::Restore {
-            backup,
-            target,
-            force,
-        } => {
+        BackupCommands::Restore { backup, target, force } => {
             println!("Restoring from backup...");
             println!("  Backup: {}", backup.display());
             println!("  Target: {}", target.display());
@@ -586,9 +568,11 @@ fn handle_health_command(
         .add_row(vec!["Cache", "✓ Healthy", "256 MB / 512 MB (50%)"]);
 
     if component.is_none() {
-        table
-            .add_row(vec!["Compaction", "✓ Healthy", "Not needed"])
-            .add_row(vec!["Backup", "✓ Healthy", "Last: 2 hours ago"]);
+        table.add_row(vec!["Compaction", "✓ Healthy", "Not needed"]).add_row(vec![
+            "Backup",
+            "✓ Healthy",
+            "Last: 2 hours ago",
+        ]);
     }
 
     println!("{table}");
@@ -598,7 +582,10 @@ fn handle_health_command(
     Ok(())
 }
 
-fn handle_metrics_command(url: String, watch: Option<u64>) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_metrics_command(
+    url: String,
+    watch: Option<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("Fetching metrics from: {}", url);
     println!();
 

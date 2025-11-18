@@ -3,6 +3,8 @@
 //! This module defines all Prometheus metrics used by AiDb and provides
 //! helper functions for recording measurements.
 
+#![allow(missing_docs)]
+
 use lazy_static::lazy_static;
 use prometheus::{
     register_counter_vec, register_gauge_vec, register_histogram_vec, CounterVec, Encoder,
@@ -10,6 +12,7 @@ use prometheus::{
 };
 use std::sync::Arc;
 
+#[allow(missing_docs)]
 lazy_static! {
     // Request metrics - operations per second and latency
     pub static ref REQUEST_COUNTER: CounterVec = register_counter_vec!(
@@ -175,9 +178,7 @@ pub struct MetricsCollector {
 impl MetricsCollector {
     /// Create a new metrics collector
     pub fn new() -> Self {
-        Self {
-            _marker: Arc::new(()),
-        }
+        Self { _marker: Arc::new(()) }
     }
 
     /// Export metrics in Prometheus text format
@@ -191,58 +192,38 @@ impl MetricsCollector {
 
     /// Record a successful get operation
     pub fn record_get_success(&self, duration: f64) {
-        REQUEST_COUNTER
-            .with_label_values(&["get", "success"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["get", "success"]).inc();
         REQUEST_DURATION.with_label_values(&["get"]).observe(duration);
     }
 
     /// Record a failed get operation
     pub fn record_get_error(&self, error_type: &str) {
-        REQUEST_COUNTER
-            .with_label_values(&["get", "error"])
-            .inc();
-        ERROR_COUNTER
-            .with_label_values(&["get", error_type])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["get", "error"]).inc();
+        ERROR_COUNTER.with_label_values(&["get", error_type]).inc();
     }
 
     /// Record a successful put operation
     pub fn record_put_success(&self, duration: f64) {
-        REQUEST_COUNTER
-            .with_label_values(&["put", "success"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["put", "success"]).inc();
         REQUEST_DURATION.with_label_values(&["put"]).observe(duration);
     }
 
     /// Record a failed put operation
     pub fn record_put_error(&self, error_type: &str) {
-        REQUEST_COUNTER
-            .with_label_values(&["put", "error"])
-            .inc();
-        ERROR_COUNTER
-            .with_label_values(&["put", error_type])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["put", "error"]).inc();
+        ERROR_COUNTER.with_label_values(&["put", error_type]).inc();
     }
 
     /// Record a successful delete operation
     pub fn record_delete_success(&self, duration: f64) {
-        REQUEST_COUNTER
-            .with_label_values(&["delete", "success"])
-            .inc();
-        REQUEST_DURATION
-            .with_label_values(&["delete"])
-            .observe(duration);
+        REQUEST_COUNTER.with_label_values(&["delete", "success"]).inc();
+        REQUEST_DURATION.with_label_values(&["delete"]).observe(duration);
     }
 
     /// Record a failed delete operation
     pub fn record_delete_error(&self, error_type: &str) {
-        REQUEST_COUNTER
-            .with_label_values(&["delete", "error"])
-            .inc();
-        ERROR_COUNTER
-            .with_label_values(&["delete", error_type])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["delete", "error"]).inc();
+        ERROR_COUNTER.with_label_values(&["delete", error_type]).inc();
     }
 
     /// Record cache hit
@@ -257,12 +238,8 @@ impl MetricsCollector {
 
     /// Record compaction
     pub fn record_compaction(&self, level: usize, duration: f64) {
-        COMPACTION_COUNT
-            .with_label_values(&[&level.to_string()])
-            .inc();
-        COMPACTION_DURATION
-            .with_label_values(&[&level.to_string()])
-            .observe(duration);
+        COMPACTION_COUNT.with_label_values(&[&level.to_string()]).inc();
+        COMPACTION_DURATION.with_label_values(&[&level.to_string()]).observe(duration);
     }
 
     /// Record flush
@@ -276,9 +253,7 @@ impl MetricsCollector {
 
     /// Update memory usage
     pub fn update_memory_usage(&self, component: &str, bytes: u64) {
-        MEMORY_USAGE
-            .with_label_values(&[component])
-            .set(bytes as f64);
+        MEMORY_USAGE.with_label_values(&[component]).set(bytes as f64);
     }
 
     /// Update disk usage
@@ -289,12 +264,8 @@ impl MetricsCollector {
     /// Update SSTable count and size
     pub fn update_sstable_stats(&self, level: usize, count: usize, total_size: u64) {
         let level_str = level.to_string();
-        SSTABLE_COUNT
-            .with_label_values(&[&level_str])
-            .set(count as f64);
-        SSTABLE_SIZE
-            .with_label_values(&[&level_str])
-            .set(total_size as f64);
+        SSTABLE_COUNT.with_label_values(&[&level_str]).set(count as f64);
+        SSTABLE_SIZE.with_label_values(&[&level_str]).set(total_size as f64);
     }
 
     /// Update WAL size
@@ -325,17 +296,13 @@ impl MetricsCollector {
 
     /// Update cluster node count
     pub fn update_cluster_nodes(&self, node_type: &str, status: &str, count: usize) {
-        CLUSTER_NODES
-            .with_label_values(&[node_type, status])
-            .set(count as f64);
+        CLUSTER_NODES.with_label_values(&[node_type, status]).set(count as f64);
     }
 
     /// Record cluster RPC request
     pub fn record_cluster_request(&self, method: &str, success: bool) {
         let status = if success { "success" } else { "error" };
-        CLUSTER_REQUESTS
-            .with_label_values(&[method, status])
-            .inc();
+        CLUSTER_REQUESTS.with_label_values(&[method, status]).inc();
     }
 }
 
@@ -376,14 +343,10 @@ pub fn register_metrics() {
 /// Record a get operation
 pub fn record_get_operation(duration: f64, success: bool, error_type: Option<&str>) {
     if success {
-        REQUEST_COUNTER
-            .with_label_values(&["get", "success"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["get", "success"]).inc();
         REQUEST_DURATION.with_label_values(&["get"]).observe(duration);
     } else if let Some(err) = error_type {
-        REQUEST_COUNTER
-            .with_label_values(&["get", "error"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["get", "error"]).inc();
         ERROR_COUNTER.with_label_values(&["get", err]).inc();
     }
 }
@@ -391,14 +354,10 @@ pub fn record_get_operation(duration: f64, success: bool, error_type: Option<&st
 /// Record a put operation
 pub fn record_put_operation(duration: f64, success: bool, error_type: Option<&str>) {
     if success {
-        REQUEST_COUNTER
-            .with_label_values(&["put", "success"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["put", "success"]).inc();
         REQUEST_DURATION.with_label_values(&["put"]).observe(duration);
     } else if let Some(err) = error_type {
-        REQUEST_COUNTER
-            .with_label_values(&["put", "error"])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["put", "error"]).inc();
         ERROR_COUNTER.with_label_values(&["put", err]).inc();
     }
 }
@@ -406,19 +365,11 @@ pub fn record_put_operation(duration: f64, success: bool, error_type: Option<&st
 /// Record a delete operation
 pub fn record_delete_operation(duration: f64, success: bool, error_type: Option<&str>) {
     if success {
-        REQUEST_COUNTER
-            .with_label_values(&["delete", "success"])
-            .inc();
-        REQUEST_DURATION
-            .with_label_values(&["delete"])
-            .observe(duration);
+        REQUEST_COUNTER.with_label_values(&["delete", "success"]).inc();
+        REQUEST_DURATION.with_label_values(&["delete"]).observe(duration);
     } else if let Some(err) = error_type {
-        REQUEST_COUNTER
-            .with_label_values(&["delete", "error"])
-            .inc();
-        ERROR_COUNTER
-            .with_label_values(&["delete", err])
-            .inc();
+        REQUEST_COUNTER.with_label_values(&["delete", "error"]).inc();
+        ERROR_COUNTER.with_label_values(&["delete", err]).inc();
     }
 }
 

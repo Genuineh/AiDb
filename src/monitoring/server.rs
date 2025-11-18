@@ -27,10 +27,7 @@ impl MetricsServer {
     ///
     /// * `addr` - The address to bind the server to
     pub fn new(addr: SocketAddr) -> Self {
-        Self {
-            addr,
-            collector: Arc::new(MetricsCollector::new()),
-        }
+        Self { addr, collector: Arc::new(MetricsCollector::new()) }
     }
 
     /// Get the metrics collector
@@ -157,11 +154,8 @@ mod tests {
 
         // Try to connect (this test is basic and may not work in all environments)
         // In production, you'd use a proper HTTP client
-        let result = timeout(
-            Duration::from_secs(1),
-            tokio::net::TcpStream::connect(actual_addr),
-        )
-        .await;
+        let result =
+            timeout(Duration::from_secs(1), tokio::net::TcpStream::connect(actual_addr)).await;
 
         // Just verify we can attempt connection
         // Full HTTP testing would require an HTTP client
