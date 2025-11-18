@@ -61,6 +61,10 @@ pub mod write_batch;
 #[cfg(feature = "cluster")]
 pub mod cluster;
 
+// Monitoring module (optional, enabled with "monitoring" feature)
+#[cfg(feature = "monitoring")]
+pub mod monitoring;
+
 // Re-exports
 pub use config::Options;
 pub use error::{Error, Result};
