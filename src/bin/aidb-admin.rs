@@ -266,25 +266,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     match cli.command {
-        Commands::QuickStart {
-            primaries,
-            replicas,
-            data_dir,
-            start_port,
-        } => handle_quick_start(primaries, replicas, data_dir, start_port)?,
+        Commands::QuickStart { primaries, replicas, data_dir, start_port } => {
+            handle_quick_start(primaries, replicas, data_dir, start_port)?
+        }
         Commands::QuickStop { force, clean } => handle_quick_stop(force, clean)?,
-        Commands::QuickScale {
-            add_replicas,
-            add_shards,
-            remove_replicas,
-        } => handle_quick_scale(add_replicas, add_shards, remove_replicas)?,
-        Commands::QuickBackup { output, compress } => handle_quick_backup(cli.db, output, compress)?,
-        Commands::QuickRestore {
-            backup_path,
-            latest,
-            backup,
-        } => handle_quick_restore(cli.db, backup_path, latest, backup)?,
-        Commands::QuickCheck { detailed, auto_fix } => handle_quick_check(cli.db, detailed, auto_fix)?,
+        Commands::QuickScale { add_replicas, add_shards, remove_replicas } => {
+            handle_quick_scale(add_replicas, add_shards, remove_replicas)?
+        }
+        Commands::QuickBackup { output, compress } => {
+            handle_quick_backup(cli.db, output, compress)?
+        }
+        Commands::QuickRestore { backup_path, latest, backup } => {
+            handle_quick_restore(cli.db, backup_path, latest, backup)?
+        }
+        Commands::QuickCheck { detailed, auto_fix } => {
+            handle_quick_check(cli.db, detailed, auto_fix)?
+        }
         Commands::Cluster { command } => handle_cluster_command(command, cli.db)?,
         Commands::Backup { command } => handle_backup_command(command, cli.db)?,
         Commands::Stats { detailed } => handle_stats_command(cli.db, detailed)?,
@@ -840,12 +837,7 @@ fn handle_quick_start(
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
-            println!(
-                "   ✓ Replica-{}-{} 启动成功 (127.0.0.1:{})",
-                i + 1,
-                j + 1,
-                port
-            );
+            println!("   ✓ Replica-{}-{} 启动成功 (127.0.0.1:{})", i + 1, j + 1, port);
             replica_count += 1;
         }
     }
