@@ -246,7 +246,7 @@ impl MetricsCollector {
         let status = if success { "success" } else { "error" };
         FLUSH_COUNT.with_label_values(&[status]).inc();
         if success {
-            FLUSH_DURATION.with_label_values(&[]).observe(duration);
+            FLUSH_DURATION.with_label_values(&[] as &[&str]).observe(duration);
         }
     }
 
@@ -269,12 +269,12 @@ impl MetricsCollector {
 
     /// Update WAL size
     pub fn update_wal_size(&self, bytes: u64) {
-        WAL_SIZE.with_label_values(&[]).set(bytes as f64);
+        WAL_SIZE.with_label_values(&[] as &[&str]).set(bytes as f64);
     }
 
     /// Record WAL sync duration
     pub fn record_wal_sync(&self, duration: f64) {
-        WAL_SYNC_DURATION.with_label_values(&[]).observe(duration);
+        WAL_SYNC_DURATION.with_label_values(&[] as &[&str]).observe(duration);
     }
 
     /// Record backup operation
@@ -282,14 +282,14 @@ impl MetricsCollector {
         let status = if success { "success" } else { "error" };
         BACKUP_COUNT.with_label_values(&[status]).inc();
         if success {
-            BACKUP_DURATION.with_label_values(&[]).observe(duration);
+            BACKUP_DURATION.with_label_values(&[] as &[&str]).observe(duration);
         }
     }
 
     /// Record restore operation
     pub fn record_restore(&self, duration: f64, success: bool) {
         if success {
-            RESTORE_DURATION.with_label_values(&[]).observe(duration);
+            RESTORE_DURATION.with_label_values(&[] as &[&str]).observe(duration);
         }
     }
 
@@ -377,7 +377,7 @@ pub fn record_flush_operation(duration: f64, success: bool) {
     let status = if success { "success" } else { "error" };
     FLUSH_COUNT.with_label_values(&[status]).inc();
     if success {
-        FLUSH_DURATION.with_label_values(&[]).observe(duration);
+        FLUSH_DURATION.with_label_values(&[] as &[&str]).observe(duration);
     }
 }
 

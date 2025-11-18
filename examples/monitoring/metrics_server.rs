@@ -7,7 +7,7 @@
 //!
 //! Run with: cargo run --example metrics_server --features monitoring
 
-use aidb::monitoring::{MetricsCollector, MetricsServer};
+use aidb::monitoring::MetricsServer;
 use aidb::{Options, DB};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
