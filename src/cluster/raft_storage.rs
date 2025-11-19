@@ -44,13 +44,19 @@ struct RaftCache {
 
 impl Default for RaftCache {
     fn default() -> Self {
+        // Initialize snapshot with index 0, which means the log starts from index 1
+        let mut snapshot = Snapshot::default();
+        let mut metadata = snapshot.mut_metadata();
+        metadata.index = 0;
+        metadata.term = 0;
+        
         Self {
             hard_state: HardState::default(),
             conf_state: ConfState::default(),
-            snapshot_metadata: Snapshot::default(),
+            snapshot_metadata: snapshot,
             entries: Vec::new(),
-            first_index: 0,
-            last_index: 0,
+            first_index: 1, // Raft log indices start after the snapshot
+            last_index: 0,  // 0 means empty log (no entries after snapshot)
         }
     }
 }
@@ -295,17 +301,19 @@ impl Storage for RaftStorage {
     fn term(&self, idx: u64) -> RaftResult<u64> {
         let cache = self.cache.read();
         
+        let snapshot_idx = cache.snapshot_metadata.get_metadata().index;
+        
+        // Special case: snapshot index
+        if idx == snapshot_idx {
+            return Ok(cache.snapshot_metadata.get_metadata().term);
+        }
+        
         if idx < cache.first_index {
             return Err(RaftError::Store(StorageError::Compacted));
         }
 
         if idx > cache.last_index {
             return Err(RaftError::Store(StorageError::Unavailable));
-        }
-
-        let snapshot_idx = cache.snapshot_metadata.get_metadata().index;
-        if idx == snapshot_idx {
-            return Ok(cache.snapshot_metadata.get_metadata().term);
         }
 
         let key = format!("raft:log:{}", idx);
@@ -360,8 +368,8 @@ mod tests {
     fn test_storage_creation() {
         let (storage, _temp_dir) = create_test_storage();
         let cache = storage.cache.read();
-        assert_eq!(cache.first_index, 0);
-        assert_eq!(cache.last_index, 0);
+        assert_eq!(cache.first_index, 1); // Raft log starts at index 1
+        assert_eq!(cache.last_index, 0);  // Empty log
     }
 
     #[test]

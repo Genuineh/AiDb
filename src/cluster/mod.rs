@@ -45,6 +45,12 @@ pub mod raft_storage;
 #[cfg(feature = "raft-cluster")]
 pub mod raft_node;
 
+#[cfg(feature = "raft-cluster")]
+pub mod raft_transport;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_peer;
+
 #[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
@@ -77,3 +83,9 @@ pub use raft_storage::RaftStorage;
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_node::{RaftNode, RaftConfig, RaftStateMachine, StateMachine, encode_put, encode_delete};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_transport::{RaftTransport, RaftPeer};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_peer::RaftBasedPeer;

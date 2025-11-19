@@ -132,6 +132,11 @@ name = "raft_cluster_demo"
 path = "examples/cluster/raft_cluster_demo.rs"
 required-features = ["raft-cluster"]
 
+[[example]]
+name = "raft_peer_cluster"
+path = "examples/cluster/raft_peer_cluster.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"
