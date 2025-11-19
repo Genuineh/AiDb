@@ -39,6 +39,9 @@ pub mod autoscaler;
 #[cfg(feature = "cluster")]
 pub mod peer;
 
+#[cfg(feature = "raft-cluster")]
+pub mod raft_storage;
+
 #[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 

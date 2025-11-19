@@ -46,6 +46,12 @@ tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 
+# Raft consensus (optional, for raft-based cluster)
+raft = { version = "0.7", optional = true }
+protobuf = { version = "2.28", optional = true }
+slog = { version = "2.7", optional = true }
+slog-stdlog = { version = "4.1", optional = true }
+
 # Metrics and monitoring (optional, for monitoring features)
 prometheus = { version = "0.14", optional = true }
 lazy_static = { version = "1.4", optional = true }
@@ -83,6 +89,7 @@ default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
+raft-cluster = ["cluster", "raft", "protobuf", "slog", "slog-stdlog"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 
