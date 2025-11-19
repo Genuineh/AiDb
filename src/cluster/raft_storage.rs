@@ -6,6 +6,7 @@
 #[cfg(feature = "raft-cluster")]
 use raft::{
     eraftpb::{ConfState, Entry, HardState, Snapshot},
+    storage::GetEntriesContext,
     Error as RaftError, RaftState, Result as RaftResult, Storage, StorageError,
 };
 #[cfg(feature = "raft-cluster")]
@@ -75,7 +76,7 @@ impl RaftStorage {
         // Load hard state
         if let Some(data) = self.db.get(b"raft:hard_state")? {
             cache.hard_state = HardState::parse_from_bytes(&data)
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to parse hard state: {}", e)
                 )))?;
@@ -84,7 +85,7 @@ impl RaftStorage {
         // Load conf state
         if let Some(data) = self.db.get(b"raft:conf_state")? {
             cache.conf_state = ConfState::parse_from_bytes(&data)
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to parse conf state: {}", e)
                 )))?;
@@ -93,7 +94,7 @@ impl RaftStorage {
         // Load snapshot metadata
         if let Some(data) = self.db.get(b"raft:snapshot")? {
             cache.snapshot_metadata = Snapshot::parse_from_bytes(&data)
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to parse snapshot: {}", e)
                 )))?;
@@ -102,7 +103,7 @@ impl RaftStorage {
         // Load first and last index
         if let Some(data) = self.db.get(b"raft:first_index")? {
             cache.first_index = bincode::deserialize(&data)
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to deserialize first_index: {}", e)
                 )))?;
@@ -110,7 +111,7 @@ impl RaftStorage {
 
         if let Some(data) = self.db.get(b"raft:last_index")? {
             cache.last_index = bincode::deserialize(&data)
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to deserialize last_index: {}", e)
                 )))?;
@@ -122,7 +123,7 @@ impl RaftStorage {
     /// Save hard state to persistent storage
     fn save_hard_state(&self, hs: &HardState) -> Result<()> {
         let data = hs.write_to_bytes()
-            .map_err(|e| Error::IOError(std::io::Error::new(
+            .map_err(|e| Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize hard state: {}", e)
             )))?;
@@ -133,7 +134,7 @@ impl RaftStorage {
     /// Save conf state to persistent storage
     fn save_conf_state(&self, cs: &ConfState) -> Result<()> {
         let data = cs.write_to_bytes()
-            .map_err(|e| Error::IOError(std::io::Error::new(
+            .map_err(|e| Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize conf state: {}", e)
             )))?;
@@ -152,7 +153,7 @@ impl RaftStorage {
         for entry in entries {
             let key = format!("raft:log:{}", entry.index);
             let data = entry.write_to_bytes()
-                .map_err(|e| Error::IOError(std::io::Error::new(
+                .map_err(|e| Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to serialize entry: {}", e)
                 )))?;
@@ -167,7 +168,7 @@ impl RaftStorage {
 
         // Update last_index in storage
         let data = bincode::serialize(&cache.last_index)
-            .map_err(|e| Error::IOError(std::io::Error::new(
+            .map_err(|e| Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize last_index: {}", e)
             )))?;
@@ -182,7 +183,7 @@ impl RaftStorage {
 
         // Save snapshot metadata
         let data = snapshot.write_to_bytes()
-            .map_err(|e| Error::IOError(std::io::Error::new(
+            .map_err(|e| Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize snapshot: {}", e)
             )))?;
@@ -222,7 +223,7 @@ impl RaftStorage {
         // Update first index
         cache.first_index = compact_index;
         let data = bincode::serialize(&cache.first_index)
-            .map_err(|e| Error::IOError(std::io::Error::new(
+            .map_err(|e| Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize first_index: {}", e)
             )))?;
@@ -256,7 +257,7 @@ impl RaftStorage {
             let key = format!("raft:log:{}", idx);
             if let Some(data) = self.db.get(key.as_bytes())? {
                 let entry = Entry::parse_from_bytes(&data)
-                    .map_err(|e| Error::IOError(std::io::Error::new(
+                    .map_err(|e| Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!("Failed to parse entry: {}", e)
                     )))?;
@@ -286,7 +287,7 @@ impl Storage for RaftStorage {
         })
     }
 
-    fn entries(&self, low: u64, high: u64, max_size: impl Into<Option<u64>>) -> RaftResult<Vec<Entry>> {
+    fn entries(&self, low: u64, high: u64, max_size: impl Into<Option<u64>>, _context: GetEntriesContext) -> RaftResult<Vec<Entry>> {
         self.get_entries(low, high, max_size.into())
             .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))
     }
@@ -329,7 +330,7 @@ impl Storage for RaftStorage {
         Ok(cache.last_index)
     }
 
-    fn snapshot(&self, request_index: u64) -> RaftResult<Snapshot> {
+    fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<Snapshot> {
         let cache = self.cache.read();
         
         let snapshot_index = cache.snapshot_metadata.get_metadata().index;
@@ -370,7 +371,7 @@ mod tests {
         let mut entry = Entry::default();
         entry.index = 1;
         entry.term = 1;
-        entry.data = b"test_data".to_vec();
+        entry.data = b"test_data".to_vec().into();
 
         storage.append_entries(&[entry.clone()]).unwrap();
 
@@ -388,7 +389,7 @@ mod tests {
             let mut entry = Entry::default();
             entry.index = i;
             entry.term = 1;
-            entry.data = format!("data_{}", i).into_bytes();
+            entry.data = format!("data_{}", i).into_bytes().into();
             entries.push(entry);
         }
 

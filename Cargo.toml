@@ -122,6 +122,16 @@ name = "coordinator_demo"
 path = "examples/cluster/coordinator_demo.rs"
 required-features = ["cluster"]
 
+[[example]]
+name = "peer_to_peer_demo"
+path = "examples/cluster/peer_to_peer_demo.rs"
+required-features = ["cluster"]
+
+[[example]]
+name = "raft_cluster_demo"
+path = "examples/cluster/raft_cluster_demo.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"
