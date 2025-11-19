@@ -37,6 +37,9 @@ pub mod scaling;
 pub mod autoscaler;
 
 #[cfg(feature = "cluster")]
+pub mod peer;
+
+#[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
 #[cfg(feature = "cluster")]
@@ -59,3 +62,6 @@ pub use scaling::{ScalingConfig, ScalingManager, ScalingStats};
 
 #[cfg(feature = "cluster")]
 pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
+
+#[cfg(feature = "cluster")]
+pub use peer::{PeerNode, PeerInfo, PeerStats};
