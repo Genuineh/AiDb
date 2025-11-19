@@ -37,10 +37,11 @@ AiDb是一个用Rust从零实现的分布式KV存储引擎，基于LSM-Tree架�
 - ✅ **Range Query：灵活的范围查询**
 
 ### 集群版特性
-- ✅ Primary-Replica架构，Replica作为缓存层
+- ✅ **全新** Peer-to-Peer对等节点架构，无需Coordinator
+- ✅ Primary-Replica架构（传统模式，仍然支持）
 - ✅ gRPC远程过程调用，高性能网络通信
 - ✅ 一致性哈希路由，负载均衡
-- ✅ Coordinator集群协调器
+- ✅ 去中心化集群协调（P2P模式）/ Coordinator集群协调器（传统模式）
 - ✅ 多Shard分片，水平扩展
 - ✅ 健康检查和故障自动检测
 - ✅ 完整的备份恢复系统（本地和云存储）
@@ -56,7 +57,31 @@ Write Path:  WAL → MemTable → (Flush) → SSTable(L0) → (Compaction) → S
 Read Path:   MemTable → Immutable MemTable → Block Cache → SSTable(L0-N)
 ```
 
-### 集群架构
+### 集群架构（Peer-to-Peer 对等模式 - 推荐）
+```
+         ┌─────────┐     ┌─────────┐     ┌─────────┐
+         │ Peer 1  │────►│ Peer 2  │────►│ Peer 3  │
+         │ (Equal) │     │ (Equal) │     │ (Equal) │
+         └────┬────┘     └────┬────┘     └────┬────┘
+              │               │               │
+         ┌────▼──────┐   ┌───▼───────┐  ┌───▼───────┐
+         │ Full DB + │   │ Full DB + │  │ Full DB + │
+         │   Cache   │   │   Cache   │  │   Cache   │
+         └───────────┘   └───────────┘  └───────────┘
+              │               │               │
+              └───────────────┴───────────────┘
+                   一致性哈希 + 去中心化路由
+```
+
+**P2P架构亮点**：
+- 无中心协调器，无单点故障
+- 所有节点对等，可独立工作
+- 每个节点都有完整LSM存储 + 可选缓存
+- 一致性哈希实现数据分布
+- 节点间直接通信，低延迟
+- 易于扩展，动态加入/离开
+
+### 集群架构（传统 Coordinator 模式）
 ```
                  ┌──────────────┐
                  │ Coordinator  │
@@ -79,7 +104,7 @@ Read Path:   MemTable → Immutable MemTable → Block Cache → SSTable(L0-N)
  [S3/OSS]
 ```
 
-**设计亮点**：
+**传统架构特点**：
 - Primary独占本地SSD，完整LSM存储
 - Replica只有内存缓存，通过RPC转发miss
 - 无需实时数据复制，降低成本
@@ -158,7 +183,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 更多示例请查看 [examples/](examples/) 目录。
 
-### 集群使用（RPC 网络层已实现）
+### 集群使用（推荐：Peer-to-Peer 对等模式）
+
+#### Peer 节点（对等节点）
+```rust
+use aidb::cluster::PeerNode;
+use aidb::{DB, Options};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 创建数据库
+    let db = DB::open("./data/peer1", Options::default())?;
+    let peer = Arc::new(PeerNode::new(
+        "peer1".to_string(),           // 节点ID
+        "127.0.0.1:50051".to_string(), // 节点地址
+        Arc::new(db),
+        Some(1000),                    // 可选缓存容量（1000条）
+        150,                           // 虚拟节点数（用于一致性哈希）
+    ));
+    
+    // 启动RPC服务器
+    let peer_clone = peer.clone();
+    tokio::spawn(async move {
+        let addr = "127.0.0.1:50051".parse().unwrap();
+        peer_clone.serve(addr).await
+    });
+    
+    // 加入其他对等节点
+    peer.join_peer(
+        "peer2".to_string(),
+        "http://127.0.0.1:50052".to_string()
+    ).await?;
+    
+    peer.join_peer(
+        "peer3".to_string(),
+        "http://127.0.0.1:50053".to_string()
+    ).await?;
+    
+    // 使用方式与单机版相同，请求会自动路由到正确的节点
+    peer.handle_local_put(b"key", b"value")?;
+    let result = peer.handle_local_get(b"key")?;
+    
+    // 查看统计信息
+    let stats = peer.stats();
+    println!("Local requests: {}", stats.local_requests);
+    println!("Forwarded requests: {}", stats.forwarded_requests);
+    println!("Cache hit rate: {:.2}%", stats.hit_rate() * 100.0);
+    
+    Ok(())
+}
+```
+
+更多Peer-to-Peer示例请查看 [examples/cluster/peer_to_peer_demo.rs](examples/cluster/peer_to_peer_demo.rs)。
+
+### 集群使用（传统：Primary-Replica 模式）
 
 #### Primary 节点
 ```rust

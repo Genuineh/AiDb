@@ -4,21 +4,46 @@ This directory contains the distributed cluster implementation for AiDb, includi
 
 ## Architecture
 
-AiDb cluster consists of three types of components:
+AiDb cluster supports two architectures:
 
-### Primary Node
+### Peer-to-Peer (P2P) Architecture (Recommended - New!)
+
+Equal peer nodes without centralized coordination:
+
+#### Peer Node
+- All nodes are equal participants in the cluster
+- Each hosts a full LSM-tree database with persistence
+- Optional LRU cache for frequently accessed data
+- Independently routes requests using consistent hashing
+- Forwards requests to responsible peers
+- No single point of failure
+- Simple peer discovery via join/leave operations
+- Direct peer-to-peer health monitoring
+
+**Benefits:**
+- ✅ No coordinator bottleneck
+- ✅ Better fault tolerance
+- ✅ Simplified architecture
+- ✅ Easier to scale
+- ✅ Lower latency
+
+### Traditional Architecture (Still Supported)
+
+Centralized coordinator with Primary-Replica shards:
+
+#### Primary Node
 - Hosts the full LSM-tree database with persistence
 - Serves all read and write operations via gRPC
 - Provides health check and statistics endpoints
 - Single source of truth for all data in a shard
 
-### Replica Node
+#### Replica Node
 - Maintains an LRU cache of frequently accessed data
 - Forwards cache misses to the Primary node
 - Invalidates cache on write operations
 - Significantly reduces load on Primary for read-heavy workloads
 
-### Coordinator (New in Week 25-28)
+#### Coordinator
 - Routes requests to appropriate shards using consistent hashing
 - Manages shard registration and discovery
 - Performs health checks and failure detection
@@ -26,6 +51,21 @@ AiDb cluster consists of three types of components:
 - Transparent request forwarding
 
 ## Quick Start
+
+### Option 1: Peer-to-Peer Cluster (Recommended)
+
+```bash
+cargo run --example peer_to_peer_demo --features cluster
+```
+
+This will:
+- Create 3 equal peer nodes
+- Form a peer-to-peer cluster
+- Demonstrate consistent hashing routing
+- Show health monitoring
+- Display cluster statistics
+
+### Option 2: Traditional Architecture
 
 ### 1. Start a Primary Node
 
