@@ -444,3 +444,164 @@ pub struct RaftMetrics {
 3. 实现基础的 RaftNode
 4. 创建简单的测试案例
 5. 逐步完善功能
+
+---
+
+## 实施状态更新 (2025-11-19)
+
+### ✅ 已完成阶段
+
+#### Phase 1: Raft 基础集成 (完成)
+- ✅ 添加 raft-rs 依赖 (v0.7)
+- ✅ 实现 RaftStorage
+  - ✅ 日志存储（使用 LSM-Tree）
+  - ✅ 状态存储（HardState, ConfState）
+  - ✅ 快照存储
+  - ✅ 日志压缩
+  - ✅ 4个单元测试通过
+- ✅ 实现基本的 RaftNode 包装器
+- ✅ 添加 Raft 消息传输层基础
+
+#### Phase 2: 状态机集成 (完成)
+- ✅ 实现 RaftStateMachine
+  - ✅ 命令应用逻辑（PUT/DELETE）
+  - ✅ 命令编码/解码工具
+  - ✅ 与 LSM-Tree 集成
+  - ✅ 5个单元测试通过
+- ✅ 实现 RaftNode 完整功能
+  - ✅ Leader 选举支持
+  - ✅ Proposal 提交接口
+  - ✅ 配置变更接口
+  - ✅ Tick 和 Step 机制
+
+#### Phase 3: 消息传输层和完整集成 (完成)
+- ✅ 实现 RaftTransport
+  - ✅ Peer 连接管理
+  - ✅ 消息发送/接收
+  - ✅ 本地消息传递
+- ✅ 实现 RaftPeer (内部事件循环)
+  - ✅ 后台异步处理
+  - ✅ Tick 驱动的心跳
+  - ✅ Ready 消息处理
+  - ✅ 自动消息路由
+- ✅ 实现 RaftBasedPeer (完整节点)
+  - ✅ 高级 API (put/get/delete)
+  - ✅ Leader 检查
+  - ✅ 状态机应用
+  - ✅ 8个单元测试通过
+
+### 📊 测试覆盖
+
+**总计: 17个 Raft 相关测试全部通过 ✅**
+
+- RaftStorage: 4 tests
+- RaftNode/StateMachine: 5 tests
+- RaftTransport/RaftPeer: 3 tests
+- RaftBasedPeer: 5 tests
+
+### 📚 示例代码
+
+1. **peer_to_peer_demo.rs** - 基础 P2P 集群演示
+2. **raft_cluster_demo.rs** - Raft 节点基础使用
+3. **raft_peer_cluster.rs** - 完整 Raft P2P 集群
+4. **raft_integration_test.rs** - 端到端集成测试
+
+### 🏗️ 架构实现状态
+
+```
+✅ Application Layer
+   └─ RaftBasedPeer (高级 API)
+
+✅ Raft Consensus Layer
+   ├─ RaftNode (共识协议)
+   ├─ RaftPeer (事件循环)
+   ├─ RaftTransport (消息传递)
+   └─ RaftStateMachine (命令应用)
+
+✅ Storage Layer
+   ├─ RaftStorage (Raft 日志)
+   └─ LSM-Tree DB (用户数据)
+```
+
+### ⏳ 待完成工作 (Phase 4-5)
+
+#### Phase 4: 完整 RPC 集成 (可选)
+- [ ] 实现完整的 gRPC 消息序列化
+- [ ] 实现网络传输层
+- [ ] 添加重试和错误处理
+- [ ] 实现 RPC 超时机制
+
+#### Phase 5: 生产就绪 (可选)
+- [ ] 实现集群成员变更协议
+- [ ] 添加配置变更管理
+- [ ] 实现完整的快照生成和恢复
+- [ ] 添加端到端分布式测试
+- [ ] 混沌测试（故障注入）
+- [ ] 性能基准测试和优化
+- [ ] 生产环境监控指标
+
+### 📝 关键决策记录
+
+1. **Raft 实现选择**: tikv/raft-rs
+   - 生产级实现，被 TiKV 使用
+   - 性能优异，功能完整
+
+2. **存储设计**: 复用 LSM-Tree
+   - Raft 日志存储在同一个 DB
+   - 使用特殊前缀区分（raft:*）
+   - 简化架构，减少依赖
+
+3. **消息传输**: 基于现有 gRPC 基础设施
+   - 复用已有的 tonic + protobuf
+   - 保持一致的通信方式
+
+4. **状态机集成**: 命令编码方案
+   - 简单的二进制格式
+   - op_type + key_len + key + value_len + value
+   - 易于扩展新命令类型
+
+### 🎯 当前可用功能
+
+**核心功能已完成，可用于：**
+- ✅ 创建 Raft 节点集群
+- ✅ 自动 Leader 选举
+- ✅ 提交 Proposal 到 Raft
+- ✅ 应用已提交的命令
+- ✅ 状态查询和监控
+- ✅ 节点启动/停止
+
+**当前限制：**
+- ⚠️ RPC 消息传输使用占位符（需要 Phase 4）
+- ⚠️ 需要手动触发状态机应用
+- ⚠️ 集群成员变更需要重启
+- ⚠️ 快照功能未完全实现
+
+### 🚀 使用建议
+
+**对于开发和测试：**
+- 当前实现已足够用于单机多进程测试
+- 可以验证 Raft 共识逻辑
+- 可以测试状态机应用
+
+**对于生产环境：**
+- 建议完成 Phase 4 的 RPC 集成
+- 添加完整的错误处理和重试机制
+- 实施监控和告警
+- 进行负载测试和性能调优
+
+### 📖 相关文档
+
+- [examples/cluster/raft_integration_test.rs](../examples/cluster/raft_integration_test.rs) - 完整的使用示例
+- [src/cluster/raft_peer.rs](../src/cluster/raft_peer.rs) - RaftBasedPeer API 文档
+- [src/cluster/raft_node.rs](../src/cluster/raft_node.rs) - RaftNode 实现细节
+- [src/cluster/raft_storage.rs](../src/cluster/raft_storage.rs) - RaftStorage 实现
+
+### 🤝 贡献
+
+欢迎贡献以下方面：
+- Phase 4-5 的完整实现
+- 更多的测试用例
+- 性能优化
+- 文档改进
+- Bug 修复
+

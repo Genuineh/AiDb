@@ -132,6 +132,11 @@ impl RaftBasedPeer {
     pub fn status_info(&self) -> (u64, u64, bool) {
         self.raft_peer.node().status_info()
     }
+
+    /// Get direct access to the underlying database (for testing/advanced use)
+    pub fn db(&self) -> &Arc<DB> {
+        &self.db
+    }
 }
 
 #[cfg(test)]
