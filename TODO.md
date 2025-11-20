@@ -322,11 +322,12 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
   - [ ] MetaRaft Node API（待实现）
   - [ ] 集成测试（待实现）
 
-- [ ] **阶段2: Multi-Raft 框架** (1.5周) ⭐ **当前阶段**
-  - [ ] ShardedRaftStorage（HashMap<GroupId, Storage>）
-  - [ ] Multi-Raft Network（按 group_id 分发）
-  - [ ] 动态创建 N 个 Raft Group
-  - [ ] 支持 100+ Group 并发运行
+- [ ] **阶段2: Multi-Raft 框架** (1.5周) ⏳ **进行中 (67%)**
+  - [x] ShardedRaftStorage（HashMap<GroupId, Storage>）✅ 完成
+  - [x] Proto 更新（添加 group_id 字段）✅ 完成
+  - [ ] Multi-Raft Network（按 group_id 分发）⏳ 部分实现
+  - [ ] 动态创建 N 个 Raft Group（待实现）
+  - [ ] 支持 100+ Group 并发运行（待测试）
 
 - [ ] **阶段3: 分片路由 + Sharded AiDb** (2周)
   - [ ] Slot 计算（crc16(key) % 16384）

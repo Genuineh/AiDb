@@ -16,13 +16,15 @@ service RaftService {
 
 // Vote request
 message VoteRequest {
-  uint64 vote_term = 1;
-  uint64 vote_node_id = 2;
-  bool vote_committed = 3;
+  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
   
-  uint64 last_log_index = 4;
-  uint64 last_log_term = 5;
-  uint64 last_log_leader_id = 6;
+  uint64 vote_term = 2;
+  uint64 vote_node_id = 3;
+  bool vote_committed = 4;
+  
+  uint64 last_log_index = 5;
+  uint64 last_log_term = 6;
+  uint64 last_log_leader_id = 7;
 }
 
 // Vote response
@@ -48,19 +50,21 @@ message LogEntry {
 
 // AppendEntries request
 message AppendEntriesRequest {
-  uint64 vote_term = 1;
-  uint64 vote_node_id = 2;
-  bool vote_committed = 3;
+  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
   
-  optional uint64 prev_log_index = 4;
-  optional uint64 prev_log_term = 5;
-  optional uint64 prev_log_leader_id = 6;
+  uint64 vote_term = 2;
+  uint64 vote_node_id = 3;
+  bool vote_committed = 4;
   
-  repeated LogEntry entries = 7;
+  optional uint64 prev_log_index = 5;
+  optional uint64 prev_log_term = 6;
+  optional uint64 prev_log_leader_id = 7;
   
-  optional uint64 leader_commit_index = 8;
-  optional uint64 leader_commit_term = 9;
-  optional uint64 leader_commit_leader_id = 10;
+  repeated LogEntry entries = 8;
+  
+  optional uint64 leader_commit_index = 9;
+  optional uint64 leader_commit_term = 10;
+  optional uint64 leader_commit_leader_id = 11;
 }
 
 // AppendEntries response
@@ -77,12 +81,14 @@ message AppendEntriesResponse {
 
 // InstallSnapshot request
 message InstallSnapshotRequest {
-  uint64 vote_term = 1;
-  uint64 vote_node_id = 2;
-  bool vote_committed = 3;
+  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
   
-  SnapshotMeta meta = 4;
-  bytes snapshot_data = 5;
+  uint64 vote_term = 2;
+  uint64 vote_node_id = 3;
+  bool vote_committed = 4;
+  
+  SnapshotMeta meta = 5;
+  bytes snapshot_data = 6;
 }
 
 // Snapshot metadata
