@@ -27,7 +27,7 @@ pub type NodeId = u64;
 pub type LogEntry = Entry<TypeConfig>;
 
 /// Type configuration for OpenRaft
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeConfig;
 
 #[cfg(feature = "raft-cluster")]
