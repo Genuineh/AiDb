@@ -97,6 +97,7 @@ pub enum Response {
 }
 
 /// OpenRaft storage implementation using AiDb's LSM-Tree
+#[derive(Clone)]
 pub struct OpenRaftStorage {
     /// Local database for storing Raft data
     db: Arc<DB>,

@@ -58,10 +58,16 @@ pub mod meta_types;
 pub mod meta_state_machine;
 
 #[cfg(feature = "raft-cluster")]
+pub mod meta_raft_node;
+
+#[cfg(feature = "raft-cluster")]
 pub mod sharded_storage;
 
 #[cfg(feature = "raft-cluster")]
 pub mod multi_raft_network;
+
+#[cfg(feature = "raft-cluster")]
+pub mod multi_raft_node;
 
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
@@ -123,10 +129,16 @@ pub use meta_types::{
 pub use meta_state_machine::MetaStateMachine;
 
 #[cfg(feature = "raft-cluster")]
+pub use meta_raft_node::MetaRaftNode;
+
+#[cfg(feature = "raft-cluster")]
 pub use sharded_storage::{GroupId, ShardedRaftStorage};
 
 #[cfg(feature = "raft-cluster")]
 pub use multi_raft_network::{MultiRaftNetworkClient, MultiRaftNetworkFactory};
+
+#[cfg(feature = "raft-cluster")]
+pub use multi_raft_node::MultiRaftNode;
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
