@@ -54,28 +54,20 @@ Coordinator with Primary-Replica shards:
 
 ### Raft Cluster (Recommended)
 
-**Complete Integration Test:**
+**OpenRaft Demo (Production-Ready):**
 ```bash
-cargo run --example raft_integration_test --features raft-cluster
+cargo run --example openraft_demo --features raft-cluster
 ```
 
 Demonstrates:
 - 3-node Raft cluster formation
 - Automatic leader election
-- Write operations through consensus
+- Write operations through consensus (Put/Delete)
 - State machine command application
-- Read operations from local state
-- Cluster status monitoring
-
-**Complete Cluster Demo:**
-```bash
-cargo run --example raft_peer_cluster --features raft-cluster
-```
-
-**Component Demo:**
-```bash
-cargo run --example raft_cluster_demo --features raft-cluster
-```
+- Adding learner nodes
+- Membership changes
+- Cluster metrics monitoring
+- Graceful shutdown
 
 ### Simple P2P Cluster
 
@@ -98,46 +90,48 @@ cargo run --example coordinator_demo --features cluster
 
 ## API Examples
 
-### Raft-Based Peer
+### OpenRaft-Based Node
 
 ```rust
-use aidb::cluster::{RaftBasedPeer, RaftConfig};
+use aidb::cluster::{OpenRaftNode, RaftNodeConfig, NodeId, Request};
 use aidb::{Options, DB};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Setup peers
-    let mut peers = HashMap::new();
-    peers.insert(1, "http://127.0.0.1:50051".to_string());
-    peers.insert(2, "http://127.0.0.1:50052".to_string());
-    peers.insert(3, "http://127.0.0.1:50053".to_string());
+    // Create nodes with addresses
+    let mut nodes = BTreeMap::new();
+    nodes.insert(1, "127.0.0.1:50051".to_string());
+    nodes.insert(2, "127.0.0.1:50052".to_string());
+    nodes.insert(3, "127.0.0.1:50053".to_string());
     
-    // Create Raft peer
-    let db = DB::open("./data/peer1", Options::default())?;
-    let config = RaftConfig {
-        id: 1,
-        election_tick: 10,
-        heartbeat_tick: 3,
-        ..Default::default()
+    // Create Raft node
+    let db = DB::open("./data/node1", Options::default())?;
+    let config = RaftNodeConfig {
+        node_id: 1,
+        listen_addr: "127.0.0.1:50051".to_string(),
     };
     
-    let peer = RaftBasedPeer::new(1, Arc::new(db), peers, config).await?;
-    peer.start().await?;
+    let node = OpenRaftNode::new(config, Arc::new(db), nodes).await?;
     
-    // Write (leader only)
-    if peer.is_leader() {
-        peer.put(b"key", b"value").await?;
-    }
+    // Initialize cluster (first node only)
+    node.initialize().await?;
     
-    // Read (any node)
-    let value = peer.get(b"key")?;
+    // Write through consensus
+    let request = Request::Put {
+        key: b"key".to_vec(),
+        value: b"value".to_vec(),
+    };
+    node.put(b"key", b"value").await?;
     
-    // Status
-    let (term, committed, is_leader) = peer.status_info();
+    // Check if leader
+    let is_leader = node.is_leader().await;
     
-    peer.stop();
+    // Get metrics
+    let metrics = node.metrics().await;
+    
+    node.shutdown().await?;
     Ok(())
 }
 ```
@@ -187,10 +181,8 @@ cargo test --features raft-cluster --lib cluster::raft
 - RaftBasedPeer (5 tests)
 
 **Examples:**
-- peer_to_peer_demo.rs
-- raft_cluster_demo.rs
-- raft_peer_cluster.rs
-- raft_integration_test.rs
+- peer_to_peer_demo.rs (Simple P2P)
+- openraft_demo.rs (OpenRaft Consensus) ⭐ NEW!
 
 ### ⏳ Phase 4-5: Optional
 
@@ -231,7 +223,8 @@ cargo test --features raft-cluster --lib cluster::raft
 ## Documentation
 
 - [RAFT_INTEGRATION_PLAN.md](../../docs/RAFT_INTEGRATION_PLAN.md) - Implementation details
-- [raft_integration_test.rs](./raft_integration_test.rs) - Complete example
+- [openraft_demo.rs](./openraft_demo.rs) - Complete OpenRaft example
+- [TODO.md](../../TODO.md) - OpenRaft integration status (Phase 2-5 complete)
 - Source: `src/cluster/raft_*.rs`
 
 ## Contributing
