@@ -1,71 +1,107 @@
-//! Raft storage implementation for AiDb
+//! OpenRaft storage implementation for AiDb
 //!
-//! This module implements the Raft storage interface required by raft-rs.
-//! It provides persistent storage for Raft logs, snapshots, and state.
+//! This module implements the OpenRaft storage interface for AiDb.
+//! It provides persistent storage for Raft logs, snapshots, and state using LSM-Tree.
 
 use parking_lot::RwLock;
-#[cfg(feature = "raft-cluster")]
-use protobuf::Message;
-#[cfg(feature = "raft-cluster")]
-use raft::{
-    eraftpb::{ConfState, Entry, HardState, Snapshot},
-    storage::GetEntriesContext,
-    Error as RaftError, RaftState, Result as RaftResult, Storage, StorageError,
-};
+use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+use std::io::Cursor;
+use std::ops::RangeBounds;
 use std::sync::Arc;
+
+#[cfg(feature = "raft-cluster")]
+use openraft::{
+    storage::{LogState, Snapshot},
+    BasicNode, Entry, EntryPayload, LogId, RaftLogReader, RaftSnapshotBuilder, RaftStorage,
+    SnapshotMeta, StorageError, StorageIOError, Vote,
+};
 
 use crate::error::{Error, Result};
 use crate::DB;
 
-/// Raft storage implementation using AiDb's LSM-Tree
-pub struct RaftStorage {
+/// Node ID type for AiDb Raft cluster
+pub type NodeId = u64;
+
+/// Raft log entry type for AiDb
+pub type LogEntry = Entry<TypeConfig>;
+
+/// Type configuration for OpenRaft
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TypeConfig;
+
+#[cfg(feature = "raft-cluster")]
+impl openraft::RaftTypeConfig for TypeConfig {
+    type D = Request;
+    type R = Response;
+    type NodeId = NodeId;
+    type Node = BasicNode;
+    type Entry = LogEntry;
+    type SnapshotData = Cursor<Vec<u8>>;
+    type AsyncRuntime = openraft::TokioRuntime;
+    type Responder = openraft::impls::OneshotResponder<TypeConfig>;
+}
+
+/// Request type for state machine operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Request {
+    /// Put a key-value pair
+    Put { key: Vec<u8>, value: Vec<u8> },
+    /// Delete a key
+    Delete { key: Vec<u8> },
+}
+
+/// Response type for state machine operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Response {
+    /// Operation successful
+    Ok,
+    /// Get operation result
+    Value(Option<Vec<u8>>),
+    /// Error occurred
+    Error(String),
+}
+
+/// OpenRaft storage implementation using AiDb's LSM-Tree
+pub struct OpenRaftStorage {
     /// Local database for storing Raft data
     db: Arc<DB>,
-    /// In-memory cache of Raft state for fast access
-    cache: Arc<RwLock<RaftCache>>,
+    /// In-memory state cache
+    state: Arc<RwLock<StorageState>>,
 }
 
-/// Cached Raft state
+/// Cached storage state
 #[derive(Debug, Clone)]
-struct RaftCache {
-    /// Hard state (term, vote, commit)
-    hard_state: HardState,
-    /// Configuration state (voters, learners)
-    conf_state: ConfState,
-    /// Last snapshot metadata
-    snapshot_metadata: Snapshot,
-    /// Cached log entries (first_index -> entries)
-    #[allow(dead_code)]
-    entries: Vec<Entry>,
-    /// First log index in storage
-    first_index: u64,
-    /// Last log index in storage
-    last_index: u64,
+struct StorageState {
+    /// Current vote information
+    vote: Option<Vote<NodeId>>,
+    /// Last purged log ID (compaction point)
+    last_purged_log_id: Option<LogId<NodeId>>,
+    /// Last log ID in storage
+    last_log_id: Option<LogId<NodeId>>,
+    /// Last applied log ID
+    last_applied: Option<LogId<NodeId>>,
+    /// Current snapshot metadata
+    snapshot_meta: Option<SnapshotMeta<NodeId, BasicNode>>,
 }
 
-impl Default for RaftCache {
+impl Default for StorageState {
     fn default() -> Self {
-        // Initialize snapshot with index 0, which means the log starts from index 1
-        let mut snapshot = Snapshot::default();
-        let metadata = snapshot.mut_metadata();
-        metadata.index = 0;
-        metadata.term = 0;
-
         Self {
-            hard_state: HardState::default(),
-            conf_state: ConfState::default(),
-            snapshot_metadata: snapshot,
-            entries: Vec::new(),
-            first_index: 1, // Raft log indices start after the snapshot
-            last_index: 0,  // 0 means empty log (no entries after snapshot)
+            vote: None,
+            last_purged_log_id: None,
+            last_log_id: None,
+            last_applied: None,
+            snapshot_meta: None,
         }
     }
 }
 
-impl RaftStorage {
-    /// Create a new Raft storage
+impl OpenRaftStorage {
+    /// Create a new OpenRaft storage
     pub fn new(db: Arc<DB>) -> Result<Self> {
-        let storage = Self { db: db.clone(), cache: Arc::new(RwLock::new(RaftCache::default())) };
+        let storage = Self { db: db.clone(), state: Arc::new(RwLock::new(StorageState::default())) };
 
         // Load existing state from database
         storage.load_state()?;
@@ -75,96 +111,135 @@ impl RaftStorage {
 
     /// Load Raft state from persistent storage
     fn load_state(&self) -> Result<()> {
-        let mut cache = self.cache.write();
+        let mut state = self.state.write();
 
-        // Load hard state
-        if let Some(data) = self.db.get(b"raft:hard_state")? {
-            cache.hard_state = HardState::parse_from_bytes(&data).map_err(|e| {
+        // Load vote information
+        if let Some(data) = self.db.get(b"raft:vote")? {
+            state.vote = Some(bincode::deserialize(&data).map_err(|e| {
                 Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse hard state: {}", e),
+                    format!("Failed to deserialize vote: {}", e),
                 ))
-            })?;
+            })?);
         }
 
-        // Load conf state
-        if let Some(data) = self.db.get(b"raft:conf_state")? {
-            cache.conf_state = ConfState::parse_from_bytes(&data).map_err(|e| {
+        // Load last purged log ID
+        if let Some(data) = self.db.get(b"raft:last_purged_log_id")? {
+            state.last_purged_log_id = Some(bincode::deserialize(&data).map_err(|e| {
                 Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse conf state: {}", e),
+                    format!("Failed to deserialize last_purged_log_id: {}", e),
                 ))
-            })?;
+            })?);
+        }
+
+        // Load last log ID
+        if let Some(data) = self.db.get(b"raft:last_log_id")? {
+            state.last_log_id = Some(bincode::deserialize(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to deserialize last_log_id: {}", e),
+                ))
+            })?);
+        }
+
+        // Load last applied log ID
+        if let Some(data) = self.db.get(b"raft:last_applied")? {
+            state.last_applied = Some(bincode::deserialize(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to deserialize last_applied: {}", e),
+                ))
+            })?);
         }
 
         // Load snapshot metadata
-        if let Some(data) = self.db.get(b"raft:snapshot")? {
-            cache.snapshot_metadata = Snapshot::parse_from_bytes(&data).map_err(|e| {
+        if let Some(data) = self.db.get(b"raft:snapshot_meta")? {
+            state.snapshot_meta = Some(bincode::deserialize(&data).map_err(|e| {
                 Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse snapshot: {}", e),
+                    format!("Failed to deserialize snapshot_meta: {}", e),
                 ))
-            })?;
-        }
-
-        // Load first and last index
-        if let Some(data) = self.db.get(b"raft:first_index")? {
-            cache.first_index = bincode::deserialize(&data).map_err(|e| {
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Failed to deserialize first_index: {}", e),
-                ))
-            })?;
-        }
-
-        if let Some(data) = self.db.get(b"raft:last_index")? {
-            cache.last_index = bincode::deserialize(&data).map_err(|e| {
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Failed to deserialize last_index: {}", e),
-                ))
-            })?;
+            })?);
         }
 
         Ok(())
     }
 
-    /// Save hard state to persistent storage
-    #[allow(dead_code)]
-    fn save_hard_state(&self, hs: &HardState) -> Result<()> {
-        let data = hs.write_to_bytes().map_err(|e| {
+    /// Save vote to persistent storage
+    fn save_vote(&self, vote: &Vote<NodeId>) -> Result<()> {
+        let data = bincode::serialize(vote).map_err(|e| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize hard state: {}", e),
+                format!("Failed to serialize vote: {}", e),
             ))
         })?;
-        self.db.put(b"raft:hard_state", &data)?;
+        self.db.put(b"raft:vote", &data)?;
         Ok(())
     }
 
-    /// Save conf state to persistent storage
-    fn save_conf_state(&self, cs: &ConfState) -> Result<()> {
-        let data = cs.write_to_bytes().map_err(|e| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize conf state: {}", e),
-            ))
-        })?;
-        self.db.put(b"raft:conf_state", &data)?;
-        Ok(())
+    /// Get log entries in the given range
+    fn get_log_entries(
+        &self,
+        range: impl RangeBounds<u64>,
+    ) -> Result<Vec<Entry<TypeConfig>>> {
+        use std::ops::Bound;
+
+        let state = self.state.read();
+
+        let start = match range.start_bound() {
+            Bound::Included(&x) => x,
+            Bound::Excluded(&x) => x + 1,
+            Bound::Unbounded => {
+                if let Some(ref purged) = state.last_purged_log_id {
+                    purged.index + 1
+                } else {
+                    0
+                }
+            }
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(&x) => x + 1,
+            Bound::Excluded(&x) => x,
+            Bound::Unbounded => {
+                if let Some(ref last) = state.last_log_id {
+                    last.index + 1
+                } else {
+                    0
+                }
+            }
+        };
+
+        let mut entries = Vec::new();
+
+        for idx in start..end {
+            let key = format!("raft:log:{}", idx);
+            if let Some(data) = self.db.get(key.as_bytes())? {
+                let entry: Entry<TypeConfig> = bincode::deserialize(&data).map_err(|e| {
+                    Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to deserialize entry: {}", e),
+                    ))
+                })?;
+                entries.push(entry);
+            }
+        }
+
+        Ok(entries)
     }
 
     /// Append log entries to storage
-    pub fn append_entries(&self, entries: &[Entry]) -> Result<()> {
+    fn append_log_entries(&self, entries: &[Entry<TypeConfig>]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
         }
 
-        let mut cache = self.cache.write();
+        let mut state = self.state.write();
 
         for entry in entries {
-            let key = format!("raft:log:{}", entry.index);
-            let data = entry.write_to_bytes().map_err(|e| {
+            let key = format!("raft:log:{}", entry.log_id.index);
+            let data = bincode::serialize(entry).map_err(|e| {
                 Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to serialize entry: {}", e),
@@ -172,203 +247,377 @@ impl RaftStorage {
             })?;
             self.db.put(key.as_bytes(), &data)?;
 
-            // Update cache
-            if cache.first_index == 0 {
-                cache.first_index = entry.index;
-            }
-            cache.last_index = cache.last_index.max(entry.index);
+            // Update last log ID
+            state.last_log_id = Some(entry.log_id);
         }
 
-        // Update last_index in storage
-        let data = bincode::serialize(&cache.last_index).map_err(|e| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize last_index: {}", e),
-            ))
-        })?;
-        self.db.put(b"raft:last_index", &data)?;
-
-        Ok(())
-    }
-
-    /// Apply snapshot to storage
-    pub fn apply_snapshot(&self, snapshot: Snapshot) -> Result<()> {
-        let mut cache = self.cache.write();
-
-        // Save snapshot metadata
-        let data = snapshot.write_to_bytes().map_err(|e| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize snapshot: {}", e),
-            ))
-        })?;
-        self.db.put(b"raft:snapshot", &data)?;
-
-        // Update cache
-        cache.snapshot_metadata = snapshot.clone();
-
-        // Clear old log entries before snapshot
-        let metadata = snapshot.get_metadata();
-        cache.first_index = metadata.index + 1;
-
-        // Update conf state from snapshot
-        if metadata.has_conf_state() {
-            let conf_state = metadata.get_conf_state().clone();
-            cache.conf_state = conf_state.clone();
-            self.save_conf_state(&conf_state)?;
+        // Persist last log ID
+        if let Some(ref last_log_id) = state.last_log_id {
+            let data = bincode::serialize(last_log_id).map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to serialize last_log_id: {}", e),
+                ))
+            })?;
+            self.db.put(b"raft:last_log_id", &data)?;
         }
 
         Ok(())
     }
 
-    /// Compact log entries up to the given index
-    pub fn compact(&self, compact_index: u64) -> Result<()> {
-        let mut cache = self.cache.write();
+    /// Delete log entries from a specific log ID
+    fn delete_logs_from(&self, log_id: LogId<NodeId>) -> Result<()> {
+        let mut state = self.state.write();
 
-        if compact_index <= cache.first_index {
+        let last_index = if let Some(ref last) = state.last_log_id {
+            last.index
+        } else {
             return Ok(());
-        }
+        };
 
-        // Delete old log entries
-        for idx in cache.first_index..compact_index {
+        // Delete all logs from log_id.index onwards
+        for idx in log_id.index..=last_index {
             let key = format!("raft:log:{}", idx);
             self.db.delete(key.as_bytes())?;
         }
 
-        // Update first index
-        cache.first_index = compact_index;
-        let data = bincode::serialize(&cache.first_index).map_err(|e| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize first_index: {}", e),
-            ))
-        })?;
-        self.db.put(b"raft:first_index", &data)?;
+        // Update last log ID to the entry before the deleted range
+        if log_id.index > 0 {
+            let prev_key = format!("raft:log:{}", log_id.index - 1);
+            if let Some(data) = self.db.get(prev_key.as_bytes())? {
+                let entry: Entry<TypeConfig> = bincode::deserialize(&data).map_err(|e| {
+                    Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to deserialize entry: {}", e),
+                    ))
+                })?;
+                state.last_log_id = Some(entry.log_id);
+            } else {
+                state.last_log_id = None;
+            }
+        } else {
+            state.last_log_id = None;
+        }
+
+        // Persist last log ID
+        if let Some(ref last_log_id) = state.last_log_id {
+            let data = bincode::serialize(last_log_id).map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to serialize last_log_id: {}", e),
+                ))
+            })?;
+            self.db.put(b"raft:last_log_id", &data)?;
+        } else {
+            self.db.delete(b"raft:last_log_id")?;
+        }
 
         Ok(())
     }
 
-    /// Get log entries in the given range
-    fn get_entries(&self, low: u64, high: u64, max_size: Option<u64>) -> Result<Vec<Entry>> {
-        let cache = self.cache.read();
+    /// Purge log entries up to a specific log ID
+    fn purge_logs_upto(&self, log_id: LogId<NodeId>) -> Result<()> {
+        let mut state = self.state.write();
 
-        if low < cache.first_index {
-            return Err(Error::ClusterError(format!(
-                "Log compacted: requested {} but first_index is {}",
-                low, cache.first_index
-            )));
-        }
+        let start_index = if let Some(ref purged) = state.last_purged_log_id {
+            purged.index + 1
+        } else {
+            0
+        };
 
-        if high > cache.last_index + 1 {
-            return Err(Error::ClusterError(format!(
-                "Index out of bound: requested {} but last_index is {}",
-                high, cache.last_index
-            )));
-        }
-
-        let mut entries = Vec::new();
-        let mut size: u64 = 0;
-
-        for idx in low..high {
+        // Delete logs from start_index to log_id.index (inclusive)
+        for idx in start_index..=log_id.index {
             let key = format!("raft:log:{}", idx);
-            if let Some(data) = self.db.get(key.as_bytes())? {
-                let entry = Entry::parse_from_bytes(&data).map_err(|e| {
-                    Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to parse entry: {}", e),
-                    ))
-                })?;
-
-                size += entry.data.len() as u64;
-                entries.push(entry);
-
-                if let Some(max) = max_size {
-                    if size >= max {
-                        break;
-                    }
-                }
-            }
+            self.db.delete(key.as_bytes())?;
         }
 
-        Ok(entries)
+        // Update last purged log ID
+        state.last_purged_log_id = Some(log_id);
+
+        // Persist last purged log ID
+        let data = bincode::serialize(&log_id).map_err(|e| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize last_purged_log_id: {}", e),
+            ))
+        })?;
+        self.db.put(b"raft:last_purged_log_id", &data)?;
+
+        Ok(())
     }
 }
 
+// Snapshot builder for creating snapshots
 #[cfg(feature = "raft-cluster")]
-impl Storage for RaftStorage {
-    fn initial_state(&self) -> RaftResult<RaftState> {
-        let cache = self.cache.read();
-        Ok(
-            RaftState {
-                hard_state: cache.hard_state.clone(),
-                conf_state: cache.conf_state.clone(),
-            },
-        )
+pub struct OpenRaftSnapshotBuilder {
+    db: Arc<DB>,
+}
+
+// Implement RaftLogReader trait for OpenRaftStorage
+#[cfg(feature = "raft-cluster")]
+#[async_trait::async_trait]
+impl RaftLogReader<TypeConfig> for OpenRaftStorage {
+    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
+        &mut self,
+        range: RB,
+    ) -> std::result::Result<Vec<Entry<TypeConfig>>, StorageError<NodeId>> {
+        self.get_log_entries(range)
+            .map_err(|e| StorageError::IO { source: StorageIOError::read(&e) })
+    }
+}
+
+// Implement RaftSnapshotBuilder trait for creating snapshots
+#[cfg(feature = "raft-cluster")]
+#[async_trait::async_trait]
+impl RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
+    async fn build_snapshot(
+        &mut self,
+    ) -> std::result::Result<Snapshot<TypeConfig>, StorageError<NodeId>> {
+        // Create a snapshot of the current database state
+        let snapshot_data = Vec::new();
+
+        // In a real implementation, you would iterate through all state machine keys
+        // and serialize them into the snapshot
+        let cursor = Cursor::new(snapshot_data);
+
+        // Get current snapshot metadata from storage
+        let storage_state = self.db.get(b"raft:snapshot_meta").map_err(|e| {
+            StorageError::IO { source: StorageIOError::read(&e) }
+        })?;
+
+        let meta: SnapshotMeta<NodeId, BasicNode> = if let Some(data) = storage_state {
+            bincode::deserialize(&data).map_err(|e| {
+                StorageError::IO {
+                    source: StorageIOError::read(&format!("Failed to deserialize snapshot_meta: {}", e)),
+                }
+            })?
+        } else {
+            // Return a default empty snapshot
+            SnapshotMeta {
+                last_log_id: None,
+                last_membership: Default::default(),
+                snapshot_id: String::new(),
+            }
+        };
+
+        Ok(Snapshot { meta, snapshot: Box::new(cursor) })
+    }
+}
+
+// Implement RaftStorage trait for OpenRaftStorage
+#[cfg(feature = "raft-cluster")]
+#[async_trait::async_trait]
+impl RaftStorage<TypeConfig> for OpenRaftStorage {
+    type LogReader = Self;
+    type SnapshotBuilder = OpenRaftSnapshotBuilder;
+
+    // Log state
+    async fn get_log_state(
+        &mut self,
+    ) -> std::result::Result<LogState<TypeConfig>, StorageError<NodeId>> {
+        let state = self.state.read();
+        Ok(LogState {
+            last_purged_log_id: state.last_purged_log_id,
+            last_log_id: state.last_log_id,
+        })
     }
 
-    fn entries(
-        &self,
-        low: u64,
-        high: u64,
-        max_size: impl Into<Option<u64>>,
-        _context: GetEntriesContext,
-    ) -> RaftResult<Vec<Entry>> {
-        self.get_entries(low, high, max_size.into())
-            .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))
+    async fn get_log_reader(&mut self) -> Self::LogReader {
+        OpenRaftStorage {
+            db: self.db.clone(),
+            state: self.state.clone(),
+        }
     }
 
-    fn term(&self, idx: u64) -> RaftResult<u64> {
-        let cache = self.cache.read();
+    // Vote management
+    async fn save_vote(
+        &mut self,
+        vote: &Vote<NodeId>,
+    ) -> std::result::Result<(), StorageError<NodeId>> {
+        self.save_vote(vote)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+    }
 
-        let snapshot_idx = cache.snapshot_metadata.get_metadata().index;
+    async fn read_vote(
+        &mut self,
+    ) -> std::result::Result<Option<Vote<NodeId>>, StorageError<NodeId>> {
+        let state = self.state.read();
+        Ok(state.vote.clone())
+    }
 
-        // Special case: snapshot index
-        if idx == snapshot_idx {
-            return Ok(cache.snapshot_metadata.get_metadata().term);
-        }
+    // Log management
+    async fn append_to_log<I>(
+        &mut self,
+        entries: I,
+    ) -> std::result::Result<(), StorageError<NodeId>>
+    where
+        I: IntoIterator<Item = Entry<TypeConfig>> + Send,
+        I::IntoIter: Send,
+    {
+        let entries_vec: Vec<_> = entries.into_iter().collect();
+        self.append_log_entries(&entries_vec)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+    }
 
-        if idx < cache.first_index {
-            return Err(RaftError::Store(StorageError::Compacted));
-        }
+    async fn delete_conflict_logs_since(
+        &mut self,
+        log_id: LogId<NodeId>,
+    ) -> std::result::Result<(), StorageError<NodeId>> {
+        self.delete_logs_from(log_id)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+    }
 
-        if idx > cache.last_index {
-            return Err(RaftError::Store(StorageError::Unavailable));
-        }
+    async fn purge_logs_upto(
+        &mut self,
+        log_id: LogId<NodeId>,
+    ) -> std::result::Result<(), StorageError<NodeId>> {
+        self.purge_logs_upto(log_id)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+    }
 
-        let key = format!("raft:log:{}", idx);
-        if let Some(data) = self
-            .db
-            .get(key.as_bytes())
-            .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))?
+    // State machine methods
+    async fn last_applied_state(
+        &mut self,
+    ) -> std::result::Result<
+        (Option<LogId<NodeId>>, openraft::StoredMembership<NodeId, BasicNode>),
+        StorageError<NodeId>,
+    > {
+        let state = self.state.read();
+        
+        // Get last membership from storage
+        let membership = if let Some(data) = self.db.get(b"raft:membership")
+            .map_err(|e| StorageError::IO { source: StorageIOError::read(&e) })?
         {
-            let entry = Entry::parse_from_bytes(&data)
-                .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))?;
-            Ok(entry.term)
+            bincode::deserialize(&data).map_err(|e| {
+                StorageError::IO {
+                    source: StorageIOError::read(&format!("Failed to deserialize membership: {}", e)),
+                }
+            })?
         } else {
-            Err(RaftError::Store(StorageError::Unavailable))
+            openraft::StoredMembership::default()
+        };
+
+        Ok((state.last_applied, membership))
+    }
+
+    async fn apply_to_state_machine(
+        &mut self,
+        entries: &[Entry<TypeConfig>],
+    ) -> std::result::Result<Vec<Response>, StorageError<NodeId>> {
+        let mut responses = Vec::new();
+
+        for entry in entries {
+            if let EntryPayload::Normal(ref data) = entry.payload {
+                // Deserialize the request
+                let request: Request = bincode::deserialize(&data.data).map_err(|e| {
+                    StorageError::IO {
+                        source: StorageIOError::read(&format!("Failed to deserialize request: {}", e)),
+                    }
+                })?;
+
+                // Apply the request to the state machine
+                let response = match request {
+                    Request::Put { key, value } => {
+                        let sm_key = format!("sm:{}", String::from_utf8_lossy(&key));
+                        self.db.put(sm_key.as_bytes(), &value).map_err(|e| {
+                            StorageError::IO { source: StorageIOError::write(&e) }
+                        })?;
+                        Response::Ok
+                    }
+                    Request::Delete { key } => {
+                        let sm_key = format!("sm:{}", String::from_utf8_lossy(&key));
+                        self.db.delete(sm_key.as_bytes()).map_err(|e| {
+                            StorageError::IO { source: StorageIOError::write(&e) }
+                        })?;
+                        Response::Ok
+                    }
+                };
+
+                responses.push(response);
+
+                // Update last applied
+                let mut state = self.state.write();
+                state.last_applied = Some(entry.log_id);
+                
+                // Persist last applied
+                let data = bincode::serialize(&entry.log_id).map_err(|e| {
+                    StorageError::IO {
+                        source: StorageIOError::write(&format!("Failed to serialize last_applied: {}", e)),
+                    }
+                })?;
+                self.db.put(b"raft:last_applied", &data).map_err(|e| {
+                    StorageError::IO { source: StorageIOError::write(&e) }
+                })?;
+            } else {
+                responses.push(Response::Ok);
+            }
+        }
+
+        Ok(responses)
+    }
+
+    // Snapshot management
+    async fn get_current_snapshot(
+        &mut self,
+    ) -> std::result::Result<Option<Snapshot<TypeConfig>>, StorageError<NodeId>> {
+        let state = self.state.read();
+        
+        if state.snapshot_meta.is_none() {
+            return Ok(None);
+        }
+
+        // Get snapshot data from storage
+        let snapshot_data = self.db.get(b"raft:snapshot_data").map_err(|e| {
+            StorageError::IO { source: StorageIOError::read(&e) }
+        })?;
+
+        match (state.snapshot_meta.as_ref(), snapshot_data) {
+            (Some(meta), Some(data)) => {
+                Ok(Some(Snapshot {
+                    meta: meta.clone(),
+                    snapshot: Box::new(Cursor::new(data)),
+                }))
+            }
+            _ => Ok(None),
         }
     }
 
-    fn first_index(&self) -> RaftResult<u64> {
-        let cache = self.cache.read();
-        Ok(cache.first_index)
+    async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
+        OpenRaftSnapshotBuilder { db: self.db.clone() }
     }
 
-    fn last_index(&self) -> RaftResult<u64> {
-        let cache = self.cache.read();
-        Ok(cache.last_index)
+    async fn begin_receiving_snapshot(
+        &mut self,
+    ) -> std::result::Result<Box<Self::SnapshotBuilder>, StorageError<NodeId>> {
+        Ok(Box::new(OpenRaftSnapshotBuilder { db: self.db.clone() }))
     }
 
-    fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<Snapshot> {
-        let cache = self.cache.read();
+    async fn install_snapshot(
+        &mut self,
+        meta: &SnapshotMeta<NodeId, BasicNode>,
+        snapshot: Box<Cursor<Vec<u8>>>,
+    ) -> std::result::Result<(), StorageError<NodeId>> {
+        let mut state = self.state.write();
 
-        let snapshot_index = cache.snapshot_metadata.get_metadata().index;
+        // Save snapshot metadata
+        let meta_data = bincode::serialize(meta).map_err(|e| {
+            StorageError::IO {
+                source: StorageIOError::write(&format!("Failed to serialize snapshot meta: {}", e)),
+            }
+        })?;
+        self.db.put(b"raft:snapshot_meta", &meta_data)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })?;
 
-        if request_index <= snapshot_index {
-            Ok(cache.snapshot_metadata.clone())
-        } else {
-            Err(RaftError::Store(StorageError::SnapshotTemporarilyUnavailable))
-        }
+        // Save snapshot data
+        let snapshot_data = snapshot.into_inner();
+        self.db.put(b"raft:snapshot_data", &snapshot_data)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })?;
+
+        // Update state
+        state.snapshot_meta = Some(meta.clone());
+        state.last_applied = meta.last_log_id;
+
+        Ok(())
     }
 }
 
@@ -378,90 +627,120 @@ mod tests {
     use crate::Options;
     use tempfile::TempDir;
 
-    fn create_test_storage() -> (RaftStorage, TempDir) {
+    fn create_test_storage() -> (OpenRaftStorage, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let storage = RaftStorage::new(Arc::new(db)).unwrap();
+        let storage = OpenRaftStorage::new(Arc::new(db)).unwrap();
         (storage, temp_dir)
     }
 
     #[test]
     fn test_storage_creation() {
         let (storage, _temp_dir) = create_test_storage();
-        let cache = storage.cache.read();
-        assert_eq!(cache.first_index, 1); // Raft log starts at index 1
-        assert_eq!(cache.last_index, 0); // Empty log
+        let state = storage.state.read();
+        assert!(state.vote.is_none());
+        assert!(state.last_log_id.is_none());
     }
 
     #[test]
-    fn test_append_entries() {
+    fn test_save_and_read_vote() {
         let (storage, _temp_dir) = create_test_storage();
 
-        let entry = Entry {
-            index: 1,
+        let vote = Vote {
             term: 1,
-            data: b"test_data".to_vec().into(),
-            ..Default::default()
+            node_id: 1,
+            committed: false,
         };
 
-        storage.append_entries(std::slice::from_ref(&entry)).unwrap();
+        storage.save_vote(&vote).unwrap();
 
-        let cache = storage.cache.read();
-        assert_eq!(cache.first_index, 1);
-        assert_eq!(cache.last_index, 1);
+        let state = storage.state.read();
+        assert_eq!(state.vote, Some(vote));
     }
 
     #[test]
-    fn test_get_entries() {
+    fn test_append_and_get_entries() {
         let (storage, _temp_dir) = create_test_storage();
 
-        let mut entries = Vec::new();
-        for i in 1..=5 {
-            let entry = Entry {
-                index: i,
-                term: 1,
-                data: format!("data_{}", i).into_bytes().into(),
-                ..Default::default()
-            };
-            entries.push(entry);
-        }
+        let entries = vec![
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 1 },
+                payload: EntryPayload::Blank,
+            },
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 2 },
+                payload: EntryPayload::Blank,
+            },
+        ];
 
-        storage.append_entries(&entries).unwrap();
+        storage.append_log_entries(&entries).unwrap();
 
-        let retrieved = storage.get_entries(1, 6, None).unwrap();
-        assert_eq!(retrieved.len(), 5);
-        assert_eq!(retrieved[0].index, 1);
-        assert_eq!(retrieved[4].index, 5);
+        let retrieved = storage.get_log_entries(1..3).unwrap();
+        assert_eq!(retrieved.len(), 2);
+        assert_eq!(retrieved[0].log_id.index, 1);
+        assert_eq!(retrieved[1].log_id.index, 2);
     }
 
     #[test]
-    fn test_compact() {
+    fn test_delete_conflict_logs() {
         let (storage, _temp_dir) = create_test_storage();
 
-        let mut entries = Vec::new();
-        for i in 1..=10 {
-            let entry = Entry {
-                index: i,
-                term: 1,
-                ..Default::default()
-            };
-            entries.push(entry);
-        }
+        let entries = vec![
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 1 },
+                payload: EntryPayload::Blank,
+            },
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 2 },
+                payload: EntryPayload::Blank,
+            },
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 3 },
+                payload: EntryPayload::Blank,
+            },
+        ];
 
-        storage.append_entries(&entries).unwrap();
+        storage.append_log_entries(&entries).unwrap();
 
-        // Compact up to index 5
-        storage.compact(5).unwrap();
+        // Delete logs from index 2 onwards
+        storage.delete_logs_from(LogId { leader_id: 1.into(), index: 2 }).unwrap();
 
-        let cache = storage.cache.read();
-        assert_eq!(cache.first_index, 5);
-        assert_eq!(cache.last_index, 10);
+        let retrieved = storage.get_log_entries(1..4).unwrap();
+        assert_eq!(retrieved.len(), 1);
+        assert_eq!(retrieved[0].log_id.index, 1);
+    }
 
-        // Should not be able to get compacted entries
-        assert!(storage.get_entries(1, 5, None).is_err());
+    #[test]
+    fn test_purge_logs() {
+        let (storage, _temp_dir) = create_test_storage();
 
-        // Should be able to get entries after compaction point
-        let retrieved = storage.get_entries(5, 11, None).unwrap();
-        assert_eq!(retrieved.len(), 6);
+        let entries = vec![
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 1 },
+                payload: EntryPayload::Blank,
+            },
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 2 },
+                payload: EntryPayload::Blank,
+            },
+            Entry {
+                log_id: LogId { leader_id: 1.into(), index: 3 },
+                payload: EntryPayload::Blank,
+            },
+        ];
+
+        storage.append_log_entries(&entries).unwrap();
+
+        // Purge logs up to index 2
+        storage.purge_logs_upto(LogId { leader_id: 1.into(), index: 2 }).unwrap();
+
+        // Should not be able to get purged entries
+        let retrieved = storage.get_log_entries(1..3).unwrap();
+        assert_eq!(retrieved.len(), 0);
+
+        // Should still be able to get entry 3
+        let retrieved = storage.get_log_entries(3..4).unwrap();
+        assert_eq!(retrieved.len(), 1);
+        assert_eq!(retrieved[0].log_id.index, 3);
     }
 }

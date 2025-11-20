@@ -42,14 +42,16 @@ pub mod peer;
 #[cfg(feature = "raft-cluster")]
 pub mod raft_storage;
 
-#[cfg(feature = "raft-cluster")]
-pub mod raft_node;
+// TODO: Phase 3 - Rewrite for openraft
+// #[cfg(feature = "raft-cluster")]
+// pub mod raft_transport;
 
-#[cfg(feature = "raft-cluster")]
-pub mod raft_transport;
+// TODO: Phase 4 - Rewrite for openraft  
+// #[cfg(feature = "raft-cluster")]
+// pub mod raft_node;
 
-#[cfg(feature = "raft-cluster")]
-pub mod raft_peer;
+// #[cfg(feature = "raft-cluster")]
+// pub mod raft_peer;
 
 #[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
@@ -79,15 +81,16 @@ pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
 pub use peer::{PeerInfo, PeerNode, PeerStats};
 
 #[cfg(feature = "raft-cluster")]
-pub use raft_storage::RaftStorage;
+pub use raft_storage::{OpenRaftStorage, TypeConfig, NodeId, Request, Response};
 
-#[cfg(feature = "raft-cluster")]
-pub use raft_node::{
-    encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
-};
+// TODO: Phase 3-4 - Re-enable after rewriting for openraft
+// #[cfg(feature = "raft-cluster")]
+// pub use raft_node::{
+//     encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
+// };
 
-#[cfg(feature = "raft-cluster")]
-pub use raft_transport::{RaftPeer, RaftTransport};
+// #[cfg(feature = "raft-cluster")]
+// pub use raft_transport::{RaftPeer, RaftTransport};
 
-#[cfg(feature = "raft-cluster")]
-pub use raft_peer::RaftBasedPeer;
+// #[cfg(feature = "raft-cluster")]
+// pub use raft_peer::RaftBasedPeer;

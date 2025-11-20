@@ -48,6 +48,7 @@ tokio-stream = { version = "0.1", optional = true }
 
 # Raft consensus (optional, for raft-based cluster) - using openraft
 openraft = { version = "0.9", features = ["serde"], optional = true }
+async-trait = { version = "0.1", optional = true }
 
 # Metrics and monitoring (optional, for monitoring features)
 prometheus = { version = "0.14", optional = true }
@@ -88,7 +89,7 @@ default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
-raft-cluster = ["cluster", "openraft"]
+raft-cluster = ["cluster", "openraft", "async-trait"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 
