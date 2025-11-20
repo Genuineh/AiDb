@@ -1,8 +1,8 @@
 # AiDb 开发任务清单
 
-> 本清单跟踪所有开发任务。更新时间：2025-11-18
+> 本清单跟踪所有开发任务。更新时间：2025-11-20
 >
-> **最新更新**: 🎉 监控运维系统完成！(Week 45-48) - Prometheus监控、Grafana仪表盘、aidb-admin CLI工具全部就绪，生产就绪！🚀
+> **最新更新**: 🚀 开始 OpenRaft 集成！(Phase 2) - 从 tikv/raft-rs 迁移到 openraft，实现 Storage 层重写，提供更强的一致性保证！
 
 ## 📋 当前Sprint
 
@@ -31,7 +31,197 @@
 - [x] 12个监控测试
 - [x] 完整文档（25KB+）
 
-**项目状态**: ✅ **生产就绪** - 所有核心功能已完成！
+**项目状态**: ✅ **核心功能完成** - 正在进行 OpenRaft 集成优化！
+
+---
+
+## 🚀 当前开发阶段
+
+### 阶段7: OpenRaft 集成 (Phase 1-5) ⭐ **当前阶段**
+
+**背景**: 从 tikv/raft-rs 迁移到 openraft，实现更强的共识和一致性保证
+
+**状态**: Phase 1 完成，Phase 2 进行中 | **优先级**: P0 | **预计**: 2-3 周
+
+#### Phase 1: 依赖更新和安全修复 ✅ **已完成**
+
+- [x] **安全漏洞修复**
+  - [x] 移除 protobuf 2.28.0 (RUSTSEC-2024-0437)
+  - [x] 移除 fxhash (RUSTSEC-2025-0057)
+  - [x] 当前安全评分: 0 严重，0 高危
+  
+- [x] **依赖更新**
+  - [x] 移除 raft = "0.7" (tikv/raft-rs)
+  - [x] 移除 protobuf = "2.28" 相关依赖
+  - [x] 移除 slog、slog-stdlog 依赖
+  - [x] 添加 openraft = { version = "0.9", features = ["serde"] }
+  - [x] 保留 protobuf-src（用于 tonic-build gRPC）
+  
+- [x] **基础 P2P 实现**
+  - [x] PeerNode 基础功能完整
+  - [x] 一致性哈希路由
+  - [x] 节点健康监控
+  - [x] Peer 动态加入/离开
+  
+- [x] **文档更新**
+  - [x] 更新 docs/SECURITY_AUDIT.md
+  - [x] 更新 audit-ignore.toml
+  - [x] 创建初始 TODO.md
+
+#### Phase 2: Storage 层重写 ⭐ **进行中**
+
+**预计工作量**: ~300 行代码 | **预计时间**: 2-3 天
+
+- [ ] **实现 openraft::RaftLogReader trait**
+  - [ ] 实现 try_get_log_entries() 方法
+  - [ ] 实现 get_log_state() 方法（返回 last_purged_log_id 和 last_log_id）
+  - [ ] 从 LSM-Tree 读取 log entries
+  - [ ] 添加单元测试
+  
+- [ ] **实现 openraft::RaftSnapshotBuilder trait**
+  - [ ] 实现 build_snapshot() 方法
+  - [ ] 创建数据库快照
+  - [ ] 序列化快照数据
+  - [ ] 添加单元测试
+  
+- [ ] **实现 openraft::RaftStorage trait**
+  - [ ] 实现 save_vote() 方法（持久化投票信息）
+  - [ ] 实现 read_vote() 方法（读取投票信息）
+  - [ ] 实现 append_to_log() 方法（追加日志）
+  - [ ] 实现 delete_conflict_logs_since() 方法（删除冲突日志）
+  - [ ] 实现 purge_logs_upto() 方法（清理旧日志）
+  - [ ] 实现 last_applied_state() 方法（返回最后应用的状态）
+  - [ ] 实现 last_membership_in_log() 方法（返回最后的成员配置）
+  - [ ] 添加集成测试
+  
+- [ ] **实现 RaftStateMachine**
+  - [ ] 实现 openraft::RaftStateMachine trait
+  - [ ] 实现 apply() 方法（应用日志到状态机）
+  - [ ] 实现 get_snapshot() 方法（获取快照）
+  - [ ] 实现 begin_receiving_snapshot() 方法
+  - [ ] 实现 install_snapshot() 方法
+  - [ ] 集成 AiDb LSM-Tree 作为底层存储
+  - [ ] 添加单元测试
+  
+- [ ] **数据模型定义**
+  - [ ] 定义 NodeId 类型
+  - [ ] 定义 LogEntry 结构
+  - [ ] 定义 SnapshotData 结构
+  - [ ] 实现序列化/反序列化
+  
+- [ ] **存储键设计**
+  - [ ] 设计 log entries 的键前缀 (raft:log:{index})
+  - [ ] 设计 vote 信息的键 (raft:vote)
+  - [ ] 设计 snapshot 元数据的键 (raft:snapshot:meta)
+  - [ ] 设计 state machine 数据的键 (raft:sm:*)
+  
+- [ ] **测试和验证**
+  - [ ] 单元测试覆盖所有方法
+  - [ ] 集成测试验证存储一致性
+  - [ ] 压力测试验证性能
+  - [ ] 代码审查
+
+#### Phase 3: Network 层实现
+
+**预计工作量**: ~400 行代码 | **预计时间**: 2-3 天
+
+- [ ] **实现 openraft::RaftNetwork trait**
+  - [ ] 实现 append_entries() RPC
+  - [ ] 实现 install_snapshot() RPC
+  - [ ] 实现 vote() RPC
+  - [ ] 使用 tonic/gRPC 作为传输层
+  - [ ] 实现超时和重试机制
+  - [ ] 添加单元测试
+  
+- [ ] **实现 openraft::RaftNetworkFactory trait**
+  - [ ] 实现 new_client() 方法
+  - [ ] 连接池管理
+  - [ ] 客户端缓存
+  - [ ] 添加单元测试
+  
+- [ ] **RPC 服务定义**
+  - [ ] 定义 protobuf 消息类型
+  - [ ] 实现 RaftService gRPC 服务
+  - [ ] 实现消息序列化/反序列化
+  - [ ] 添加 RPC 测试
+  
+- [ ] **网络层优化**
+  - [ ] 实现批量消息发送
+  - [ ] 实现消息压缩
+  - [ ] 实现流控制
+  - [ ] 性能测试
+
+#### Phase 4: Node 和 StateMachine 重写
+
+**预计工作量**: ~400 行代码 | **预计时间**: 2-3 天
+
+- [ ] **RaftNode 重构**
+  - [ ] 使用 openraft::Raft 替代 RawNode
+  - [ ] 实现节点启动/停止逻辑
+  - [ ] 实现 propose() 方法（提交写请求）
+  - [ ] 实现 read() 方法（线性读）
+  - [ ] 实现成员变更 API
+  - [ ] 添加单元测试
+  
+- [ ] **集成到 PeerNode**
+  - [ ] 将 RaftNode 集成到现有 PeerNode
+  - [ ] 实现 Raft-backed get/put/delete
+  - [ ] 保持现有 API 兼容性
+  - [ ] 添加集成测试
+  
+- [ ] **Leader 选举处理**
+  - [ ] 实现 Leader 发现机制
+  - [ ] 实现请求重定向（follower -> leader）
+  - [ ] 实现 Leader 变更通知
+  - [ ] 添加测试
+  
+- [ ] **一致性保证**
+  - [ ] 实现强一致性读（read index）
+  - [ ] 实现线性一致性验证
+  - [ ] 添加一致性测试
+
+#### Phase 5: 测试和文档
+
+**预计工作量**: ~500 行代码 | **预计时间**: 2-3 天
+
+- [ ] **单元测试**
+  - [ ] Storage 层测试（>90% 覆盖）
+  - [ ] Network 层测试（>90% 覆盖）
+  - [ ] RaftNode 测试（>90% 覆盖）
+  - [ ] 边界条件测试
+  
+- [ ] **集成测试**
+  - [ ] 三节点集群测试
+  - [ ] Leader 选举测试
+  - [ ] 日志复制测试
+  - [ ] 快照和恢复测试
+  - [ ] 成员变更测试
+  - [ ] 网络分区测试
+  
+- [ ] **压力测试**
+  - [ ] 高并发写入测试
+  - [ ] 大量数据复制测试
+  - [ ] 长时间运行测试
+  - [ ] 性能基准测试
+  
+- [ ] **示例更新**
+  - [ ] 更新 raft_cluster_demo.rs
+  - [ ] 更新 raft_peer_cluster.rs
+  - [ ] 更新 raft_integration_test.rs
+  - [ ] 添加完整的使用示例
+  
+- [ ] **文档更新**
+  - [ ] 更新 README.md（添加 openraft 说明）
+  - [ ] 更新 API 文档
+  - [ ] 创建 RAFT_GUIDE.md（Raft 使用指南）
+  - [ ] 更新架构文档
+  - [ ] 添加迁移指南（从 PeerNode 到 RaftNode）
+
+**Phase 2-5 总结**:
+- 总计: ~1600 行代码需编写
+- 预计时间: 8-12 天
+- 当前状态: Phase 2 进行中
+- 目标: 完整的 openraft 集成，提供强一致性保证
 
 ---
 
