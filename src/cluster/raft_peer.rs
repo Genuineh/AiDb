@@ -3,15 +3,15 @@
 //! This module provides a complete peer node that uses Raft for consensus
 //! while maintaining the P2P routing capabilities of PeerNode.
 
-#[cfg(feature = "raft-cluster")]
-use raft::prelude::*;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::raft_node::{RaftConfig, RaftNode, RaftStateMachine, StateMachine, encode_put, encode_delete};
+use super::raft_node::{
+    encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
+};
 use super::raft_storage::RaftStorage;
-use super::raft_transport::{RaftTransport, RaftPeer as RaftPeerInternal};
+use super::raft_transport::{RaftPeer as RaftPeerInternal, RaftTransport};
 use crate::error::{Error, Result};
 use crate::DB;
 
@@ -57,12 +57,7 @@ impl RaftBasedPeer {
         // Create state machine
         let state_machine = Arc::new(RwLock::new(RaftStateMachine::new(db.clone())));
 
-        Ok(Self {
-            id,
-            db,
-            raft_peer,
-            state_machine,
-        })
+        Ok(Self { id, db, raft_peer, state_machine })
     }
 
     /// Get the peer ID
@@ -148,15 +143,8 @@ mod tests {
     async fn create_test_peer(id: u64) -> (RaftBasedPeer, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let config = RaftConfig {
-            id,
-            election_tick: 10,
-            heartbeat_tick: 3,
-            ..Default::default()
-        };
-        let peer = RaftBasedPeer::new(id, Arc::new(db), HashMap::new(), config)
-            .await
-            .unwrap();
+        let config = RaftConfig { id, election_tick: 10, heartbeat_tick: 3, ..Default::default() };
+        let peer = RaftBasedPeer::new(id, Arc::new(db), HashMap::new(), config).await.unwrap();
         (peer, temp_dir)
     }
 
@@ -170,10 +158,10 @@ mod tests {
     #[tokio::test]
     async fn test_raft_based_peer_start_stop() {
         let (peer, _temp_dir) = create_test_peer(1).await;
-        
+
         peer.start().await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         peer.stop();
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
@@ -181,10 +169,10 @@ mod tests {
     #[tokio::test]
     async fn test_raft_based_peer_get() {
         let (peer, _temp_dir) = create_test_peer(1).await;
-        
+
         // Write directly to DB for testing
         peer.db.put(b"test_key", b"test_value").unwrap();
-        
+
         let value = peer.get(b"test_key").unwrap();
         assert_eq!(value, Some(b"test_value".to_vec()));
     }
@@ -192,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn test_raft_based_peer_status() {
         let (peer, _temp_dir) = create_test_peer(1).await;
-        
+
         let (term, committed, is_leader) = peer.status_info();
         assert_eq!(term, 0); // Initial term
         assert_eq!(committed, 0); // Nothing committed yet
@@ -202,11 +190,11 @@ mod tests {
     #[tokio::test]
     async fn test_apply_entry() {
         let (peer, _temp_dir) = create_test_peer(1).await;
-        
+
         let cmd = encode_put(b"key1", b"value1");
         let result = peer.apply_entry(&cmd);
         assert!(result.is_ok());
-        
+
         // Verify the data was written
         let value = peer.get(b"key1").unwrap();
         assert_eq!(value, Some(b"value1".to_vec()));

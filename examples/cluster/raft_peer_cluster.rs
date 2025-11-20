@@ -36,23 +36,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_size_per_msg: 1024 * 1024,
         max_inflight_msgs: 256,
     };
-    let peer1 = Arc::new(
-        RaftBasedPeer::new(1, Arc::new(db1), peers_map.clone(), config1).await?
-    );
+    let peer1 = Arc::new(RaftBasedPeer::new(1, Arc::new(db1), peers_map.clone(), config1).await?);
 
     // Create peer 2
     let db2 = DB::open("./data/raft_peer2", Options::default())?;
     let config2 = RaftConfig { id: 2, ..config1 };
-    let peer2 = Arc::new(
-        RaftBasedPeer::new(2, Arc::new(db2), peers_map.clone(), config2).await?
-    );
+    let peer2 = Arc::new(RaftBasedPeer::new(2, Arc::new(db2), peers_map.clone(), config2).await?);
 
     // Create peer 3
     let db3 = DB::open("./data/raft_peer3", Options::default())?;
     let config3 = RaftConfig { id: 3, ..config1 };
-    let peer3 = Arc::new(
-        RaftBasedPeer::new(3, Arc::new(db3), peers_map.clone(), config3).await?
-    );
+    let peer3 = Arc::new(RaftBasedPeer::new(3, Arc::new(db3), peers_map.clone(), config3).await?);
 
     println!("✅ Created 3 Raft-based peers\n");
 
@@ -71,15 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check leader status
     println!("👑 Leader Election Results:");
     println!("---------------------------");
-    
+
     let (term1, committed1, is_leader1) = peer1.status_info();
     let (term2, committed2, is_leader2) = peer2.status_info();
     let (term3, committed3, is_leader3) = peer3.status_info();
-    
+
     println!("  Peer 1: term={}, committed={}, is_leader={}", term1, committed1, is_leader1);
     println!("  Peer 2: term={}, committed={}, is_leader={}", term2, committed2, is_leader2);
     println!("  Peer 3: term={}, committed={}, is_leader={}", term3, committed3, is_leader3);
-    
+
     let leader_id = if is_leader1 {
         Some(1)
     } else if is_leader2 {
@@ -89,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-    
+
     if let Some(id) = leader_id {
         println!("\n  ✅ Peer {} is the LEADER", id);
     } else {
@@ -100,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Demonstrate consensus operations
     println!("📝 Testing Consensus Operations:");
     println!("--------------------------------");
-    
+
     // Find the leader peer
     let leader_peer = if is_leader1 {
         peer1.clone()
@@ -114,14 +108,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if leader_peer.is_leader() {
         println!("  Proposing writes through leader (Peer {})...", leader_peer.id());
-        
+
         // Propose some writes
         if let Err(e) = leader_peer.put(b"user:1001", b"Alice").await {
             println!("  ⚠️ PUT failed: {}", e);
         } else {
             println!("  ✓ Proposed: user:1001 = Alice");
         }
-        
+
         if let Err(e) = leader_peer.put(b"user:1002", b"Bob").await {
             println!("  ⚠️ PUT failed: {}", e);
         } else {
@@ -135,17 +129,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test reads from different peers
     println!("📖 Testing Reads from Different Peers:");
     println!("--------------------------------------");
-    
+
     // Give time for commands to propagate
     sleep(Duration::from_millis(500)).await;
-    
-    // For demonstration, write directly to one peer's DB
-    peer1.db.put(b"test_key", b"test_value")?;
-    
+
+    // For demonstration, write directly to one peer's DB using the db() accessor
+    peer1.db().put(b"test_key", b"test_value")?;
+
     if let Some(value) = peer1.get(b"test_key")? {
         println!("  Peer 1: test_key = {:?}", String::from_utf8_lossy(&value));
     }
-    
+
     if let Some(value) = peer2.get(b"test_key")? {
         println!("  Peer 2: test_key = {:?}", String::from_utf8_lossy(&value));
     } else {
@@ -184,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     peer1.stop();
     peer2.stop();
     peer3.stop();
-    
+
     // Give them time to stop gracefully
     sleep(Duration::from_millis(200)).await;
     println!("✅ All peers stopped\n");

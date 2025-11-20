@@ -3,14 +3,11 @@
 //! This module provides a wrapper around raft-rs RawNode to manage
 //! the Raft consensus protocol for the cluster.
 
+use parking_lot::RwLock;
 #[cfg(feature = "raft-cluster")]
-use raft::{
-    prelude::*,
-    RawNode, StateRole,
-};
+use raft::{prelude::*, RawNode, StateRole};
 #[cfg(feature = "raft-cluster")]
 use slog::Drain;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -87,9 +84,10 @@ impl RaftNode {
             max_inflight_msgs: config.max_inflight_msgs,
             ..Default::default()
         };
-        
+
         // Validate config
-        cfg.validate().map_err(|e| Error::ClusterError(format!("Invalid Raft config: {}", e)))?;
+        cfg.validate()
+            .map_err(|e| Error::ClusterError(format!("Invalid Raft config: {}", e)))?;
 
         // Create logger (use slog for raft-rs)
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
@@ -135,7 +133,8 @@ impl RaftNode {
     /// Propose a change to the state machine
     pub fn propose(&self, data: Vec<u8>) -> Result<()> {
         let mut raw_node = self.raw_node.write();
-        raw_node.propose(vec![], data)
+        raw_node
+            .propose(vec![], data)
             .map_err(|e| Error::ClusterError(format!("Failed to propose: {}", e)))?;
         Ok(())
     }
@@ -143,7 +142,8 @@ impl RaftNode {
     /// Propose a configuration change
     pub fn propose_conf_change(&self, cc: ConfChange) -> Result<()> {
         let mut raw_node = self.raw_node.write();
-        raw_node.propose_conf_change(vec![], cc)
+        raw_node
+            .propose_conf_change(vec![], cc)
             .map_err(|e| Error::ClusterError(format!("Failed to propose conf change: {}", e)))?;
         Ok(())
     }
@@ -151,7 +151,8 @@ impl RaftNode {
     /// Step the Raft state machine with a message
     pub fn step(&self, msg: Message) -> Result<()> {
         let mut raw_node = self.raw_node.write();
-        raw_node.step(msg)
+        raw_node
+            .step(msg)
             .map_err(|e| Error::ClusterError(format!("Failed to step: {}", e)))?;
         Ok(())
     }
@@ -186,7 +187,8 @@ impl RaftNode {
 
     /// Send a message to a peer
     pub fn send_message(&self, to: u64, msg: RaftMessage) -> Result<()> {
-        self.msg_tx.send((to, msg))
+        self.msg_tx
+            .send((to, msg))
             .map_err(|e| Error::ClusterError(format!("Failed to send message: {}", e)))?;
         Ok(())
     }
@@ -264,7 +266,7 @@ impl StateMachine for RaftStateMachine {
     fn apply(&mut self, data: &[u8]) -> Result<Vec<u8>> {
         // Parse the command from data
         // Format: [op_type: u8][key_len: u32][key][value_len: u32][value]
-        
+
         if data.is_empty() {
             return Err(Error::InvalidArgument("Empty command".to_string()));
         }
@@ -298,7 +300,9 @@ impl StateMachine for RaftStateMachine {
                 offset += 4;
 
                 if data.len() < offset + value_len {
-                    return Err(Error::InvalidArgument("Invalid PUT command value length".to_string()));
+                    return Err(Error::InvalidArgument(
+                        "Invalid PUT command value length".to_string(),
+                    ));
                 }
 
                 let value = &data[offset..offset + value_len];
@@ -316,7 +320,9 @@ impl StateMachine for RaftStateMachine {
                 offset += 4;
 
                 if data.len() < offset + key_len {
-                    return Err(Error::InvalidArgument("Invalid DELETE command length".to_string()));
+                    return Err(Error::InvalidArgument(
+                        "Invalid DELETE command length".to_string(),
+                    ));
                 }
 
                 let key = &data[offset..offset + key_len];
@@ -342,7 +348,6 @@ impl StateMachine for RaftStateMachine {
 }
 
 /// Helper functions to encode commands
-
 /// Encode a PUT command
 pub fn encode_put(key: &[u8], value: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();

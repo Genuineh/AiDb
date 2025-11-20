@@ -76,16 +76,18 @@ pub use scaling::{ScalingConfig, ScalingManager, ScalingStats};
 pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
 
 #[cfg(feature = "cluster")]
-pub use peer::{PeerNode, PeerInfo, PeerStats};
+pub use peer::{PeerInfo, PeerNode, PeerStats};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_storage::RaftStorage;
 
 #[cfg(feature = "raft-cluster")]
-pub use raft_node::{RaftNode, RaftConfig, RaftStateMachine, StateMachine, encode_put, encode_delete};
+pub use raft_node::{
+    encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
+};
 
 #[cfg(feature = "raft-cluster")]
-pub use raft_transport::{RaftTransport, RaftPeer};
+pub use raft_transport::{RaftPeer, RaftTransport};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_peer::RaftBasedPeer;

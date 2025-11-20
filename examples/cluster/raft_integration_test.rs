@@ -132,11 +132,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 6: Read Operations from All Peers
     println!("Phase 6: Read Operations from All Peers");
     println!("----------------------------------------");
-    
+
     // First, write directly to one peer's DB for testing read functionality
     println!("Writing test data directly to peer 1's DB...");
     peers[0].db().put(b"direct:key", b"direct_value")?;
-    
+
     for peer in &peers {
         match peer.get(b"direct:key")? {
             Some(value) => {
@@ -157,23 +157,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Phase 7: State Machine Application");
     println!("-----------------------------------");
     let test_peer = &peers[0];
-    
-    use aidb::cluster::{encode_put, encode_delete};
-    
+
+    use aidb::cluster::{encode_delete, encode_put};
+
     let put_cmd = encode_put(b"sm:test", b"sm_value");
     match test_peer.apply_entry(&put_cmd) {
         Ok(_) => {
             println!("  ✓ Applied PUT command to state machine");
             if let Some(value) = test_peer.get(b"sm:test")? {
-                println!(
-                    "  ✓ Verified: sm:test = {:?}",
-                    String::from_utf8_lossy(&value)
-                );
+                println!("  ✓ Verified: sm:test = {:?}", String::from_utf8_lossy(&value));
             }
         }
         Err(e) => println!("  ✗ State machine apply failed: {}", e),
     }
-    
+
     let del_cmd = encode_delete(b"sm:test");
     match test_peer.apply_entry(&del_cmd) {
         Ok(_) => {
@@ -200,11 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(id) = leader_id {
-        let followers: Vec<u64> = peers
-            .iter()
-            .filter(|p| !p.is_leader())
-            .map(|p| p.id())
-            .collect();
+        let followers: Vec<u64> = peers.iter().filter(|p| !p.is_leader()).map(|p| p.id()).collect();
         println!("  Leader: Peer {}", id);
         println!("  Followers: {:?}", followers);
     }
@@ -215,9 +208,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("---------------------");
     println!("✅ Cluster Creation: PASSED");
     println!("✅ Peer Startup: PASSED");
-    println!("✅ Leader Election: {}", if leader_id.is_some() { "PASSED" } else { "PENDING" });
+    println!(
+        "✅ Leader Election: {}",
+        if leader_id.is_some() {
+            "PASSED"
+        } else {
+            "PENDING"
+        }
+    );
     println!("✅ Status Monitoring: PASSED");
-    println!("✅ Write Operations: {}", if leader_peer.is_some() { "PASSED" } else { "SKIPPED" });
+    println!(
+        "✅ Write Operations: {}",
+        if leader_peer.is_some() {
+            "PASSED"
+        } else {
+            "SKIPPED"
+        }
+    );
     println!("✅ Read Operations: PASSED");
     println!("✅ State Machine: PASSED");
     println!("✅ Leader Verification: PASSED");

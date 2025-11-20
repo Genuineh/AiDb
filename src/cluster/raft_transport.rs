@@ -3,9 +3,9 @@
 //! This module implements the transport layer for Raft messages,
 //! enabling communication between Raft nodes in the cluster.
 
+use parking_lot::RwLock;
 #[cfg(feature = "raft-cluster")]
 use raft::prelude::Message as RaftMessage;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -115,11 +115,7 @@ pub struct RaftPeer {
 impl RaftPeer {
     /// Create a new Raft peer
     pub fn new(node: Arc<RaftNode>, transport: Arc<RaftTransport>) -> Self {
-        Self {
-            node,
-            transport,
-            running: Arc::new(RwLock::new(false)),
-        }
+        Self { node, transport, running: Arc::new(RwLock::new(false)) }
     }
 
     /// Start the Raft peer event loop
@@ -238,10 +234,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
         let storage = RaftStorage::new(Arc::new(db)).unwrap();
-        let config = RaftConfig {
-            id: 1,
-            ..Default::default()
-        };
+        let config = RaftConfig { id: 1, ..Default::default() };
         let node = Arc::new(RaftNode::new(config, storage, HashMap::new()).unwrap());
         let transport = Arc::new(RaftTransport::new(1));
         let peer = RaftPeer::new(node, transport);

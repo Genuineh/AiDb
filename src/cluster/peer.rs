@@ -113,11 +113,7 @@ impl PeerNode {
         cache_capacity: Option<usize>,
         virtual_nodes: usize,
     ) -> Self {
-        let cache = if let Some(capacity) = cache_capacity {
-            Some(LruCache::new(capacity))
-        } else {
-            None
-        };
+        let cache = cache_capacity.map(LruCache::new);
 
         let mut hash_ring = ConsistentHashRing::new(virtual_nodes);
         // Add self to the hash ring
@@ -172,9 +168,9 @@ impl PeerNode {
         }
 
         // Create client connection
-        let client = StorageClient::connect(peer_address.clone()).await.map_err(|e| {
-            Error::ClusterError(format!("Failed to connect to peer: {}", e))
-        })?;
+        let client = StorageClient::connect(peer_address.clone())
+            .await
+            .map_err(|e| Error::ClusterError(format!("Failed to connect to peer: {}", e)))?;
 
         {
             let mut clients = self.clients.write();
@@ -233,7 +229,7 @@ impl PeerNode {
     pub fn list_peers(&self) -> Vec<PeerInfo> {
         let peers = self.peers.read();
         let mut result: Vec<PeerInfo> = peers.values().cloned().collect();
-        
+
         // Add self to the list
         result.push(PeerInfo {
             id: self.id.clone(),
@@ -241,7 +237,7 @@ impl PeerNode {
             healthy: true,
             request_count: 0, // Self stats are tracked separately
         });
-        
+
         result
     }
 
@@ -280,7 +276,7 @@ impl PeerNode {
     }
 
     /// Handle a local GET request
-    fn handle_local_get(&self, key: &[u8]) -> Result<proto::GetResponse> {
+    pub fn handle_local_get(&self, key: &[u8]) -> Result<proto::GetResponse> {
         let mut stats = self.stats.write();
         stats.local_requests += 1;
         stats.get_requests += 1;
@@ -347,7 +343,7 @@ impl PeerNode {
     }
 
     /// Handle a local PUT request
-    fn handle_local_put(&self, key: &[u8], value: &[u8]) -> Result<proto::PutResponse> {
+    pub fn handle_local_put(&self, key: &[u8], value: &[u8]) -> Result<proto::PutResponse> {
         let mut stats = self.stats.write();
         stats.local_requests += 1;
         stats.put_requests += 1;
@@ -453,7 +449,10 @@ impl PeerNode {
     }
 
     /// Start the RPC server on the given address
-    pub async fn serve(self, addr: std::net::SocketAddr) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    pub async fn serve(
+        self,
+        addr: std::net::SocketAddr,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let server = self.into_server();
 
         tonic::transport::Server::builder().add_service(server).serve(addr).await?;
@@ -517,11 +516,7 @@ impl Storage for PeerNode {
                     });
                 }
                 Err(_) => {
-                    results.push(proto::KeyValue {
-                        key: key.clone(),
-                        found: false,
-                        value: vec![],
-                    });
+                    results.push(proto::KeyValue { key: key.clone(), found: false, value: vec![] });
                 }
             }
         }
@@ -566,9 +561,8 @@ impl Storage for PeerNode {
         Err(Status::unimplemented("Scan not yet implemented for peer-to-peer mode"))
     }
 
-    type ScanStream = tokio_stream::wrappers::ReceiverStream<
-        std::result::Result<proto::ScanResponse, Status>,
-    >;
+    type ScanStream =
+        tokio_stream::wrappers::ReceiverStream<std::result::Result<proto::ScanResponse, Status>>;
 
     async fn health_check(
         &self,
@@ -584,7 +578,7 @@ impl Storage for PeerNode {
         _request: Request<proto::GetStatsRequest>,
     ) -> std::result::Result<Response<proto::GetStatsResponse>, Status> {
         let stats = self.stats();
-        
+
         // Get cache stats from DB if available
         let cache_stats = self.db.cache_stats();
 
@@ -620,13 +614,8 @@ mod tests {
     ) -> (PeerNode, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let peer = PeerNode::new(
-            id.to_string(),
-            address.to_string(),
-            Arc::new(db),
-            cache_capacity,
-            150,
-        );
+        let peer =
+            PeerNode::new(id.to_string(), address.to_string(), Arc::new(db), cache_capacity, 150);
         (peer, temp_dir)
     }
 

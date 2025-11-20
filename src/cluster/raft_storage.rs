@@ -3,15 +3,15 @@
 //! This module implements the Raft storage interface required by raft-rs.
 //! It provides persistent storage for Raft logs, snapshots, and state.
 
+use parking_lot::RwLock;
+#[cfg(feature = "raft-cluster")]
+use protobuf::Message;
 #[cfg(feature = "raft-cluster")]
 use raft::{
     eraftpb::{ConfState, Entry, HardState, Snapshot},
     storage::GetEntriesContext,
     Error as RaftError, RaftState, Result as RaftResult, Storage, StorageError,
 };
-#[cfg(feature = "raft-cluster")]
-use protobuf::Message;
-use parking_lot::RwLock;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
@@ -35,6 +35,7 @@ struct RaftCache {
     /// Last snapshot metadata
     snapshot_metadata: Snapshot,
     /// Cached log entries (first_index -> entries)
+    #[allow(dead_code)]
     entries: Vec<Entry>,
     /// First log index in storage
     first_index: u64,
@@ -46,10 +47,10 @@ impl Default for RaftCache {
     fn default() -> Self {
         // Initialize snapshot with index 0, which means the log starts from index 1
         let mut snapshot = Snapshot::default();
-        let mut metadata = snapshot.mut_metadata();
+        let metadata = snapshot.mut_metadata();
         metadata.index = 0;
         metadata.term = 0;
-        
+
         Self {
             hard_state: HardState::default(),
             conf_state: ConfState::default(),
@@ -64,10 +65,7 @@ impl Default for RaftCache {
 impl RaftStorage {
     /// Create a new Raft storage
     pub fn new(db: Arc<DB>) -> Result<Self> {
-        let storage = Self {
-            db: db.clone(),
-            cache: Arc::new(RwLock::new(RaftCache::default())),
-        };
+        let storage = Self { db: db.clone(), cache: Arc::new(RwLock::new(RaftCache::default())) };
 
         // Load existing state from database
         storage.load_state()?;
@@ -81,69 +79,77 @@ impl RaftStorage {
 
         // Load hard state
         if let Some(data) = self.db.get(b"raft:hard_state")? {
-            cache.hard_state = HardState::parse_from_bytes(&data)
-                .map_err(|e| Error::Io(std::io::Error::new(
+            cache.hard_state = HardState::parse_from_bytes(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse hard state: {}", e)
-                )))?;
+                    format!("Failed to parse hard state: {}", e),
+                ))
+            })?;
         }
 
         // Load conf state
         if let Some(data) = self.db.get(b"raft:conf_state")? {
-            cache.conf_state = ConfState::parse_from_bytes(&data)
-                .map_err(|e| Error::Io(std::io::Error::new(
+            cache.conf_state = ConfState::parse_from_bytes(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse conf state: {}", e)
-                )))?;
+                    format!("Failed to parse conf state: {}", e),
+                ))
+            })?;
         }
 
         // Load snapshot metadata
         if let Some(data) = self.db.get(b"raft:snapshot")? {
-            cache.snapshot_metadata = Snapshot::parse_from_bytes(&data)
-                .map_err(|e| Error::Io(std::io::Error::new(
+            cache.snapshot_metadata = Snapshot::parse_from_bytes(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse snapshot: {}", e)
-                )))?;
+                    format!("Failed to parse snapshot: {}", e),
+                ))
+            })?;
         }
 
         // Load first and last index
         if let Some(data) = self.db.get(b"raft:first_index")? {
-            cache.first_index = bincode::deserialize(&data)
-                .map_err(|e| Error::Io(std::io::Error::new(
+            cache.first_index = bincode::deserialize(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to deserialize first_index: {}", e)
-                )))?;
+                    format!("Failed to deserialize first_index: {}", e),
+                ))
+            })?;
         }
 
         if let Some(data) = self.db.get(b"raft:last_index")? {
-            cache.last_index = bincode::deserialize(&data)
-                .map_err(|e| Error::Io(std::io::Error::new(
+            cache.last_index = bincode::deserialize(&data).map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to deserialize last_index: {}", e)
-                )))?;
+                    format!("Failed to deserialize last_index: {}", e),
+                ))
+            })?;
         }
 
         Ok(())
     }
 
     /// Save hard state to persistent storage
+    #[allow(dead_code)]
     fn save_hard_state(&self, hs: &HardState) -> Result<()> {
-        let data = hs.write_to_bytes()
-            .map_err(|e| Error::Io(std::io::Error::new(
+        let data = hs.write_to_bytes().map_err(|e| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize hard state: {}", e)
-            )))?;
+                format!("Failed to serialize hard state: {}", e),
+            ))
+        })?;
         self.db.put(b"raft:hard_state", &data)?;
         Ok(())
     }
 
     /// Save conf state to persistent storage
     fn save_conf_state(&self, cs: &ConfState) -> Result<()> {
-        let data = cs.write_to_bytes()
-            .map_err(|e| Error::Io(std::io::Error::new(
+        let data = cs.write_to_bytes().map_err(|e| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize conf state: {}", e)
-            )))?;
+                format!("Failed to serialize conf state: {}", e),
+            ))
+        })?;
         self.db.put(b"raft:conf_state", &data)?;
         Ok(())
     }
@@ -158,11 +164,12 @@ impl RaftStorage {
 
         for entry in entries {
             let key = format!("raft:log:{}", entry.index);
-            let data = entry.write_to_bytes()
-                .map_err(|e| Error::Io(std::io::Error::new(
+            let data = entry.write_to_bytes().map_err(|e| {
+                Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to serialize entry: {}", e)
-                )))?;
+                    format!("Failed to serialize entry: {}", e),
+                ))
+            })?;
             self.db.put(key.as_bytes(), &data)?;
 
             // Update cache
@@ -173,11 +180,12 @@ impl RaftStorage {
         }
 
         // Update last_index in storage
-        let data = bincode::serialize(&cache.last_index)
-            .map_err(|e| Error::Io(std::io::Error::new(
+        let data = bincode::serialize(&cache.last_index).map_err(|e| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize last_index: {}", e)
-            )))?;
+                format!("Failed to serialize last_index: {}", e),
+            ))
+        })?;
         self.db.put(b"raft:last_index", &data)?;
 
         Ok(())
@@ -188,20 +196,21 @@ impl RaftStorage {
         let mut cache = self.cache.write();
 
         // Save snapshot metadata
-        let data = snapshot.write_to_bytes()
-            .map_err(|e| Error::Io(std::io::Error::new(
+        let data = snapshot.write_to_bytes().map_err(|e| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize snapshot: {}", e)
-            )))?;
+                format!("Failed to serialize snapshot: {}", e),
+            ))
+        })?;
         self.db.put(b"raft:snapshot", &data)?;
 
         // Update cache
         cache.snapshot_metadata = snapshot.clone();
-        
+
         // Clear old log entries before snapshot
         let metadata = snapshot.get_metadata();
         cache.first_index = metadata.index + 1;
-        
+
         // Update conf state from snapshot
         if metadata.has_conf_state() {
             let conf_state = metadata.get_conf_state().clone();
@@ -228,11 +237,12 @@ impl RaftStorage {
 
         // Update first index
         cache.first_index = compact_index;
-        let data = bincode::serialize(&cache.first_index)
-            .map_err(|e| Error::Io(std::io::Error::new(
+        let data = bincode::serialize(&cache.first_index).map_err(|e| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize first_index: {}", e)
-            )))?;
+                format!("Failed to serialize first_index: {}", e),
+            ))
+        })?;
         self.db.put(b"raft:first_index", &data)?;
 
         Ok(())
@@ -241,7 +251,7 @@ impl RaftStorage {
     /// Get log entries in the given range
     fn get_entries(&self, low: u64, high: u64, max_size: Option<u64>) -> Result<Vec<Entry>> {
         let cache = self.cache.read();
-        
+
         if low < cache.first_index {
             return Err(Error::ClusterError(format!(
                 "Log compacted: requested {} but first_index is {}",
@@ -262,12 +272,13 @@ impl RaftStorage {
         for idx in low..high {
             let key = format!("raft:log:{}", idx);
             if let Some(data) = self.db.get(key.as_bytes())? {
-                let entry = Entry::parse_from_bytes(&data)
-                    .map_err(|e| Error::Io(std::io::Error::new(
+                let entry = Entry::parse_from_bytes(&data).map_err(|e| {
+                    Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("Failed to parse entry: {}", e)
-                    )))?;
-                
+                        format!("Failed to parse entry: {}", e),
+                    ))
+                })?;
+
                 size += entry.data.len() as u64;
                 entries.push(entry);
 
@@ -287,27 +298,35 @@ impl RaftStorage {
 impl Storage for RaftStorage {
     fn initial_state(&self) -> RaftResult<RaftState> {
         let cache = self.cache.read();
-        Ok(RaftState {
-            hard_state: cache.hard_state.clone(),
-            conf_state: cache.conf_state.clone(),
-        })
+        Ok(
+            RaftState {
+                hard_state: cache.hard_state.clone(),
+                conf_state: cache.conf_state.clone(),
+            },
+        )
     }
 
-    fn entries(&self, low: u64, high: u64, max_size: impl Into<Option<u64>>, _context: GetEntriesContext) -> RaftResult<Vec<Entry>> {
+    fn entries(
+        &self,
+        low: u64,
+        high: u64,
+        max_size: impl Into<Option<u64>>,
+        _context: GetEntriesContext,
+    ) -> RaftResult<Vec<Entry>> {
         self.get_entries(low, high, max_size.into())
             .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))
     }
 
     fn term(&self, idx: u64) -> RaftResult<u64> {
         let cache = self.cache.read();
-        
+
         let snapshot_idx = cache.snapshot_metadata.get_metadata().index;
-        
+
         // Special case: snapshot index
         if idx == snapshot_idx {
             return Ok(cache.snapshot_metadata.get_metadata().term);
         }
-        
+
         if idx < cache.first_index {
             return Err(RaftError::Store(StorageError::Compacted));
         }
@@ -317,9 +336,11 @@ impl Storage for RaftStorage {
         }
 
         let key = format!("raft:log:{}", idx);
-        if let Some(data) = self.db.get(key.as_bytes()).map_err(|e| {
-            RaftError::Store(StorageError::Other(Box::new(e)))
-        })? {
+        if let Some(data) = self
+            .db
+            .get(key.as_bytes())
+            .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))?
+        {
             let entry = Entry::parse_from_bytes(&data)
                 .map_err(|e| RaftError::Store(StorageError::Other(Box::new(e))))?;
             Ok(entry.term)
@@ -340,7 +361,7 @@ impl Storage for RaftStorage {
 
     fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<Snapshot> {
         let cache = self.cache.read();
-        
+
         let snapshot_index = cache.snapshot_metadata.get_metadata().index;
 
         if request_index <= snapshot_index {
@@ -369,7 +390,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
         let cache = storage.cache.read();
         assert_eq!(cache.first_index, 1); // Raft log starts at index 1
-        assert_eq!(cache.last_index, 0);  // Empty log
+        assert_eq!(cache.last_index, 0); // Empty log
     }
 
     #[test]

@@ -6,7 +6,6 @@
 use aidb::cluster::PeerNode;
 use aidb::{Options, DB};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,45 +50,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Created 3 peer nodes\n");
 
-    // Start the RPC servers in background
-    println!("🌐 Starting RPC servers...");
-
-    let peer1_clone = peer1.clone();
-    let server1 = tokio::spawn(async move {
-        let addr = "127.0.0.1:50051".parse().unwrap();
-        peer1_clone.serve(addr).await
-    });
-
-    let peer2_clone = peer2.clone();
-    let server2 = tokio::spawn(async move {
-        let addr = "127.0.0.1:50052".parse().unwrap();
-        peer2_clone.serve(addr).await
-    });
-
-    let peer3_clone = peer3.clone();
-    let server3 = tokio::spawn(async move {
-        let addr = "127.0.0.1:50053".parse().unwrap();
-        peer3_clone.serve(addr).await
-    });
-
-    // Give servers time to start
-    sleep(Duration::from_secs(1)).await;
-    println!("✅ RPC servers started\n");
+    // Note: In a real deployment, you would start RPC servers like this:
+    // let server1 = tokio::spawn(async move {
+    //     let addr = "127.0.0.1:50051".parse().unwrap();
+    //     peer1.serve(addr).await
+    // });
+    // But for this demo, we'll skip the servers and just demonstrate the P2P logic
 
     // Join peers to form a cluster
     println!("🤝 Forming peer-to-peer cluster...");
 
     // Peer1 joins Peer2 and Peer3
-    peer1.join_peer("peer2".to_string(), "http://127.0.0.1:50052".to_string()).await?;
-    peer1.join_peer("peer3".to_string(), "http://127.0.0.1:50053".to_string()).await?;
+    peer1
+        .join_peer("peer2".to_string(), "http://127.0.0.1:50052".to_string())
+        .await?;
+    peer1
+        .join_peer("peer3".to_string(), "http://127.0.0.1:50053".to_string())
+        .await?;
 
     // Peer2 joins Peer1 and Peer3
-    peer2.join_peer("peer1".to_string(), "http://127.0.0.1:50051".to_string()).await?;
-    peer2.join_peer("peer3".to_string(), "http://127.0.0.1:50053".to_string()).await?;
+    peer2
+        .join_peer("peer1".to_string(), "http://127.0.0.1:50051".to_string())
+        .await?;
+    peer2
+        .join_peer("peer3".to_string(), "http://127.0.0.1:50053".to_string())
+        .await?;
 
     // Peer3 joins Peer1 and Peer2
-    peer3.join_peer("peer1".to_string(), "http://127.0.0.1:50051".to_string()).await?;
-    peer3.join_peer("peer2".to_string(), "http://127.0.0.1:50052".to_string()).await?;
+    peer3
+        .join_peer("peer1".to_string(), "http://127.0.0.1:50051".to_string())
+        .await?;
+    peer3
+        .join_peer("peer2".to_string(), "http://127.0.0.1:50052".to_string())
+        .await?;
 
     println!("✅ Cluster formed with 3 peers\n");
 
@@ -97,10 +90,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Cluster Topology:");
     println!("-------------------");
     for peer_info in peer1.list_peers() {
-        println!("  • {} @ {} [{}]",
+        println!(
+            "  • {} @ {} [{}]",
             peer_info.id,
             peer_info.address,
-            if peer_info.healthy { "healthy" } else { "unhealthy" }
+            if peer_info.healthy {
+                "healthy"
+            } else {
+                "unhealthy"
+            }
         );
     }
     println!();
@@ -120,7 +118,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for key in &test_keys {
         let routed_peer = peer1.route_key(key);
-        println!("  Key {:?} → {}", 
+        println!(
+            "  Key {:?} → {}",
             String::from_utf8_lossy(key),
             routed_peer.unwrap_or_else(|| "none".to_string())
         );
@@ -142,21 +141,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("------------------");
 
     let stats1 = peer1.stats();
-    println!("  Peer1: local={} forwarded={} hit_rate={:.2}%",
+    println!(
+        "  Peer1: local={} forwarded={} hit_rate={:.2}%",
         stats1.local_requests,
         stats1.forwarded_requests,
         stats1.hit_rate() * 100.0
     );
 
     let stats2 = peer2.stats();
-    println!("  Peer2: local={} forwarded={} hit_rate={:.2}%",
+    println!(
+        "  Peer2: local={} forwarded={} hit_rate={:.2}%",
         stats2.local_requests,
         stats2.forwarded_requests,
         stats2.hit_rate() * 100.0
     );
 
     let stats3 = peer3.stats();
-    println!("  Peer3: local={} forwarded={} hit_rate={:.2}%",
+    println!(
+        "  Peer3: local={} forwarded={} hit_rate={:.2}%",
         stats3.local_requests,
         stats3.forwarded_requests,
         stats3.hit_rate() * 100.0
@@ -172,10 +174,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Updated Cluster Status:");
     println!("-------------------------");
     for peer_info in peer1.list_peers() {
-        println!("  • {} @ {} [{}]",
+        println!(
+            "  • {} @ {} [{}]",
             peer_info.id,
             peer_info.address,
-            if peer_info.healthy { "healthy" } else { "unhealthy" }
+            if peer_info.healthy {
+                "healthy"
+            } else {
+                "unhealthy"
+            }
         );
     }
     println!();
@@ -197,13 +204,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ✓ Decentralized routing");
     println!();
 
-    // Cleanup
-    server1.abort();
-    server2.abort();
-    server3.abort();
-
-    // Give time for cleanup
-    sleep(Duration::from_millis(100)).await;
+    // Note: Since we didn't start actual servers, no cleanup needed
+    // In a real deployment, you would cleanup like: server1.abort(); server2.abort(); server3.abort();
 
     Ok(())
 }

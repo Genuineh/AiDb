@@ -1,7 +1,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up protobuf compiler for raft-cluster feature
     // protobuf-src provides a bundled protoc to avoid version issues
-    #[cfg(all(feature = "raft-cluster"))]
+    #[cfg(feature = "raft-cluster")]
     {
         #[cfg(feature = "protobuf-src")]
         {
