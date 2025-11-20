@@ -2,7 +2,9 @@
 
 > 本清单跟踪所有开发任务。更新时间：2025-11-20
 >
-> **最新更新**: 🚀 开始 OpenRaft 集成！(Phase 2) - 从 tikv/raft-rs 迁移到 openraft，实现 Storage 层重写，提供更强的一致性保证！
+> **最新更新**: 📋 Multi-Raft + 分片完整落地计划已创建！详见 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)
+>
+> **重要**: OpenRaft 集成 (Phase 2) 已完成 ✅ - 从 tikv/raft-rs 迁移到 openraft，Storage/Network/Node 层全部就绪！
 
 ## 📋 当前Sprint
 
@@ -288,6 +290,83 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
 3. ✅ 提供类型安全的 protobuf RPC 定义
 4. ✅ 使用 Rust native async traits (RPITIT)
 5. ✅ 零编译错误，生产就绪的代码架构
+
+---
+
+## 🎯 未来计划
+
+### 阶段8: Multi-Raft + 分片架构 (2025年12月 - 2026年2月) 📋 **规划中**
+
+**目标**: 从单 Raft Group 升级到 Multi-Raft + Sharding 架构，实现真正的横向扩展
+
+**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)  
+**🆕 薄复制计划**: 📄 [docs/THIN_REPLICATION_PLAN.md](docs/THIN_REPLICATION_PLAN.md)
+
+**预计工时**: 一人全职 9~11 周，两人并行 5~7 周
+
+#### 核心改造点
+
+- [ ] **🆕 阶段0: Thin Replication (薄复制)** (1周) 🔥
+  - [ ] 仅复制 WAL，不复制 SSTable
+  - [ ] WriteBatch 和 WriteOp 数据结构
+  - [ ] 状态机支持批量应用
+  - [ ] 独立 Compaction
+  - [ ] **收益**: 复制成本降低 90%+，写延迟降低 50%+
+
+- [ ] **阶段1: MetaRaft 实现** (1周)
+  - [ ] 全局元数据 Raft Group
+  - [ ] ClusterMeta 结构体（slot→group、group→replicas）
+  - [ ] MetaStateMachine 实现
+  - [ ] MetaRaft Node API
+
+- [ ] **阶段2: Multi-Raft 框架** (1.5周)
+  - [ ] ShardedRaftStorage（HashMap<GroupId, Storage>）
+  - [ ] Multi-Raft Network（按 group_id 分发）
+  - [ ] 动态创建 N 个 Raft Group
+  - [ ] 支持 100+ Group 并发运行
+
+- [ ] **阶段3: 分片路由 + Sharded AiDb** (2周)
+  - [ ] Slot 计算（crc16(key) % 16384）
+  - [ ] ShardedStateMachine（HashMap<GroupId, AiDb>）
+  - [ ] Router（本地缓存 + MetaRaft watch）
+  - [ ] 自动路由 key 到对应 Group
+
+- [ ] **阶段4: 动态成员管理** (1.5周)
+  - [ ] 节点自动加入 MetaRaft
+  - [ ] 副本自动分配算法
+  - [ ] change_membership() 自动触发
+  - [ ] Joint Consensus（零宕机）
+
+- [ ] **阶段5: 在线 Slot 迁移** (2周)
+  - [ ] Key-level 迁移（GET → MIGRATE → DEL）
+  - [ ] 批量 MIGRATE 命令
+  - [ ] 双写 + 异步捉补
+  - [ ] 更新 MetaRaft slot→group 映射
+
+- [ ] **阶段6: 优化 + 生产就绪** (1~2周)
+  - [ ] Group 本地快照独立
+  - [ ] Raft Log 清理策略
+  - [ ] Prometheus 指标（per-group latency、replication lag）
+  - [ ] 配置项（group_count=16384、replication_factor=3）
+
+#### 预期收益
+
+- 🚀 **复制成本**: 降低 90%+ (Stage 0 立即生效)
+- 🚀 **存储容量**: 100节点 × 1TB = ~30~50TB 可用（3副本）
+- ⚡ **写放大**: 仅 3~5 倍（而非节点数 N）
+- 📈 **延迟**: <1ms（仅 3~5 节点复制）
+- 💾 **横向扩展**: 支持万亿键、PB 级
+- 🔌 **协议兼容**: 兼容 Redis Cluster 协议
+- ☁️ **云原生**: 天然支持对象存储 (S3/OSS)
+
+#### 参考项目
+
+- **rdb**: https://github.com/MoSunDay/rdb (Rust + openraft + Multi-Raft)
+- **TiKV**: Multi-Raft + Thin Replication 生产实践
+- **CockroachDB**: Thin Replication 架构
+- **tikv/raft-rs**: multi_raft 示例
+- **Garnet**: 分片 + 元数据管理
+- **DragonflyDB**: Region 迁移逻辑
 
 ---
 
