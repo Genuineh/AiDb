@@ -6,12 +6,11 @@
 
 use std::sync::Arc;
 use parking_lot::RwLock;
-use tokio::sync::mpsc;
+
 
 #[cfg(feature = "raft-cluster")]
 use openraft::{
     Config, Raft, RaftMetrics,
-    raft::ClientWriteRequest,
     storage::Adaptor,
 };
 
@@ -85,14 +84,19 @@ impl OpenRaftNode {
             ..Default::default()
         };
         
-        raft_config.validate()
+        // validate() takes ownership, so we call it and get back the validated config
+        let raft_config = raft_config.validate()
             .map_err(|e| Error::ClusterError(format!("Invalid Raft config: {}", e)))?;
         
-        // Create Raft instance
+        // Store network factory for later use
+        let network_factory_clone = RaftNetworkClientFactory::new(config.node_id);
+        let network_factory_arc = Arc::new(RwLock::new(network_factory));
+        
+        // Create Raft instance - pass network factory directly (not wrapped in Arc)
         let raft = Raft::new(
             config.node_id,
             Arc::new(raft_config),
-            Arc::new(network_factory),
+            network_factory_clone,
             log_store,
             state_machine,
         ).await
@@ -101,7 +105,7 @@ impl OpenRaftNode {
         Ok(Self {
             node_id: config.node_id,
             raft: Arc::new(raft),
-            network_factory: Arc::new(RwLock::new(RaftNetworkClientFactory::new(config.node_id))),
+            network_factory: network_factory_arc,
         })
     }
     
@@ -150,9 +154,8 @@ impl OpenRaftNode {
     
     /// Propose a write operation
     pub async fn propose(&self, request: Request) -> Result<Response> {
-        let write_request = ClientWriteRequest::new(request);
-        
-        let response = self.raft.client_write(write_request)
+        // In openraft 0.9, client_write takes the app_data directly
+        let response = self.raft.client_write(request)
             .await
             .map_err(|e| Error::ClusterError(format!("Failed to propose: {}", e)))?;
         
@@ -184,7 +187,7 @@ impl OpenRaftNode {
     }
     
     /// Read with linearizable consistency (must go through Raft)
-    pub async fn linearizable_read(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+    pub async fn linearizable_read(&self, _key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         // For linearizable reads in openraft, we need to ensure we're the leader
         // and that our state is up to date
         
