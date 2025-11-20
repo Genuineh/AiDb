@@ -46,9 +46,17 @@ impl openraft::RaftTypeConfig for TypeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Put a key-value pair
-    Put { key: Vec<u8>, value: Vec<u8> },
+    Put {
+        /// Key to insert
+        key: Vec<u8>,
+        /// Value to insert
+        value: Vec<u8>,
+    },
     /// Delete a key
-    Delete { key: Vec<u8> },
+    Delete {
+        /// Key to delete
+        key: Vec<u8>,
+    },
 }
 
 /// Response type for state machine operations
@@ -337,7 +345,7 @@ impl OpenRaftStorage {
     }
 }
 
-// Snapshot builder for creating snapshots
+/// Snapshot builder for creating snapshots
 #[cfg(feature = "raft-cluster")]
 pub struct OpenRaftSnapshotBuilder {
     db: Arc<DB>,

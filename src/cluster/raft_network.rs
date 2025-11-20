@@ -21,8 +21,9 @@ use openraft::{
 
 use crate::cluster::raft_storage::{NodeId, TypeConfig};
 
-// Include the generated protobuf code
+/// Generated protobuf code for Raft RPC
 #[cfg(feature = "raft-cluster")]
+#[allow(missing_docs)]
 pub mod raft_rpc {
     tonic::include_proto!("aidb.raft");
 }
