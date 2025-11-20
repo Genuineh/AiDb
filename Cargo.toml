@@ -90,8 +90,8 @@ protobuf-src = { version = "1.1", optional = true }
 default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
-cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
-raft-cluster = ["cluster", "raft", "protobuf", "slog", "slog-stdlog", "protobuf-src"]
+cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream", "protobuf-src"]
+raft-cluster = ["cluster", "raft", "protobuf", "slog", "slog-stdlog"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 
