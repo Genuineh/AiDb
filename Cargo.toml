@@ -46,11 +46,8 @@ tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 
-# Raft consensus (optional, for raft-based cluster)
-raft = { version = "0.7", optional = true }
-protobuf = { version = "2.28", optional = true }
-slog = { version = "2.7", optional = true }
-slog-stdlog = { version = "4.1", optional = true }
+# Raft consensus (optional, for raft-based cluster) - using openraft
+openraft = { version = "0.9", features = ["serde"], optional = true }
 
 # Metrics and monitoring (optional, for monitoring features)
 prometheus = { version = "0.14", optional = true }
@@ -83,7 +80,7 @@ criterion = { version = "0.7", features = ["html_reports"] }
 
 [build-dependencies]
 tonic-build = "0.11"
-# Protobuf compiler for raft-proto (always included to avoid build issues)
+# Protobuf compiler for tonic-build (to avoid system dependency)
 protobuf-src = "1.1"
 
 [features]
@@ -91,7 +88,7 @@ default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
-raft-cluster = ["cluster", "raft", "protobuf", "slog", "slog-stdlog"]
+raft-cluster = ["cluster", "openraft"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 

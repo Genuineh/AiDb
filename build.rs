@@ -1,6 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Always set up protobuf compiler using protobuf-src
-    // This provides a bundled protoc to avoid version issues on all platforms
+    // Set up protobuf compiler using protobuf-src for tonic-build
     std::env::set_var("PROTOC", protobuf_src::protoc());
 
     // Only compile protobuf when building with the cluster feature
