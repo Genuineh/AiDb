@@ -46,6 +46,9 @@ tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 
+# Raft consensus (optional, for raft-based cluster) - using openraft
+openraft = { version = "0.9", features = ["serde"], optional = true }
+
 # Metrics and monitoring (optional, for monitoring features)
 prometheus = { version = "0.14", optional = true }
 lazy_static = { version = "1.4", optional = true }
@@ -77,12 +80,15 @@ criterion = { version = "0.7", features = ["html_reports"] }
 
 [build-dependencies]
 tonic-build = "0.11"
+# Protobuf compiler for tonic-build (to avoid system dependency)
+protobuf-src = "1.1"
 
 [features]
 default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
+raft-cluster = ["cluster", "openraft"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 
@@ -114,6 +120,26 @@ required-features = ["cluster"]
 name = "coordinator_demo"
 path = "examples/cluster/coordinator_demo.rs"
 required-features = ["cluster"]
+
+[[example]]
+name = "peer_to_peer_demo"
+path = "examples/cluster/peer_to_peer_demo.rs"
+required-features = ["cluster"]
+
+[[example]]
+name = "raft_cluster_demo"
+path = "examples/cluster/raft_cluster_demo.rs"
+required-features = ["raft-cluster"]
+
+[[example]]
+name = "raft_peer_cluster"
+path = "examples/cluster/raft_peer_cluster.rs"
+required-features = ["raft-cluster"]
+
+[[example]]
+name = "raft_integration_test"
+path = "examples/cluster/raft_integration_test.rs"
+required-features = ["raft-cluster"]
 
 # Monitoring examples (require --features monitoring)
 [[example]]

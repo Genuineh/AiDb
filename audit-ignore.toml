@@ -1,0 +1,16 @@
+# Cargo audit ignore file
+# This file contains security advisories that we've acknowledged but chosen not to fix immediately
+
+# ✅ RESOLVED - Migrated from raft-rs to openraft (2025-11-20)
+# Previously ignored RUSTSEC-2024-0437 (protobuf recursion) - NO LONGER PRESENT
+# Previously ignored RUSTSEC-2025-0057 (fxhash unmaintained) - NO LONGER PRESENT
+
+# RUSTSEC-2025-0119: number_prefix - unmaintained
+# Status: Acknowledged - Transitive dependency from indicatif
+# Context: number_prefix is used by indicatif for CLI progress bars (dev/optional feature)
+# Impact: Very Low - Only used in CLI tool (optional feature), not in core library
+# Plan: Consider alternative progress bar library or wait for indicatif update
+[advisories.unmaintained]
+ignore = [
+    "RUSTSEC-2025-0119",  # number_prefix unmaintained - transitive from indicatif (CLI only)
+]

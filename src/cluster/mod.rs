@@ -37,6 +37,21 @@ pub mod scaling;
 pub mod autoscaler;
 
 #[cfg(feature = "cluster")]
+pub mod peer;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_storage;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_node;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_transport;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_peer;
+
+#[cfg(feature = "cluster")]
 pub use primary::PrimaryNode;
 
 #[cfg(feature = "cluster")]
@@ -59,3 +74,20 @@ pub use scaling::{ScalingConfig, ScalingManager, ScalingStats};
 
 #[cfg(feature = "cluster")]
 pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
+
+#[cfg(feature = "cluster")]
+pub use peer::{PeerInfo, PeerNode, PeerStats};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_storage::RaftStorage;
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_node::{
+    encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
+};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_transport::{RaftPeer, RaftTransport};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_peer::RaftBasedPeer;
