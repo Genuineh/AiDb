@@ -167,7 +167,7 @@ impl OpenRaftStorage {
     }
 
     /// Save vote to persistent storage
-    fn save_vote(&self, vote: &Vote<NodeId>) -> Result<()> {
+    fn save_vote_internal(&self, vote: &Vote<NodeId>) -> Result<()> {
         let data = bincode::serialize(vote).map_err(|e| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -175,6 +175,11 @@ impl OpenRaftStorage {
             ))
         })?;
         self.db.put(b"raft:vote", &data)?;
+
+        // Update cache
+        let mut state = self.state.write();
+        state.vote = Some(*vote);
+
         Ok(())
     }
 
@@ -316,7 +321,7 @@ impl OpenRaftStorage {
     }
 
     /// Purge log entries up to a specific log ID
-    fn purge_logs_upto(&self, log_id: LogId<NodeId>) -> Result<()> {
+    fn purge_logs_upto_internal(&self, log_id: LogId<NodeId>) -> Result<()> {
         let mut state = self.state.write();
 
         let start_index = if let Some(ref purged) = state.last_purged_log_id {
@@ -355,20 +360,18 @@ pub struct OpenRaftSnapshotBuilder {
 
 // Implement RaftLogReader trait for OpenRaftStorage
 #[cfg(feature = "raft-cluster")]
-#[async_trait::async_trait]
 impl RaftLogReader<TypeConfig> for OpenRaftStorage {
-    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
+    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send>(
         &mut self,
         range: RB,
     ) -> std::result::Result<Vec<Entry<TypeConfig>>, StorageError<NodeId>> {
         self.get_log_entries(range)
-            .map_err(|e| StorageError::IO { source: StorageIOError::read(&e) })
+            .map_err(|e| StorageError::IO { source: StorageIOError::read(openraft::AnyError::error(e.to_string())) })
     }
 }
 
 // Implement RaftSnapshotBuilder trait for creating snapshots
 #[cfg(feature = "raft-cluster")]
-#[async_trait::async_trait]
 impl RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
     async fn build_snapshot(
         &mut self,
@@ -382,13 +385,13 @@ impl RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
 
         // Get current snapshot metadata from storage
         let storage_state = self.db.get(b"raft:snapshot_meta").map_err(|e| {
-            StorageError::IO { source: StorageIOError::read(&e) }
+            StorageError::IO { source: StorageIOError::read(openraft::AnyError::error(e.to_string())) }
         })?;
 
         let meta: SnapshotMeta<NodeId, BasicNode> = if let Some(data) = storage_state {
             bincode::deserialize(&data).map_err(|e| {
                 StorageError::IO {
-                    source: StorageIOError::read(&format!("Failed to deserialize snapshot_meta: {}", e)),
+                    source: StorageIOError::read(openraft::AnyError::error(format!("Failed to deserialize snapshot_meta: {}", e)))
                 }
             })?
         } else {
@@ -406,7 +409,6 @@ impl RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
 
 // Implement RaftStorage trait for OpenRaftStorage
 #[cfg(feature = "raft-cluster")]
-#[async_trait::async_trait]
 impl RaftStorage<TypeConfig> for OpenRaftStorage {
     type LogReader = Self;
     type SnapshotBuilder = OpenRaftSnapshotBuilder;
@@ -434,8 +436,8 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         &mut self,
         vote: &Vote<NodeId>,
     ) -> std::result::Result<(), StorageError<NodeId>> {
-        self.save_vote(vote)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+        self.save_vote_internal(vote)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })
     }
 
     async fn read_vote(
@@ -452,11 +454,10 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
     ) -> std::result::Result<(), StorageError<NodeId>>
     where
         I: IntoIterator<Item = Entry<TypeConfig>> + Send,
-        I::IntoIter: Send,
     {
         let entries_vec: Vec<_> = entries.into_iter().collect();
         self.append_log_entries(&entries_vec)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })
     }
 
     async fn delete_conflict_logs_since(
@@ -464,15 +465,15 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         log_id: LogId<NodeId>,
     ) -> std::result::Result<(), StorageError<NodeId>> {
         self.delete_logs_from(log_id)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })
     }
 
     async fn purge_logs_upto(
         &mut self,
         log_id: LogId<NodeId>,
     ) -> std::result::Result<(), StorageError<NodeId>> {
-        self.purge_logs_upto(log_id)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })
+        self.purge_logs_upto_internal(log_id)
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })
     }
 
     // State machine methods
@@ -486,11 +487,11 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         
         // Get last membership from storage
         let membership = if let Some(data) = self.db.get(b"raft:membership")
-            .map_err(|e| StorageError::IO { source: StorageIOError::read(&e) })?
+            .map_err(|e| StorageError::IO { source: StorageIOError::read(openraft::AnyError::error(e.to_string())) })?
         {
             bincode::deserialize(&data).map_err(|e| {
                 StorageError::IO {
-                    source: StorageIOError::read(&format!("Failed to deserialize membership: {}", e)),
+                    source: StorageIOError::read(openraft::AnyError::error(format!("Failed to deserialize membership: {}", e)))
                 }
             })?
         } else {
@@ -507,27 +508,20 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         let mut responses = Vec::new();
 
         for entry in entries {
-            if let EntryPayload::Normal(ref data) = entry.payload {
-                // Deserialize the request
-                let request: Request = bincode::deserialize(&data.data).map_err(|e| {
-                    StorageError::IO {
-                        source: StorageIOError::read(&format!("Failed to deserialize request: {}", e)),
-                    }
-                })?;
-
+            if let EntryPayload::Normal(ref request) = entry.payload {
                 // Apply the request to the state machine
                 let response = match request {
                     Request::Put { key, value } => {
-                        let sm_key = format!("sm:{}", String::from_utf8_lossy(&key));
-                        self.db.put(sm_key.as_bytes(), &value).map_err(|e| {
-                            StorageError::IO { source: StorageIOError::write(&e) }
+                        let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
+                        self.db.put(sm_key.as_bytes(), value).map_err(|e| {
+                            StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) }
                         })?;
                         Response::Ok
                     }
                     Request::Delete { key } => {
-                        let sm_key = format!("sm:{}", String::from_utf8_lossy(&key));
+                        let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
                         self.db.delete(sm_key.as_bytes()).map_err(|e| {
-                            StorageError::IO { source: StorageIOError::write(&e) }
+                            StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) }
                         })?;
                         Response::Ok
                     }
@@ -542,11 +536,11 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                 // Persist last applied
                 let data = bincode::serialize(&entry.log_id).map_err(|e| {
                     StorageError::IO {
-                        source: StorageIOError::write(&format!("Failed to serialize last_applied: {}", e)),
+                        source: StorageIOError::write(openraft::AnyError::error(format!("Failed to serialize last_applied: {}", e)))
                     }
                 })?;
                 self.db.put(b"raft:last_applied", &data).map_err(|e| {
-                    StorageError::IO { source: StorageIOError::write(&e) }
+                    StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) }
                 })?;
             } else {
                 responses.push(Response::Ok);
@@ -568,7 +562,7 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
 
         // Get snapshot data from storage
         let snapshot_data = self.db.get(b"raft:snapshot_data").map_err(|e| {
-            StorageError::IO { source: StorageIOError::read(&e) }
+            StorageError::IO { source: StorageIOError::read(openraft::AnyError::error(e.to_string())) }
         })?;
 
         match (state.snapshot_meta.as_ref(), snapshot_data) {
@@ -588,8 +582,9 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
 
     async fn begin_receiving_snapshot(
         &mut self,
-    ) -> std::result::Result<Box<Self::SnapshotBuilder>, StorageError<NodeId>> {
-        Ok(Box::new(OpenRaftSnapshotBuilder { db: self.db.clone() }))
+    ) -> std::result::Result<Box<Cursor<Vec<u8>>>, StorageError<NodeId>> {
+        // Return an empty cursor for receiving snapshot data
+        Ok(Box::new(Cursor::new(Vec::new())))
     }
 
     async fn install_snapshot(
@@ -602,16 +597,16 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         // Save snapshot metadata
         let meta_data = bincode::serialize(meta).map_err(|e| {
             StorageError::IO {
-                source: StorageIOError::write(&format!("Failed to serialize snapshot meta: {}", e)),
+                source: StorageIOError::write(openraft::AnyError::error(format!("Failed to serialize snapshot meta: {}", e)))
             }
         })?;
         self.db.put(b"raft:snapshot_meta", &meta_data)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })?;
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })?;
 
         // Save snapshot data
         let snapshot_data = snapshot.into_inner();
         self.db.put(b"raft:snapshot_data", &snapshot_data)
-            .map_err(|e| StorageError::IO { source: StorageIOError::write(&e) })?;
+            .map_err(|e| StorageError::IO { source: StorageIOError::write(openraft::AnyError::error(e.to_string())) })?;
 
         // Update state
         state.snapshot_meta = Some(meta.clone());
