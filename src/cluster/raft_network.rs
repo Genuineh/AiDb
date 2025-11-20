@@ -90,7 +90,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         }
 
         let request = raft_rpc::AppendEntriesRequest {
-            group_id: 0,  // Default group for single-Raft mode
+            group_id: 0, // Default group for single-Raft mode
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,
@@ -150,7 +150,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
 
         // In openraft 0.9, snapshots are sent in chunks
         let request = raft_rpc::InstallSnapshotRequest {
-            group_id: 0,  // Default group for single-Raft mode
+            group_id: 0, // Default group for single-Raft mode
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,
@@ -187,7 +187,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         let request = raft_rpc::VoteRequest {
-            group_id: 0,  // Default group for single-Raft mode
+            group_id: 0, // Default group for single-Raft mode
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,

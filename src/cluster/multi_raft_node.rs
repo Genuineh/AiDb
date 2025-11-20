@@ -319,15 +319,10 @@ impl MultiRaftNode {
                     .validate()
                     .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
 
-                let raft = Raft::new(
-                    self.node_id,
-                    Arc::new(config),
-                    network,
-                    log_store,
-                    state_machine,
-                )
-                .await
-                .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
+                let raft =
+                    Raft::new(self.node_id, Arc::new(config), network, log_store, state_machine)
+                        .await
+                        .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
 
                 let mut groups = self.groups.write();
                 groups.insert(group_id, Arc::new(raft));

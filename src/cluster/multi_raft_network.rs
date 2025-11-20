@@ -119,9 +119,7 @@ impl MultiRaftNetworkFactory {
         let addresses = self.node_addresses.read();
         let target_addr = addresses
             .get(&target)
-            .ok_or_else(|| {
-                AiDbError::Internal(format!("Node {} address not found", target))
-            })?
+            .ok_or_else(|| AiDbError::Internal(format!("Node {} address not found", target)))?
             .clone();
 
         Ok(RaftNetworkClient::new(self.node_id, target, target_addr))
@@ -157,10 +155,10 @@ mod tests {
     #[test]
     fn test_add_and_get_node() {
         let factory = MultiRaftNetworkFactory::new(1);
-        
+
         factory.add_node(2, "127.0.0.1:50052".to_string());
         factory.add_node(3, "127.0.0.1:50053".to_string());
-        
+
         assert_eq!(factory.get_node_address(2), Some("127.0.0.1:50052".to_string()));
         assert_eq!(factory.get_node_address(3), Some("127.0.0.1:50053".to_string()));
         assert_eq!(factory.get_node_address(4), None);
@@ -169,10 +167,10 @@ mod tests {
     #[test]
     fn test_remove_node() {
         let factory = MultiRaftNetworkFactory::new(1);
-        
+
         factory.add_node(2, "127.0.0.1:50052".to_string());
         assert!(factory.get_node_address(2).is_some());
-        
+
         factory.remove_node(2);
         assert!(factory.get_node_address(2).is_none());
     }
@@ -181,7 +179,7 @@ mod tests {
     fn test_create_client() {
         let factory = MultiRaftNetworkFactory::new(1);
         factory.add_node(2, "127.0.0.1:50052".to_string());
-        
+
         let client = factory.create_client(100, 2).unwrap();
         // Client created successfully
         assert!(true);
@@ -190,7 +188,7 @@ mod tests {
     #[test]
     fn test_create_client_missing_node() {
         let factory = MultiRaftNetworkFactory::new(1);
-        
+
         let result = factory.create_client(100, 999);
         assert!(result.is_err());
     }
@@ -199,7 +197,7 @@ mod tests {
     fn test_factory_clone() {
         let factory1 = MultiRaftNetworkFactory::new(1);
         factory1.add_node(2, "127.0.0.1:50052".to_string());
-        
+
         let factory2 = factory1.clone();
         assert_eq!(factory2.get_node_address(2), Some("127.0.0.1:50052".to_string()));
     }

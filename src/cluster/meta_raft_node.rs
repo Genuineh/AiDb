@@ -3,7 +3,6 @@
 //! This module implements a specialized Raft node for managing global cluster metadata,
 //! including slot mappings, group information, and node status.
 
-use parking_lot::RwLock;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -125,11 +124,7 @@ impl MetaRaftNode {
     }
 
     /// Change cluster membership
-    pub async fn change_membership(
-        &self,
-        members: BTreeSet<NodeId>,
-        retain: bool,
-    ) -> Result<()> {
+    pub async fn change_membership(&self, members: BTreeSet<NodeId>, retain: bool) -> Result<()> {
         self.raft
             .change_membership(members, retain)
             .await
@@ -226,10 +221,7 @@ impl MetaRaftNode {
             .map_err(|e| Error::Internal(format!("Failed to serialize request: {}", e)))?;
 
         // Wrap in a Request::WriteBatch for compatibility with existing state machine
-        let batch_request = Request::Put {
-            key: b"meta:request".to_vec(),
-            value: data,
-        };
+        let batch_request = Request::Put { key: b"meta:request".to_vec(), value: data };
 
         // Propose through Raft
         let response = self
@@ -244,10 +236,7 @@ impl MetaRaftNode {
 
     /// Check if this node is the leader
     pub async fn is_leader(&self) -> bool {
-        self.raft
-            .ensure_linearizable()
-            .await
-            .is_ok()
+        self.raft.ensure_linearizable().await.is_ok()
     }
 
     /// Get the current leader ID
