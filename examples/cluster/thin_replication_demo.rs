@@ -121,7 +121,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let large_batch_size = large_batch.estimate_size();
-    println!("📊 Large batch size: {} bytes (~{} KB)", large_batch_size, large_batch_size / 1024);
+    println!(
+        "📊 Large batch size: {} bytes (~{} KB)",
+        large_batch_size,
+        large_batch_size / 1024
+    );
     println!("   Number of operations: {}\n", large_batch.len());
 
     match node1.write_batch(large_batch).await {
@@ -131,8 +135,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n💡 Cost comparison:");
     println!("   Thin replication (actual):  ~{} KB", large_batch_size / 1024);
-    println!("   Fat replication (if used):  ~{} KB (estimate, 10-100x larger)", 
-             (large_batch_size * 10) / 1024);
+    println!(
+        "   Fat replication (if used):  ~{} KB (estimate, 10-100x larger)",
+        (large_batch_size * 10) / 1024
+    );
     println!("   Savings:                    > 90%\n");
 
     // === Demonstration 4: Mixed Operations ===

@@ -197,7 +197,10 @@ impl OpenRaftNode {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn write_batch(&self, batch: crate::cluster::thin_replication::WriteBatch) -> Result<()> {
+    pub async fn write_batch(
+        &self,
+        batch: crate::cluster::thin_replication::WriteBatch,
+    ) -> Result<()> {
         let request = Request::WriteBatch(batch);
         let response = self.propose(request).await?;
 

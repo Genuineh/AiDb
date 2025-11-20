@@ -201,7 +201,10 @@ impl OpenRaftStorage {
     /// # Returns
     ///
     /// * `Result<()>` - Ok if successful, Error otherwise
-    fn apply_batch_internal(&self, batch: &crate::cluster::thin_replication::WriteBatch) -> Result<()> {
+    fn apply_batch_internal(
+        &self,
+        batch: &crate::cluster::thin_replication::WriteBatch,
+    ) -> Result<()> {
         use crate::cluster::thin_replication::WriteOp;
 
         // Use AiDb's native WriteBatch for atomic application
@@ -873,7 +876,7 @@ mod tests {
 
         let mut batch = WriteBatch::new();
         batch.put(vec![0u8; 100], vec![0u8; 1024]); // 100B key + 1KB value
-        batch.put(vec![0u8; 50], vec![0u8; 512]);   // 50B key + 512B value
+        batch.put(vec![0u8; 50], vec![0u8; 512]); // 50B key + 512B value
 
         let size = batch.estimate_size();
         // Should be roughly (100 + 1024 + 16) + (50 + 512 + 16) = ~1718

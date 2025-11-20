@@ -344,11 +344,7 @@ mod tests {
 
     #[test]
     fn test_write_op_serialization() {
-        let op = WriteOp::Put {
-            key: b"test".to_vec(),
-            value: b"data".to_vec(),
-            ts: Some(123456),
-        };
+        let op = WriteOp::Put { key: b"test".to_vec(), value: b"data".to_vec(), ts: Some(123456) };
 
         let serialized = bincode::serialize(&op).unwrap();
         let deserialized: WriteOp = bincode::deserialize(&serialized).unwrap();
