@@ -83,14 +83,14 @@ criterion = { version = "0.7", features = ["html_reports"] }
 
 [build-dependencies]
 tonic-build = "0.11"
-# Protobuf compiler for raft-proto (required for raft-cluster feature)
-protobuf-src = { version = "1.1", optional = true }
+# Protobuf compiler for raft-proto (always included to avoid build issues)
+protobuf-src = "1.1"
 
 [features]
 default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
-cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream", "protobuf-src"]
+cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
 raft-cluster = ["cluster", "raft", "protobuf", "slog", "slog-stdlog"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
