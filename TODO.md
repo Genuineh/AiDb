@@ -315,13 +315,14 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
   - [x] 19 个测试（12 个 thin_replication + 7 个集成测试）
   - [x] thin_replication_demo.rs 示例程序
 
-- [ ] **阶段1: MetaRaft 实现** (1周)
-  - [ ] 全局元数据 Raft Group
-  - [ ] ClusterMeta 结构体（slot→group、group→replicas）
-  - [ ] MetaStateMachine 实现
-  - [ ] MetaRaft Node API
+- [ ] **阶段1: MetaRaft 实现** (1周) 📝 **部分完成**
+  - [x] 全局元数据 Raft Group 数据结构
+  - [x] ClusterMeta 结构体（slot→group、group→replicas）
+  - [x] MetaStateMachine 实现（apply_meta_request）
+  - [ ] MetaRaft Node API（待实现）
+  - [ ] 集成测试（待实现）
 
-- [ ] **阶段2: Multi-Raft 框架** (1.5周)
+- [ ] **阶段2: Multi-Raft 框架** (1.5周) ⭐ **当前阶段**
   - [ ] ShardedRaftStorage（HashMap<GroupId, Storage>）
   - [ ] Multi-Raft Network（按 group_id 分发）
   - [ ] 动态创建 N 个 Raft Group
