@@ -133,8 +133,8 @@ path = "examples/cluster/openraft_demo.rs"
 required-features = ["raft-cluster"]
 
 [[example]]
-name = "raft_cluster_demo"
-path = "examples/cluster/raft_cluster_demo.rs"
+name = "raft_cluster_demo_old"
+path = "examples/cluster/raft_cluster_demo_old.rs"
 required-features = ["raft-cluster"]
 
 [[example]]

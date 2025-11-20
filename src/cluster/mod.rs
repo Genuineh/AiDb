@@ -52,7 +52,7 @@ pub mod raft_node_new;
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
 
-// TODO: Phase 4 - Rewrite for openraft  
+// TODO: Phase 4 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_node;
 
@@ -87,7 +87,7 @@ pub use autoscaler::{AutoScaler, ScalingDecision, ScalingPolicy, SystemMetrics};
 pub use peer::{PeerInfo, PeerNode, PeerStats};
 
 #[cfg(feature = "raft-cluster")]
-pub use raft_storage::{OpenRaftStorage, TypeConfig, NodeId, Request, Response};
+pub use raft_storage::{NodeId, OpenRaftStorage, Request, Response, TypeConfig};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory};
