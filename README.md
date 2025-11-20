@@ -364,6 +364,11 @@ cargo build --features cluster
 - **[用户指南](docs/USER_GUIDE.md)** - 完整的使用说明
 - **[最佳实践](docs/BEST_PRACTICES.md)** - 生产环境指南
 
+### Multi-Raft + 分片架构 (规划中) 🚀
+- **[⭐ Multi-Raft 完整落地计划](docs/MULTI_RAFT_SHARDING_PLAN.md)** - 6 阶段详细实施方案
+- **[架构图解](docs/MULTI_RAFT_ARCHITECTURE.md)** - 可视化架构说明
+- **[快速上手指南](docs/MULTI_RAFT_QUICKSTART.md)** - 开发者 10 分钟入门
+
 ### 开发文档
 - **[开发指南](docs/DEVELOPMENT.md)** - 如何参与开发
 - **[CI/CD 流程](docs/CICD.md)** - 持续集成和发布流程
@@ -468,6 +473,26 @@ aidb/
 - [x] aidb-admin CLI工具
 
 **🎉 所有阶段已完成！项目已达到生产就绪状态！**
+
+### 阶段7: Multi-Raft + 分片 (2025年12月 - 2026年2月) 📋 **规划中**
+
+**目标**: 从单 Raft Group 升级到真正的横向扩展架构
+
+核心改造：
+- 🔹 MetaRaft 全局元数据管理
+- 🔹 16384 个独立 Raft Groups
+- 🔹 分片路由（crc16 slot 计算）
+- 🔹 动态成员管理和副本分配
+- 🔹 在线 Slot 迁移（零停机）
+- 🔹 完整监控和运维工具
+
+**预期收益**:
+- 🚀 容量随节点数线性增长（从 1TB → 30~50TB，100节点）
+- ⚡ 写放大固定 3~5 倍（而非节点数 N）
+- 📈 延迟稳定 < 1ms（不受节点数影响）
+- 💾 支持 PB 级存储、万亿键
+
+**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)
 
 详细计划：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 
