@@ -48,6 +48,9 @@ pub mod raft_network;
 #[cfg(feature = "raft-cluster")]
 pub mod raft_node_new;
 
+#[cfg(feature = "raft-cluster")]
+pub mod thin_replication;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -94,6 +97,9 @@ pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_node_new::{OpenRaftNode, RaftNodeConfig};
+
+#[cfg(feature = "raft-cluster")]
+pub use thin_replication::{WriteBatch as ThinWriteBatch, WriteOp as ThinWriteOp};
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
