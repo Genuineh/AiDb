@@ -51,6 +51,9 @@ pub mod raft_node_new;
 #[cfg(feature = "raft-cluster")]
 pub mod thin_replication;
 
+#[cfg(feature = "raft-cluster")]
+pub mod meta_types;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -100,6 +103,12 @@ pub use raft_node_new::{OpenRaftNode, RaftNodeConfig};
 
 #[cfg(feature = "raft-cluster")]
 pub use thin_replication::{WriteBatch as ThinWriteBatch, WriteOp as ThinWriteOp};
+
+#[cfg(feature = "raft-cluster")]
+pub use meta_types::{
+    ClusterMeta, GroupMeta, MetaRequest, MetaResponse, NodeInfo as MetaNodeInfo, NodeStatus,
+    SlotMigration, SlotMigrationState,
+};
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
