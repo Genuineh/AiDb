@@ -132,6 +132,11 @@ name = "openraft_demo"
 path = "examples/cluster/openraft_demo.rs"
 required-features = ["raft-cluster"]
 
+[[example]]
+name = "thin_replication_demo"
+path = "examples/cluster/thin_replication_demo.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"

@@ -42,21 +42,47 @@ impl openraft::RaftTypeConfig for TypeConfig {
     type Responder = openraft::impls::OneshotResponder<TypeConfig>;
 }
 
-/// Request type for state machine operations
+/// Request type for state machine operations (Thin Replication Support)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    /// Put a key-value pair
+    /// Single put operation (backward compatible)
     Put {
         /// Key to insert
         key: Vec<u8>,
         /// Value to insert
         value: Vec<u8>,
     },
-    /// Delete a key
+    /// Single delete operation (backward compatible)
     Delete {
         /// Key to delete
         key: Vec<u8>,
     },
+    /// Batch write operations (thin replication)
+    WriteBatch(crate::cluster::thin_replication::WriteBatch),
+}
+
+impl Request {
+    /// Convert to WriteBatch for uniform processing
+    ///
+    /// This method provides backward compatibility by converting single
+    /// operations to batches, allowing the state machine to handle all
+    /// requests uniformly.
+    pub fn to_batch(self) -> crate::cluster::thin_replication::WriteBatch {
+        use crate::cluster::thin_replication::WriteBatch;
+        match self {
+            Request::Put { key, value } => {
+                let mut batch = WriteBatch::new();
+                batch.put(key, value);
+                batch
+            }
+            Request::Delete { key } => {
+                let mut batch = WriteBatch::new();
+                batch.delete(key);
+                batch
+            }
+            Request::WriteBatch(batch) => batch,
+        }
+    }
 }
 
 /// Response type for state machine operations
@@ -158,6 +184,49 @@ impl OpenRaftStorage {
                 ))
             })?);
         }
+
+        Ok(())
+    }
+
+    /// Apply a WriteBatch to the local DB (Thin Replication)
+    ///
+    /// This method applies a batch of write operations to the local database.
+    /// Each node independently applies these operations, enabling thin replication
+    /// where only WAL entries (WriteOps) are replicated, not the full SSTables.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The batch of write operations to apply
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - Ok if successful, Error otherwise
+    fn apply_batch_internal(
+        &self,
+        batch: &crate::cluster::thin_replication::WriteBatch,
+    ) -> Result<()> {
+        use crate::cluster::thin_replication::WriteOp;
+
+        // Use AiDb's native WriteBatch for atomic application
+        let mut db_batch = crate::WriteBatch::new();
+
+        for op in batch.iter() {
+            match op {
+                WriteOp::Put { key, value, .. } => {
+                    // Add "sm:" prefix for state machine data
+                    let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
+                    db_batch.put(sm_key.as_bytes(), value);
+                }
+                WriteOp::Delete { key, .. } => {
+                    // Add "sm:" prefix for state machine data
+                    let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
+                    db_batch.delete(sm_key.as_bytes());
+                }
+            }
+        }
+
+        // Write batch atomically
+        self.db.write(db_batch)?;
 
         Ok(())
     }
@@ -507,22 +576,13 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
 
         for entry in entries {
             if let EntryPayload::Normal(ref request) = entry.payload {
-                // Apply the request to the state machine
-                let response = match request {
-                    Request::Put { key, value } => {
-                        let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
-                        self.db.put(sm_key.as_bytes(), value).map_err(|e| StorageError::IO {
-                            source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
-                        })?;
-                        Response::Ok
-                    }
-                    Request::Delete { key } => {
-                        let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
-                        self.db.delete(sm_key.as_bytes()).map_err(|e| StorageError::IO {
-                            source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
-                        })?;
-                        Response::Ok
-                    }
+                // Convert request to WriteBatch (thin replication)
+                let batch = request.clone().to_batch();
+
+                // Apply batch to local DB
+                let response = match self.apply_batch_internal(&batch) {
+                    Ok(_) => Response::Ok,
+                    Err(e) => Response::Error(format!("Apply failed: {}", e)),
                 };
 
                 responses.push(response);
@@ -713,5 +773,117 @@ mod tests {
         let retrieved = storage.get_log_entries(3..4).unwrap();
         assert_eq!(retrieved.len(), 1);
         assert_eq!(retrieved[0].log_id.index, 3);
+    }
+
+    // ===== Thin Replication Tests =====
+
+    #[test]
+    fn test_apply_batch_internal_single_put() {
+        use crate::cluster::thin_replication::WriteBatch;
+
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut batch = WriteBatch::new();
+        batch.put(b"key1".to_vec(), b"value1".to_vec());
+
+        storage.apply_batch_internal(&batch).unwrap();
+
+        // Verify data was written with "sm:" prefix
+        let value = storage.db.get(b"sm:key1").unwrap();
+        assert_eq!(value, Some(b"value1".to_vec()));
+    }
+
+    #[test]
+    fn test_apply_batch_internal_multiple_ops() {
+        use crate::cluster::thin_replication::WriteBatch;
+
+        let (storage, _temp_dir) = create_test_storage();
+
+        // First write some data
+        storage.db.put(b"sm:key2", b"old_value").unwrap();
+
+        let mut batch = WriteBatch::new();
+        batch.put(b"key1".to_vec(), b"value1".to_vec());
+        batch.put(b"key2".to_vec(), b"new_value".to_vec());
+        batch.delete(b"key3".to_vec());
+
+        storage.apply_batch_internal(&batch).unwrap();
+
+        // Verify all operations applied
+        let value1 = storage.db.get(b"sm:key1").unwrap();
+        assert_eq!(value1, Some(b"value1".to_vec()));
+
+        let value2 = storage.db.get(b"sm:key2").unwrap();
+        assert_eq!(value2, Some(b"new_value".to_vec()));
+
+        let value3 = storage.db.get(b"sm:key3").unwrap();
+        assert_eq!(value3, None);
+    }
+
+    #[test]
+    fn test_apply_batch_internal_with_timestamps() {
+        use crate::cluster::thin_replication::WriteBatch;
+
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut batch = WriteBatch::new();
+        batch.put_with_ts(b"key1".to_vec(), b"value1".to_vec(), 12345);
+        batch.delete_with_ts(b"key2".to_vec(), 12346);
+
+        // Should work fine - timestamps are preserved in the ops but not used yet
+        storage.apply_batch_internal(&batch).unwrap();
+
+        let value1 = storage.db.get(b"sm:key1").unwrap();
+        assert_eq!(value1, Some(b"value1".to_vec()));
+    }
+
+    #[test]
+    fn test_request_to_batch_put() {
+        let request = Request::Put { key: b"key".to_vec(), value: b"value".to_vec() };
+        let batch = request.to_batch();
+
+        assert_eq!(batch.len(), 1);
+        assert!(!batch.is_empty());
+    }
+
+    #[test]
+    fn test_request_to_batch_delete() {
+        let request = Request::Delete { key: b"key".to_vec() };
+        let batch = request.to_batch();
+
+        assert_eq!(batch.len(), 1);
+        assert!(!batch.is_empty());
+    }
+
+    #[test]
+    fn test_request_to_batch_writebatch() {
+        use crate::cluster::thin_replication::WriteBatch;
+
+        let mut wb = WriteBatch::new();
+        wb.put(b"key1".to_vec(), b"value1".to_vec());
+        wb.delete(b"key2".to_vec());
+
+        let request = Request::WriteBatch(wb.clone());
+        let batch = request.to_batch();
+
+        assert_eq!(batch.len(), 2);
+        assert_eq!(batch.ops, wb.ops);
+    }
+
+    #[test]
+    fn test_batch_estimate_size() {
+        use crate::cluster::thin_replication::WriteBatch;
+
+        let mut batch = WriteBatch::new();
+        batch.put(vec![0u8; 100], vec![0u8; 1024]); // 100B key + 1KB value
+        batch.put(vec![0u8; 50], vec![0u8; 512]); // 50B key + 512B value
+
+        let size = batch.estimate_size();
+        // Should be roughly (100 + 1024 + 16) + (50 + 512 + 16) = ~1718
+        assert!(size > 1600);
+        assert!(size < 2000);
+
+        // Compare to full SSTable replication (would be much larger after compaction)
+        println!("Thin replication size: {} bytes", size);
     }
 }
