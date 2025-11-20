@@ -129,9 +129,9 @@ All breaking changes from openraft 0.9 have been resolved:
 - `src/cluster/mod.rs` - Updated exports for new types
 - `TODO.md` - Marked all phases complete
 
-### Files Renamed/Backed Up
-- `raft_node.rs` → `raft_node_old.rs` (old tikv/raft-rs implementation)
-- `raft_cluster_demo.rs` → `raft_cluster_demo_old.rs` (old example)
+### Files Renamed/Backed Up (Now Removed in v0.3.0)
+- `raft_node.rs` → `raft_node_old.rs` (old tikv/raft-rs implementation) - **Removed in v0.3.0**
+- `raft_cluster_demo.rs` → `raft_cluster_demo_old.rs` (old example) - **Removed in v0.3.0**
 
 ## Working Examples
 
@@ -147,11 +147,13 @@ Demonstrates:
 - Membership changes
 - Metrics display
 
-### ⚠️ Old Examples (Excluded from Build)
-These files are kept for reference but not compiled:
-- `raft_cluster_demo_old.rs` - Uses old tikv/raft-rs API
-- `raft_peer_cluster.rs` - Uses old PeerNode API
-- `raft_integration_test.rs` - Uses old integration patterns
+### ⚠️ Old Examples (Removed in v0.3.0)
+These files were removed in version 0.3.0 after OpenRaft migration was complete:
+- `raft_cluster_demo_old.rs` - Used old tikv/raft-rs API (removed)
+- `raft_peer_cluster.rs` - Used old PeerNode API (removed)
+- `raft_integration_test.rs` - Used old integration patterns (removed)
+- `raft_node_old.rs`, `raft_storage_old.rs`, `raft_storage_old_backup.rs` - Old implementation files (removed)
+- `raft_peer.rs`, `raft_transport.rs` - Old transport layer files (removed)
 
 ## Technical Achievements
 

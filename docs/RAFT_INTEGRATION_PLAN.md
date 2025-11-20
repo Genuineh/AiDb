@@ -1,5 +1,9 @@
 # Raft-Based Peer-to-Peer Cluster Architecture Plan
 
+> **⚠️ HISTORICAL DOCUMENT**: This document describes the original tikv/raft-rs integration plan (Phase 1-3).
+> **As of v0.3.0**, AiDb has migrated to OpenRaft 0.9. See [TODO.md](../TODO.md) for the OpenRaft integration status
+> and [openraft_demo.rs](../examples/cluster/openraft_demo.rs) for the current implementation.
+
 ## 概述
 
 使用 Embedded Raft 实现真正的对等节点集群，提供强一致性保证和自动故障恢复能力。
@@ -501,10 +505,15 @@ pub struct RaftMetrics {
 
 ### 📚 示例代码
 
-1. **peer_to_peer_demo.rs** - 基础 P2P 集群演示
-2. **raft_cluster_demo.rs** - Raft 节点基础使用
-3. **raft_peer_cluster.rs** - 完整 Raft P2P 集群
-4. **raft_integration_test.rs** - 端到端集成测试
+**Note**: The old tikv/raft-rs examples have been removed in v0.3.0. Use the new OpenRaft examples:
+
+1. **peer_to_peer_demo.rs** - 基础 P2P 集群演示 (仍然可用)
+2. **openraft_demo.rs** - OpenRaft 完整演示 (推荐使用) ⭐
+
+**Old examples (removed in v0.3.0)**:
+- ~~raft_cluster_demo.rs~~ - 使用旧 API (已移除)
+- ~~raft_peer_cluster.rs~~ - 使用旧 API (已移除)
+- ~~raft_integration_test.rs~~ - 使用旧 API (已移除)
 
 ### 🏗️ 架构实现状态
 
@@ -591,10 +600,17 @@ pub struct RaftMetrics {
 
 ### 📖 相关文档
 
-- [examples/cluster/raft_integration_test.rs](../examples/cluster/raft_integration_test.rs) - 完整的使用示例
-- [src/cluster/raft_peer.rs](../src/cluster/raft_peer.rs) - RaftBasedPeer API 文档
-- [src/cluster/raft_node.rs](../src/cluster/raft_node.rs) - RaftNode 实现细节
-- [src/cluster/raft_storage.rs](../src/cluster/raft_storage.rs) - RaftStorage 实现
+**Current (OpenRaft v0.3.0+)**:
+- [examples/cluster/openraft_demo.rs](../examples/cluster/openraft_demo.rs) - 完整的 OpenRaft 使用示例 ⭐
+- [src/cluster/raft_storage.rs](../src/cluster/raft_storage.rs) - OpenRaftStorage 实现
+- [src/cluster/raft_network.rs](../src/cluster/raft_network.rs) - RaftNetwork 实现
+- [src/cluster/raft_node_new.rs](../src/cluster/raft_node_new.rs) - OpenRaftNode 实现
+- [TODO.md](../TODO.md) - OpenRaft 集成状态 (Phase 2-5 完成)
+
+**Historical (removed in v0.3.0)**:
+- ~~examples/cluster/raft_integration_test.rs~~ - 旧示例 (已移除)
+- ~~src/cluster/raft_peer.rs~~ - 旧 API (已移除)
+- ~~src/cluster/raft_node_old.rs~~ - 旧实现 (已移除)
 
 ### 🤝 贡献
 

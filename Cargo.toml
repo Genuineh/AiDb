@@ -1,6 +1,6 @@
 [package]
 name = "aidb"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["AiDb Contributors"]
 description = "A high-performance LSM-Tree based key-value storage engine written in Rust"
@@ -131,9 +131,6 @@ required-features = ["cluster"]
 name = "openraft_demo"
 path = "examples/cluster/openraft_demo.rs"
 required-features = ["raft-cluster"]
-
-# Note: raft_peer_cluster and raft_integration_test use old Raft APIs
-# They are kept for reference but not built. Use openraft_demo instead.
 
 # Monitoring examples (require --features monitoring)
 [[example]]

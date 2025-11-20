@@ -7,9 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 🎉 项目状态：生产就绪！
+## [0.3.0] - 2025-11-20
 
-所有核心功能已完成，项目已达到生产就绪状态。
+### 🧹 代码清理和重构
+
+#### OpenRaft 集成完成
+- **从 tikv/raft-rs 迁移到 openraft 0.9**
+  - ✅ 实现 OpenRaftStorage (RaftStorage trait)
+  - ✅ 实现 RaftNetwork 和 RaftNetworkFactory
+  - ✅ 实现 OpenRaftNode (替代旧的 RaftNode)
+  - ✅ 完整的 protobuf RPC 定义
+  - ✅ 使用 Rust native async traits (RPITIT)
+
+#### 移除旧代码
+- **删除旧的 Raft 实现文件**
+  - 移除 `raft_node_old.rs` (基于 tikv/raft-rs 的旧实现)
+  - 移除 `raft_storage_old.rs` (旧存储实现)
+  - 移除 `raft_storage_old_backup.rs` (备份副本)
+  - 移除 `raft_peer.rs` (旧 peer 实现)
+  - 移除 `raft_transport.rs` (旧传输层)
+
+- **删除旧的示例文件**
+  - 移除 `raft_cluster_demo_old.rs` (旧演示)
+  - 移除 `raft_integration_test.rs` (旧集成测试)
+  - 移除 `raft_peer_cluster.rs` (旧 peer 集群)
+
+#### 文档更新
+- 更新 `examples/cluster/README.md`
+  - 更新 API 示例使用 OpenRaft
+  - 移除对旧示例的引用
+  - 添加 `openraft_demo.rs` 作为推荐示例
+- 更新 `Cargo.toml`
+  - 移除关于旧 API 的注释
+- 清理代码库，提高可维护性
+
+### 📊 当前状态
+- **版本**: 0.3.0
+- **OpenRaft 集成**: Phase 2-5 完成 ✅
+- **核心功能**: 生产就绪 ✅
+- **代码清洁度**: 移除所有旧代码 ✅
 
 ## [0.2.0] - 2025-11-18
 
@@ -181,6 +217,7 @@ AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产
 
 ---
 
-[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Genuineh/aidb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Genuineh/aidb/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Genuineh/aidb/releases/tag/v0.1.0
