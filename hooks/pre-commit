@@ -21,10 +21,9 @@ echo "✓ Code formatting check passed"
 # Run cargo clippy for linting (lib and examples)
 echo "Running clippy checks..."
 cargo clippy --all-features --lib --examples -- \
+    -D warnings \
     -W clippy::all \
     -W clippy::pedantic \
-    -A missing-docs \
-    -A clippy::missing-docs-in-private-items \
     -A clippy::missing-errors-doc \
     -A clippy::missing-panics-doc \
     -A clippy::module-name-repetitions

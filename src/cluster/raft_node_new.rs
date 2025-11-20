@@ -20,8 +20,9 @@ use crate::DB;
 pub struct RaftNodeConfig {
     /// Node ID
     pub node_id: NodeId,
-    /// Election timeout in milliseconds
+    /// Minimum election timeout in milliseconds
     pub election_timeout_min: u64,
+    /// Maximum election timeout in milliseconds
     pub election_timeout_max: u64,
     /// Heartbeat interval in milliseconds
     pub heartbeat_interval: u64,
