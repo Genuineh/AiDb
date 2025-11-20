@@ -42,6 +42,12 @@ pub mod peer;
 #[cfg(feature = "raft-cluster")]
 pub mod raft_storage;
 
+#[cfg(feature = "raft-cluster")]
+pub mod raft_network;
+
+#[cfg(feature = "raft-cluster")]
+pub mod raft_node_new;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -82,6 +88,12 @@ pub use peer::{PeerInfo, PeerNode, PeerStats};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_storage::{OpenRaftStorage, TypeConfig, NodeId, Request, Response};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory};
+
+#[cfg(feature = "raft-cluster")]
+pub use raft_node_new::{OpenRaftNode, RaftNodeConfig};
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
