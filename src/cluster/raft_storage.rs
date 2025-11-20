@@ -630,13 +630,13 @@ mod tests {
         assert!(state.last_log_id.is_none());
     }
 
-    #[test]
-    fn test_save_and_read_vote() {
-        let (storage, _temp_dir) = create_test_storage();
+    #[tokio::test]
+    async fn test_save_and_read_vote() {
+        let (mut storage, _temp_dir) = create_test_storage();
 
-        let vote = Vote { term: 1, node_id: 1, committed: false };
+        let vote = Vote { leader_id: openraft::LeaderId::new(1, 1), committed: false };
 
-        storage.save_vote(&vote).unwrap();
+        storage.save_vote(&vote).await.unwrap();
 
         let state = storage.state.read();
         assert_eq!(state.vote, Some(vote));
@@ -646,9 +646,10 @@ mod tests {
     fn test_append_and_get_entries() {
         let (storage, _temp_dir) = create_test_storage();
 
+        let leader_id = openraft::LeaderId::new(1, 1);
         let entries = vec![
-            Entry { log_id: LogId { leader_id: 1.into(), index: 1 }, payload: EntryPayload::Blank },
-            Entry { log_id: LogId { leader_id: 1.into(), index: 2 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 1 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 2 }, payload: EntryPayload::Blank },
         ];
 
         storage.append_log_entries(&entries).unwrap();
@@ -663,36 +664,38 @@ mod tests {
     fn test_delete_conflict_logs() {
         let (storage, _temp_dir) = create_test_storage();
 
+        let leader_id = openraft::LeaderId::new(1, 1);
         let entries = vec![
-            Entry { log_id: LogId { leader_id: 1.into(), index: 1 }, payload: EntryPayload::Blank },
-            Entry { log_id: LogId { leader_id: 1.into(), index: 2 }, payload: EntryPayload::Blank },
-            Entry { log_id: LogId { leader_id: 1.into(), index: 3 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 1 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 2 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 3 }, payload: EntryPayload::Blank },
         ];
 
         storage.append_log_entries(&entries).unwrap();
 
         // Delete logs from index 2 onwards
-        storage.delete_logs_from(LogId { leader_id: 1.into(), index: 2 }).unwrap();
+        storage.delete_logs_from(LogId { leader_id, index: 2 }).unwrap();
 
         let retrieved = storage.get_log_entries(1..4).unwrap();
         assert_eq!(retrieved.len(), 1);
         assert_eq!(retrieved[0].log_id.index, 1);
     }
 
-    #[test]
-    fn test_purge_logs() {
-        let (storage, _temp_dir) = create_test_storage();
+    #[tokio::test]
+    async fn test_purge_logs() {
+        let (mut storage, _temp_dir) = create_test_storage();
 
+        let leader_id = openraft::LeaderId::new(1, 1);
         let entries = vec![
-            Entry { log_id: LogId { leader_id: 1.into(), index: 1 }, payload: EntryPayload::Blank },
-            Entry { log_id: LogId { leader_id: 1.into(), index: 2 }, payload: EntryPayload::Blank },
-            Entry { log_id: LogId { leader_id: 1.into(), index: 3 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 1 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 2 }, payload: EntryPayload::Blank },
+            Entry { log_id: LogId { leader_id, index: 3 }, payload: EntryPayload::Blank },
         ];
 
         storage.append_log_entries(&entries).unwrap();
 
         // Purge logs up to index 2
-        storage.purge_logs_upto(LogId { leader_id: 1.into(), index: 2 }).unwrap();
+        storage.purge_logs_upto(LogId { leader_id, index: 2 }).await.unwrap();
 
         // Should not be able to get purged entries
         let retrieved = storage.get_log_entries(1..3).unwrap();
