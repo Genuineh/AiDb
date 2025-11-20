@@ -52,8 +52,11 @@ impl MetaRaftNode {
     /// use aidb::cluster::MetaRaftNode;
     /// use openraft::Config;
     ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = Config::default();
-    /// let node = MetaRaftNode::new(1, "./data/meta", config).await.unwrap();
+    /// let node = MetaRaftNode::new(1, "./data/meta", config).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn new<P: Into<PathBuf>>(
         node_id: NodeId,
