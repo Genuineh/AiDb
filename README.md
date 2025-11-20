@@ -117,8 +117,29 @@ Read Path:   MemTable → Immutable MemTable → Block Cache → SSTable(L0-N)
 # Rust 1.70+
 rustup update
 
-# 编译
+# 对于 Raft 集群功能（可选）
+# macOS:
+brew install protobuf
+
+# Ubuntu/Debian:
+sudo apt-get install protobuf-compiler
+
+# 或者使用 raft-cluster feature 自动下载 protoc（推荐）
+cargo build --features raft-cluster  # 会自动处理 protobuf
+```
+
+**注意**：`raft-cluster` feature 包含了 `protobuf-src`，会在构建时自动下载和使用合适版本的 protobuf 编译器，无需手动安装。
+
+### 编译
+```bash
+# 基础编译（单机版）
 cargo build --release
+
+# 包含集群功能
+cargo build --release --features cluster
+
+# 包含 Raft 共识集群
+cargo build --release --features raft-cluster
 ```
 
 ### 基础使用（单机版）
