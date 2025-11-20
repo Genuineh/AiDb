@@ -397,12 +397,14 @@ mod tests {
     fn test_append_entries() {
         let (storage, _temp_dir) = create_test_storage();
 
-        let mut entry = Entry::default();
-        entry.index = 1;
-        entry.term = 1;
-        entry.data = b"test_data".to_vec().into();
+        let entry = Entry {
+            index: 1,
+            term: 1,
+            data: b"test_data".to_vec().into(),
+            ..Default::default()
+        };
 
-        storage.append_entries(&[entry.clone()]).unwrap();
+        storage.append_entries(std::slice::from_ref(&entry)).unwrap();
 
         let cache = storage.cache.read();
         assert_eq!(cache.first_index, 1);
@@ -415,10 +417,12 @@ mod tests {
 
         let mut entries = Vec::new();
         for i in 1..=5 {
-            let mut entry = Entry::default();
-            entry.index = i;
-            entry.term = 1;
-            entry.data = format!("data_{}", i).into_bytes().into();
+            let entry = Entry {
+                index: i,
+                term: 1,
+                data: format!("data_{}", i).into_bytes().into(),
+                ..Default::default()
+            };
             entries.push(entry);
         }
 
@@ -436,9 +440,11 @@ mod tests {
 
         let mut entries = Vec::new();
         for i in 1..=10 {
-            let mut entry = Entry::default();
-            entry.index = i;
-            entry.term = 1;
+            let entry = Entry {
+                index: i,
+                term: 1,
+                ..Default::default()
+            };
             entries.push(entry);
         }
 
