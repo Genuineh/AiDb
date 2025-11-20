@@ -57,6 +57,9 @@ pub mod meta_types;
 #[cfg(feature = "raft-cluster")]
 pub mod meta_state_machine;
 
+#[cfg(feature = "raft-cluster")]
+pub mod sharded_storage;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -115,6 +118,9 @@ pub use meta_types::{
 
 #[cfg(feature = "raft-cluster")]
 pub use meta_state_machine::MetaStateMachine;
+
+#[cfg(feature = "raft-cluster")]
+pub use sharded_storage::{GroupId, ShardedRaftStorage};
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
