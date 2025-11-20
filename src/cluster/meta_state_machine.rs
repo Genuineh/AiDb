@@ -4,11 +4,10 @@
 //! global cluster metadata including slot mappings, group memberships, and node information.
 
 use parking_lot::RwLock;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse};
-use super::raft_storage::NodeId;
 use crate::error::{Error, Result};
 
 /// MetaStateMachine for managing cluster metadata
@@ -19,10 +18,12 @@ pub struct MetaStateMachine {
     /// Current cluster metadata (boxed to avoid stack overflow with large array)
     meta: Arc<RwLock<Box<ClusterMeta>>>,
 
-    /// Last applied log index
+    /// Last applied log index (reserved for future use with Raft integration)
+    #[allow(dead_code)]
     last_applied: Arc<RwLock<u64>>,
 
     /// Data directory for persistence
+    #[allow(dead_code)]
     data_dir: PathBuf,
 }
 
@@ -47,7 +48,7 @@ impl MetaStateMachine {
     }
 
     /// Load metadata from disk
-    fn load_metadata(data_dir: &PathBuf) -> Result<ClusterMeta> {
+    fn load_metadata(data_dir: &Path) -> Result<ClusterMeta> {
         let meta_path = data_dir.join("cluster_meta.json");
         if meta_path.exists() {
             let content = std::fs::read_to_string(&meta_path)?;
@@ -58,7 +59,8 @@ impl MetaStateMachine {
         }
     }
 
-    /// Save metadata to disk
+    /// Save metadata to disk (reserved for future use with persistence)
+    #[allow(dead_code)]
     fn save_metadata(&self) -> Result<()> {
         let meta_path = self.data_dir.join("cluster_meta.json");
         let meta = self.meta.read();
@@ -75,6 +77,7 @@ impl MetaStateMachine {
     /// Apply a MetaRequest to the state machine
     ///
     /// This is the core method that processes all metadata changes.
+    #[allow(dead_code)]
     fn apply_meta_request(&self, request: MetaRequest) -> Result<MetaResponse> {
         let mut meta = self.meta.write();
 
@@ -98,12 +101,9 @@ impl MetaStateMachine {
 
             MetaRequest::CreateGroup { group_id, replicas } => {
                 use super::meta_types::GroupMeta;
-                
+
                 if meta.groups.contains_key(&group_id) {
-                    return Ok(MetaResponse::Error(format!(
-                        "Group {} already exists",
-                        group_id
-                    )));
+                    return Ok(MetaResponse::Error(format!("Group {} already exists", group_id)));
                 }
 
                 let group_meta = GroupMeta::new(group_id, replicas.clone());
@@ -122,10 +122,7 @@ impl MetaStateMachine {
 
             MetaRequest::UpdateSlots { start, end, group_id } => {
                 if !meta.groups.contains_key(&group_id) {
-                    return Ok(MetaResponse::Error(format!(
-                        "Group {} does not exist",
-                        group_id
-                    )));
+                    return Ok(MetaResponse::Error(format!("Group {} does not exist", group_id)));
                 }
 
                 meta.update_slot_range(start, end, group_id);
@@ -136,7 +133,7 @@ impl MetaStateMachine {
                 if let Some(group) = meta.groups.get(&group_id) {
                     // Clone old replicas to avoid borrow checker issues
                     let old_replicas = group.replicas.clone();
-                    
+
                     // Update node group counts (remove old replicas)
                     for old_replica in &old_replicas {
                         if let Some(node) = meta.nodes.get_mut(old_replica) {
@@ -161,18 +158,11 @@ impl MetaStateMachine {
                     meta.config_version += 1;
                     Ok(MetaResponse::Ok)
                 } else {
-                    Ok(MetaResponse::Error(format!(
-                        "Group {} not found",
-                        group_id
-                    )))
+                    Ok(MetaResponse::Error(format!("Group {} not found", group_id)))
                 }
             }
 
-            MetaRequest::StartMigration {
-                slot,
-                from_group,
-                to_group,
-            } => {
+            MetaRequest::StartMigration { slot, from_group, to_group } => {
                 use super::meta_types::SlotMigration;
 
                 // Verify groups exist
@@ -220,10 +210,7 @@ impl MetaStateMachine {
                     meta.config_version += 1;
                     Ok(MetaResponse::Ok)
                 } else {
-                    Ok(MetaResponse::Error(format!(
-                        "No active migration found for slot {}",
-                        slot
-                    )))
+                    Ok(MetaResponse::Error(format!("No active migration found for slot {}", slot)))
                 }
             }
 
@@ -233,10 +220,7 @@ impl MetaStateMachine {
                     meta.config_version += 1;
                     Ok(MetaResponse::Ok)
                 } else {
-                    Ok(MetaResponse::Error(format!(
-                        "Group {} not found",
-                        group_id
-                    )))
+                    Ok(MetaResponse::Error(format!("Group {} not found", group_id)))
                 }
             }
         }
@@ -252,7 +236,7 @@ mod tests {
     // issues with the large ClusterMeta struct (16384-element array). These will be
     // re-enabled in integration tests with proper stack size configuration, or we'll
     // refactor ClusterMeta to use Vec instead of array.
-    
+
     #[test]
     fn test_placeholder() {
         // Placeholder test to ensure the module compiles

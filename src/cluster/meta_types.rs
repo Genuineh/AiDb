@@ -80,11 +80,7 @@ impl ClusterMeta {
             *item = (slot as u64) % group_count;
         }
 
-        Self {
-            slots,
-            config_version: 1,
-            ..Default::default()
-        }
+        Self { slots, config_version: 1, ..Default::default() }
     }
 
     /// Get the group ID for a given slot
@@ -143,13 +139,7 @@ pub struct GroupMeta {
 impl GroupMeta {
     /// Create a new group metadata
     pub fn new(group_id: u64, replicas: Vec<NodeId>) -> Self {
-        Self {
-            group_id,
-            replicas,
-            leader: None,
-            version: 1,
-            slot_range: None,
-        }
+        Self { group_id, replicas, leader: None, version: 1, slot_range: None }
     }
 
     /// Update the replica list and increment version
@@ -380,8 +370,8 @@ pub enum MetaResponse {
     /// Operation successful
     Ok,
 
-    /// Return cluster metadata
-    ClusterMeta(ClusterMeta),
+    /// Return cluster metadata (boxed to reduce enum size)
+    ClusterMeta(Box<ClusterMeta>),
 
     /// Operation failed with error message
     Error(String),
@@ -482,7 +472,7 @@ mod tests {
     #[test]
     fn test_serialization() {
         // Test smaller components individually to avoid stack overflow with large arrays
-        
+
         // Test GroupMeta serialization
         let group = GroupMeta::new(1, vec![1, 2, 3]);
         let json = serde_json::to_string(&group).unwrap();
@@ -508,24 +498,11 @@ mod tests {
     #[test]
     fn test_meta_request_serialization() {
         let requests = vec![
-            MetaRequest::AddNode {
-                node_id: 1,
-                addr: "127.0.0.1:50051".to_string(),
-            },
+            MetaRequest::AddNode { node_id: 1, addr: "127.0.0.1:50051".to_string() },
             MetaRequest::RemoveNode { node_id: 1 },
-            MetaRequest::CreateGroup {
-                group_id: 1,
-                replicas: vec![1, 2, 3],
-            },
-            MetaRequest::UpdateSlots {
-                start: 0,
-                end: 100,
-                group_id: 1,
-            },
-            MetaRequest::UpdateGroupMembers {
-                group_id: 1,
-                replicas: vec![1, 2, 3, 4],
-            },
+            MetaRequest::CreateGroup { group_id: 1, replicas: vec![1, 2, 3] },
+            MetaRequest::UpdateSlots { start: 0, end: 100, group_id: 1 },
+            MetaRequest::UpdateGroupMembers { group_id: 1, replicas: vec![1, 2, 3, 4] },
         ];
 
         for req in requests {
