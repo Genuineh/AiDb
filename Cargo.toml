@@ -132,20 +132,8 @@ name = "openraft_demo"
 path = "examples/cluster/openraft_demo.rs"
 required-features = ["raft-cluster"]
 
-[[example]]
-name = "raft_cluster_demo_old"
-path = "examples/cluster/raft_cluster_demo_old.rs"
-required-features = ["raft-cluster"]
-
-[[example]]
-name = "raft_peer_cluster"
-path = "examples/cluster/raft_peer_cluster.rs"
-required-features = ["raft-cluster"]
-
-[[example]]
-name = "raft_integration_test"
-path = "examples/cluster/raft_integration_test.rs"
-required-features = ["raft-cluster"]
+# Note: raft_peer_cluster and raft_integration_test use old Raft APIs
+# They are kept for reference but not built. Use openraft_demo instead.
 
 # Monitoring examples (require --features monitoring)
 [[example]]

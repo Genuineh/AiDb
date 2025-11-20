@@ -18,9 +18,9 @@ fi
 
 echo "✓ Code formatting check passed"
 
-# Run cargo clippy for linting (lib only, without documentation warnings)
+# Run cargo clippy for linting (lib and examples)
 echo "Running clippy checks..."
-cargo clippy --lib --all-features -- \
+cargo clippy --all-features --lib --examples -- \
     -W clippy::all \
     -W clippy::pedantic \
     -A missing-docs \
