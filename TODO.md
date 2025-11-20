@@ -299,11 +299,19 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
 
 **目标**: 从单 Raft Group 升级到 Multi-Raft + Sharding 架构，实现真正的横向扩展
 
-**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)
+**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)  
+**🆕 薄复制计划**: 📄 [docs/THIN_REPLICATION_PLAN.md](docs/THIN_REPLICATION_PLAN.md)
 
-**预计工时**: 一人全职 8~10 周，两人并行 4~6 周
+**预计工时**: 一人全职 9~11 周，两人并行 5~7 周
 
 #### 核心改造点
+
+- [ ] **🆕 阶段0: Thin Replication (薄复制)** (1周) 🔥
+  - [ ] 仅复制 WAL，不复制 SSTable
+  - [ ] WriteBatch 和 WriteOp 数据结构
+  - [ ] 状态机支持批量应用
+  - [ ] 独立 Compaction
+  - [ ] **收益**: 复制成本降低 90%+，写延迟降低 50%+
 
 - [ ] **阶段1: MetaRaft 实现** (1周)
   - [ ] 全局元数据 Raft Group
@@ -343,17 +351,20 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
 
 #### 预期收益
 
+- 🚀 **复制成本**: 降低 90%+ (Stage 0 立即生效)
 - 🚀 **存储容量**: 100节点 × 1TB = ~30~50TB 可用（3副本）
 - ⚡ **写放大**: 仅 3~5 倍（而非节点数 N）
 - 📈 **延迟**: <1ms（仅 3~5 节点复制）
 - 💾 **横向扩展**: 支持万亿键、PB 级
 - 🔌 **协议兼容**: 兼容 Redis Cluster 协议
+- ☁️ **云原生**: 天然支持对象存储 (S3/OSS)
 
 #### 参考项目
 
 - **rdb**: https://github.com/MoSunDay/rdb (Rust + openraft + Multi-Raft)
+- **TiKV**: Multi-Raft + Thin Replication 生产实践
+- **CockroachDB**: Thin Replication 架构
 - **tikv/raft-rs**: multi_raft 示例
-- **TiKV**: Multi-Raft 生产实践
 - **Garnet**: 分片 + 元数据管理
 - **DragonflyDB**: Region 迁移逻辑
 

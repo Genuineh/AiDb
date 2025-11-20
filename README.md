@@ -365,7 +365,8 @@ cargo build --features cluster
 - **[最佳实践](docs/BEST_PRACTICES.md)** - 生产环境指南
 
 ### Multi-Raft + 分片架构 (规划中) 🚀
-- **[⭐ Multi-Raft 完整落地计划](docs/MULTI_RAFT_SHARDING_PLAN.md)** - 6 阶段详细实施方案
+- **[⭐ Multi-Raft 完整落地计划](docs/MULTI_RAFT_SHARDING_PLAN.md)** - 7 阶段详细实施方案
+- **[🆕 Thin Replication 实施计划](docs/THIN_REPLICATION_PLAN.md)** - 降低复制成本 90%+
 - **[架构图解](docs/MULTI_RAFT_ARCHITECTURE.md)** - 可视化架构说明
 - **[快速上手指南](docs/MULTI_RAFT_QUICKSTART.md)** - 开发者 10 分钟入门
 
@@ -478,21 +479,30 @@ aidb/
 
 **目标**: 从单 Raft Group 升级到真正的横向扩展架构
 
+**🆕 Stage 0**: Thin Replication (薄复制) - 1周
+- 仅复制 WAL，不复制 SSTable
+- 降低复制成本 90%+
+- 独立 Compaction
+- 为 Multi-Raft 奠定基础
+
 核心改造：
-- 🔹 MetaRaft 全局元数据管理
-- 🔹 16384 个独立 Raft Groups
-- 🔹 分片路由（crc16 slot 计算）
-- 🔹 动态成员管理和副本分配
-- 🔹 在线 Slot 迁移（零停机）
-- 🔹 完整监控和运维工具
+- 🔹 Stage 0: Thin Replication (降低复制成本)
+- 🔹 Stage 1: MetaRaft 全局元数据管理
+- 🔹 Stage 2: 16384 个独立 Raft Groups
+- 🔹 Stage 3: 分片路由（crc16 slot 计算）
+- 🔹 Stage 4: 动态成员管理和副本分配
+- 🔹 Stage 5: 在线 Slot 迁移（零停机）
+- 🔹 Stage 6: 完整监控和运维工具
 
 **预期收益**:
+- 🚀 复制成本降低 90%+ (Stage 0 立即生效)
 - 🚀 容量随节点数线性增长（从 1TB → 30~50TB，100节点）
 - ⚡ 写放大固定 3~5 倍（而非节点数 N）
 - 📈 延迟稳定 < 1ms（不受节点数影响）
 - 💾 支持 PB 级存储、万亿键
 
-**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)
+**完整计划**: 📄 [docs/MULTI_RAFT_SHARDING_PLAN.md](docs/MULTI_RAFT_SHARDING_PLAN.md)  
+**薄复制计划**: 📄 [docs/THIN_REPLICATION_PLAN.md](docs/THIN_REPLICATION_PLAN.md)
 
 详细计划：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)
 

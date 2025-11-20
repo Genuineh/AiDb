@@ -4,16 +4,18 @@
 
 **架构**: 保持 100% P2P 对等架构，零 Coordinator
 
-**预计工时**: 一人全职 8~10 周，两人并行 4~6 周
+**预计工时**: 一人全职 9~11 周，两人并行 5~7 周
 
 **更新时间**: 2025-11-20
+
+**🆕 新增**: Thin Replication (薄复制) 作为 Stage 0，降低复制成本 90%+
 
 ---
 
 ## 📋 目录
 
 1. [整体架构](#整体架构)
-2. [6 阶段实施计划](#6-阶段实施计划)
+2. [7 阶段实施计划](#7-阶段实施计划) (新增 Stage 0: Thin Replication)
 3. [关键数据结构](#关键数据结构)
 4. [技术决策](#技术决策)
 5. [参考项目](#参考项目)
@@ -37,47 +39,102 @@
 
 **限制**:
 - 所有节点存储全量数据（无分片）
-- 写放大 = N（N 为节点数）
+- 写放大 = N（N 为节点数）- **胖复制问题**
+- 复制完整 SSTable 文件，网络开销巨大
 - 无法横向扩展存储容量
 
-### 目标架构 (Multi-Raft + Sharding)
+### 目标架构 (Thin Replication + Multi-Raft + Sharding)
 
 ```
 每个节点（完全对等）
-├── MetaRaft Group (Group 0)              ← 全局唯一，存集群元数据
+├── Thin Replication (Stage 0)              ← 🆕 仅复制 WAL，不复制 SSTable
+│   ├── WriteBatch (批量写操作)
+│   ├── 独立 Compaction (每节点独立)
+│   └── 复制成本降低 90%+
+│
+├── MetaRaft Group (Group 0)                ← 全局唯一，存集群元数据
 │   ├── ClusterMeta (slot→group, group→replicas)
 │   └── Config Version (版本控制)
 │
-├── DataRaft Groups (1~16384)             ← 每个 Group 负责若干 slot
-│   ├── Group 1 → slots [0, 100)
-│   ├── Group 2 → slots [100, 200)
+├── DataRaft Groups (1~16384)               ← 每个 Group 负责若干 slot
+│   ├── Group 1 → slots [0, 100) + Thin Replication
+│   ├── Group 2 → slots [100, 200) + Thin Replication
 │   └── ...
 │
-├── ShardedStateMachine                   ← HashMap<GroupId, AiDb>
+├── ShardedStateMachine                     ← HashMap<GroupId, AiDb>
 │   ├── Group 1 → DB Instance 1
 │   ├── Group 2 → DB Instance 2
 │   └── ...
 │
-├── Router (slot → group → nodes)         ← 本地缓存 + MetaRaft watch
+├── Router (slot → group → nodes)           ← 本地缓存 + MetaRaft watch
 │   ├── SlotMap: [u64; 16384]
 │   └── GroupMeta: HashMap<GroupId, GroupInfo>
 │
-└── gRPC Network                          ← 所有 Group 共用网络层
+└── gRPC Network                            ← 所有 Group 共用网络层
     ├── RaftService (per-group routing)
     └── ClientService (外部请求)
 ```
 
 **优势**:
-- 分片存储：每个节点仅存储部分数据
-- 写放大：3~5 倍（副本数），而非节点数
-- 横向扩展：添加节点线性增加容量
-- 存储成本：总容量 / 副本数（1/N → 1/3）
+- **薄复制**: 仅复制 WAL，网络成本降低 90%+
+- **分片存储**: 每个节点仅存储部分数据
+- **写放大**: 3~5 倍（副本数），而非节点数
+- **横向扩展**: 添加节点线性增加容量
+- **存储成本**: 总容量 / 副本数（1/N → 1/3）
+- **云原生**: 天然支持对象存储 (S3/OSS)
 
 ---
 
-## 📅 6 阶段实施计划
+## 📅 7 阶段实施计划
 
-### 阶段 0: 当前准备 ✅ **已完成**
+### 🆕 阶段 0: Thin Replication (薄复制)
+
+**目标**: 降低复制成本 90%+，为 Multi-Raft 奠定基础
+
+**预计工时**: 1 周 | **难度**: ★★☆☆☆ | **优先级**: 🔥 最高
+
+**详细文档**: 📄 [THIN_REPLICATION_PLAN.md](THIN_REPLICATION_PLAN.md)
+
+#### 核心改造
+
+- [ ] **数据结构** (2~4 小时)
+  - [ ] 创建 `src/cluster/thin_replication.rs`
+  - [ ] 定义 `WriteBatch` 和 `WriteOp`
+  - [ ] 更新 `Request` 枚举支持批量操作
+  - [ ] 单元测试
+
+- [ ] **状态机改造** (2~3 小时)
+  - [ ] 修改 `apply_to_state_machine()` 支持批量应用
+  - [ ] 实现 `apply_batch_internal()`
+  - [ ] 集成 AiDb 的 WriteBatch
+  - [ ] 测试独立 Compaction
+
+- [ ] **网络层优化** (1~2 小时)
+  - [ ] 添加 `write_batch()` API
+  - [ ] 优化批量复制逻辑
+  - [ ] 测试网络传输
+
+- [ ] **测试验证** (2~3 小时)
+  - [ ] 单节点批量写入测试
+  - [ ] 多节点复制一致性测试
+  - [ ] 性能基准测试（对比胖复制）
+  - [ ] 压力测试
+
+**交付物**:
+- ✅ 复制成本降低 > 90%
+- ✅ 写延迟降低 > 50%
+- ✅ 强一致性保证
+- ✅ 测试通过率 100%
+
+**关键优势**:
+- 🚀 **立即收益**: 不需要等 Multi-Raft，立刻降低成本
+- 🏗️ **奠定基础**: 为后续 Multi-Raft 准备架构
+- 🔒 **风险可控**: 独立改造，易于验证和回滚
+- ⏱️ **工期短**: 1 周即可完成并上线
+
+---
+
+### 原阶段 0: 当前准备 ✅ **已完成**
 
 **目标**: 跑通现有单 Raft 集群
 
@@ -1198,29 +1255,52 @@ for slot in 0..16384 {
 ## 📈 项目时间线
 
 ```
-Week 1-2:    阶段 0 (已完成) + 阶段 1 (MetaRaft)
-Week 3-4:    阶段 2 (Multi-Raft 框架)
-Week 5-6:    阶段 3 (分片路由 + Sharded AiDb)
-Week 7-8:    阶段 4 (动态成员管理)
-Week 9-10:   阶段 5 (在线迁移)
-Week 11-12:  阶段 6 (优化 + 生产就绪)
+Week 1:      🆕 阶段 0 (Thin Replication) - 降低复制成本 90%+
+Week 2:      阶段 0 验证 + 阶段 1 准备 (MetaRaft)
+Week 3-4:    阶段 1 (MetaRaft)
+Week 5-6:    阶段 2 (Multi-Raft 框架)
+Week 7-8:    阶段 3 (分片路由 + Sharded AiDb)
+Week 9-10:   阶段 4 (动态成员管理)
+Week 11-12:  阶段 5 (在线迁移)
+Week 13:     阶段 6 (优化 + 生产就绪)
 ```
 
 **关键里程碑**:
-- **Week 2**: MetaRaft 可运行 ✓
-- **Week 4**: 100 个 Group 正常工作 ✓
-- **Week 6**: 分片写入正确 ✓
-- **Week 8**: 动态加入节点成功 ✓
-- **Week 10**: 迁移流程完整 ✓
-- **Week 12**: 生产就绪 ✓
+- **Week 1**: 🆕 Thin Replication 完成，复制成本降低 90%+ ✓
+- **Week 4**: MetaRaft 可运行 ✓
+- **Week 6**: 100 个 Group 正常工作 ✓
+- **Week 8**: 分片写入正确 ✓
+- **Week 10**: 动态加入节点成功 ✓
+- **Week 12**: 迁移流程完整 ✓
+- **Week 13**: 生产就绪 ✓
 
 ---
 
 ## 🚀 立即行动计划
 
-### Phase 1: 准备阶段 (本周)
+### Phase 1: Thin Replication (本周) 🔥
 
 1. **创建开发分支**
+   ```bash
+   git checkout -b feature/thin-replication
+   ```
+
+2. **实施 Thin Replication**
+   - Day 1-2: 数据结构 + 基础测试
+   - Day 3-4: 状态机改造 + 集成测试
+   - Day 5: 性能测试 + 文档
+   - 详见: [THIN_REPLICATION_PLAN.md](THIN_REPLICATION_PLAN.md)
+
+3. **验证和合并**
+   - 性能提升 > 90%
+   - 所有测试通过
+   - 合并到 main
+
+### Phase 2: 准备 Multi-Raft (Week 2)
+
+### Phase 2: 准备 Multi-Raft (Week 2)
+
+1. **创建 Multi-Raft 分支**
    ```bash
    git checkout -b feature/multi-raft-sharding
    ```
