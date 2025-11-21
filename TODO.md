@@ -315,17 +315,19 @@ Phase 5 的核心示例和基础测试已完成。完整的集成测试和压力
   - [x] 19 个测试（12 个 thin_replication + 7 个集成测试）
   - [x] thin_replication_demo.rs 示例程序
 
-- [ ] **阶段1: MetaRaft 实现** (1周)
-  - [ ] 全局元数据 Raft Group
-  - [ ] ClusterMeta 结构体（slot→group、group→replicas）
-  - [ ] MetaStateMachine 实现
-  - [ ] MetaRaft Node API
+- [x] **阶段1: MetaRaft 实现** (1周) ✅ **已完成**
+  - [x] 全局元数据 Raft Group 数据结构
+  - [x] ClusterMeta 结构体（slot→group、group→replicas）
+  - [x] MetaStateMachine 实现（apply_meta_request）
+  - [x] MetaRaft Node API (meta_raft_node.rs, 300+ 行)
+  - [x] 集成测试（3 个测试通过）
 
-- [ ] **阶段2: Multi-Raft 框架** (1.5周)
-  - [ ] ShardedRaftStorage（HashMap<GroupId, Storage>）
-  - [ ] Multi-Raft Network（按 group_id 分发）
-  - [ ] 动态创建 N 个 Raft Group
-  - [ ] 支持 100+ Group 并发运行
+- [x] **阶段2: Multi-Raft 框架** (1.5周) ✅ **已完成**
+  - [x] ShardedRaftStorage（HashMap<GroupId, Storage>）✅ 完成
+  - [x] Proto 更新（添加 group_id 字段）✅ 完成
+  - [x] Multi-Raft Network（按 group_id 分发）✅ 完成
+  - [x] MultiRaftNode（动态创建/管理 N 个 Raft Group）✅ 完成
+  - [x] 支持 100+ Group 并发运行 ✅ 完成（测试验证）
 
 - [ ] **阶段3: 分片路由 + Sharded AiDb** (2周)
   - [ ] Slot 计算（crc16(key) % 16384）
