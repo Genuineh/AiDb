@@ -134,7 +134,10 @@ impl MetaStateMachine {
         let available_nodes: Vec<NodeId> = meta
             .nodes
             .iter()
-            .filter(|(_, info)| info.is_online() || info.status == super::meta_types::NodeStatus::Joining)
+            .filter(|(_, info)| {
+                // Include online nodes and nodes that are joining
+                info.is_online() || info.status == super::meta_types::NodeStatus::Joining
+            })
             .map(|(&id, _)| id)
             .collect();
 

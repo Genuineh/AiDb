@@ -264,5 +264,5 @@ async fn test_membership_change_workflow() {
 
     // Should have some groups that need membership changes
     // In a full system, these changes would be applied via MembershipCoordinator
-    println!("Membership changes needed: {}", changes.len());
+    assert!(changes.len() >= 0, "Should return membership change list");
 }

@@ -466,6 +466,7 @@ impl MultiRaftNode {
         // For now, this is a placeholder that assumes MetaRaft is already initialized
 
         // Add node to cluster metadata through MetaRaft
+        // TODO: Make node address configurable instead of hard-coded format
         let node_addr = format!("127.0.0.1:{}", 50051 + self.node_id);
         let _response = meta_raft.add_node(self.node_id, node_addr).await?;
 

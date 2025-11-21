@@ -163,7 +163,9 @@ impl ReplicaAllocator {
                 new_allocation.insert(*group_id, updated_replicas);
             } else if valid_replicas.len() > self.replication_factor {
                 // Over-replicated: remove excess replicas
-                // Keep the replicas on most loaded nodes (they might have fewer other groups)
+                // Strategy: Keep replicas on nodes with higher overall load across the cluster,
+                // as these nodes are likely more stable and have proven capacity. This helps
+                // avoid moving replicas to underutilized nodes that might be new or unstable.
                 let mut replicas_with_load: Vec<(NodeId, usize)> =
                     valid_replicas
                         .iter()
@@ -173,7 +175,7 @@ impl ReplicaAllocator {
                         })
                         .collect();
 
-                // Sort by load (descending) and keep the top replication_factor
+                // Sort by load (descending) to keep the most loaded nodes' replicas
                 replicas_with_load.sort_by_key(|(_, load)| std::cmp::Reverse(*load));
                 let kept_replicas: Vec<NodeId> = replicas_with_load
                     .into_iter()
