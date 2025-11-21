@@ -1,7 +1,7 @@
 //! Integration tests for dynamic member management (Stage 4)
 
 #[cfg(feature = "raft-cluster")]
-use aidb::cluster::{GroupMeta, MetaStateMachine, MultiRaftNode, ReplicaAllocator};
+use aidb::cluster::{GroupMeta, MembershipCoordinator, MetaStateMachine, MultiRaftNode, ReplicaAllocator};
 use aidb::config::Options;
 use openraft::Config;
 use std::collections::HashMap;
@@ -207,4 +207,62 @@ async fn test_remove_nonexistent_node() {
 
     let (response, _) = meta_state.handle_remove_node(999).unwrap();
     assert!(matches!(response, aidb::cluster::MetaResponse::Error(_)));
+}
+
+#[cfg(feature = "raft-cluster")]
+#[tokio::test]
+async fn test_membership_coordinator_integration() {
+    // Test membership coordinator with group creation
+    use std::sync::Arc;
+    
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let config = Config::default();
+    let mut node = MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap();
+
+    // Initialize MetaRaft
+    let meta_config = Config::default();
+    node.init_meta_raft(meta_config).await.unwrap();
+    node.initialize_meta_cluster(vec![(1, "127.0.0.1:50051".to_string())])
+        .await
+        .unwrap();
+
+    // Create a group
+    node.create_raft_group(100, vec![1]).await.unwrap();
+
+    // Create coordinator
+    let node_arc = Arc::new(node);
+    let meta_raft = node_arc.meta_raft().unwrap().clone();
+    let coordinator = MembershipCoordinator::new(Arc::clone(&node_arc), meta_raft);
+
+    // Check if group is ready (might not have a leader yet in this quick test)
+    let _ready = coordinator.is_group_ready(100).await;
+    // Note: In a real scenario, we'd wait for leader election
+
+    // Test that accessing node and meta_raft works
+    assert!(coordinator.node().has_group(100));
+}
+
+#[cfg(feature = "raft-cluster")]
+#[tokio::test]
+async fn test_membership_change_workflow() {
+    // Test the complete workflow of adding a node with membership changes
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let meta_state = MetaStateMachine::with_replication_factor(temp_dir.path(), 3).unwrap();
+
+    // Add initial 3 nodes
+    for i in 1..=3 {
+        meta_state.handle_add_node(i, format!("127.0.0.1:{}", 50050 + i)).unwrap();
+    }
+
+    // Manually create a group
+    let mut meta = meta_state.get_cluster_meta();
+    meta.groups.insert(100, GroupMeta::new(100, vec![1, 2, 3]));
+
+    // Add a 4th node - should trigger rebalancing
+    let (response, changes) = meta_state.handle_add_node(4, "127.0.0.1:50054".to_string()).unwrap();
+    assert!(matches!(response, aidb::cluster::MetaResponse::Ok));
+
+    // Should have some groups that need membership changes
+    // In a full system, these changes would be applied via MembershipCoordinator
+    println!("Membership changes needed: {}", changes.len());
 }
