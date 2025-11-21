@@ -33,7 +33,8 @@ pub struct MetaRaftNode {
     /// Metadata state machine
     meta_state: Arc<MetaStateMachine>,
 
-    /// Data directory
+    /// Data directory (reserved for future use)
+    #[allow(dead_code)]
     data_dir: PathBuf,
 }
 
@@ -227,7 +228,7 @@ impl MetaRaftNode {
         let batch_request = Request::Put { key: b"meta:request".to_vec(), value: data };
 
         // Propose through Raft
-        let response = self
+        let _response = self
             .raft
             .client_write(batch_request)
             .await

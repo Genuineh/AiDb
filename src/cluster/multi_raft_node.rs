@@ -472,7 +472,6 @@ mod tests {
 
         // Addresses are stored in network factory
         // Successfully added
-        assert!(true);
     }
 
     #[tokio::test]

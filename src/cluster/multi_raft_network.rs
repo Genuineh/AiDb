@@ -21,7 +21,8 @@ use crate::error::Error as AiDbError;
 /// routing capability for Multi-Raft architecture.
 #[cfg(feature = "raft-cluster")]
 pub struct MultiRaftNetworkClient {
-    /// Inner single-group client
+    /// Inner single-group client (reserved for future use)
+    #[allow(dead_code)]
     inner: RaftNetworkClient,
     /// Group ID for this client
     group_id: GroupId,
@@ -180,9 +181,8 @@ mod tests {
         let factory = MultiRaftNetworkFactory::new(1);
         factory.add_node(2, "127.0.0.1:50052".to_string());
 
-        let client = factory.create_client(100, 2).unwrap();
+        let _client = factory.create_client(100, 2).unwrap();
         // Client created successfully
-        assert!(true);
     }
 
     #[test]
