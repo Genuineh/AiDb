@@ -85,6 +85,11 @@ pub struct MigrationManager {
     config: MigrationConfig,
 
     /// Router for key-to-group mapping
+    ///
+    /// NOTE: Currently stored for future use in Phase 2-3 when implementing
+    /// dual-write and migration-aware routing. Will be actively used when
+    /// determining which group to write to during active migrations.
+    #[allow(dead_code)]
     router: Arc<Router>,
 
     /// Sharded state machine for data access
@@ -106,7 +111,11 @@ enum MigrationCommand {
     /// Start a new migration
     Start { slot: u16, from_group: GroupId, to_group: GroupId },
 
-    /// Cancel an ongoing migration
+    /// Commands for migration worker
+    ///
+    /// NOTE: Cancel variant is reserved for future use in Phase 4 when
+    /// implementing migration rollback and cancellation support.
+    #[allow(dead_code)]
     Cancel { slot: u16 },
 
     /// Shutdown the worker
@@ -156,13 +165,14 @@ impl MigrationManager {
             match command {
                 MigrationCommand::Start { slot, from_group, to_group } => {
                     if let Err(e) = self.execute_migration(slot, from_group, to_group).await {
-                        eprintln!("Migration error for slot {}: {}", slot, e);
+                        tracing::error!("Migration error for slot {}: {}", slot, e);
                     }
                 }
                 MigrationCommand::Cancel { slot } => {
                     self.cancel_migration(slot);
                 }
                 MigrationCommand::Shutdown => {
+                    tracing::info!("Migration worker shutting down");
                     break;
                 }
             }
@@ -262,8 +272,8 @@ impl MigrationManager {
                         m.progress = migrated;
                     }
                     Err(e) => {
-                        eprintln!("Failed to migrate key: {}", e);
-                        // Continue with other keys
+                        tracing::warn!("Failed to migrate key during slot {} migration: {}", slot, e);
+                        // Continue with other keys for resilience
                     }
                 }
             }
