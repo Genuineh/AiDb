@@ -150,6 +150,11 @@ name = "dynamic_member_demo"
 path = "examples/cluster/dynamic_member_demo.rs"
 required-features = ["raft-cluster"]
 
+[[example]]
+name = "slot_migration_demo"
+path = "examples/cluster/slot_migration_demo.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"
