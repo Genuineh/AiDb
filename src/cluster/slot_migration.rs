@@ -380,6 +380,21 @@ impl MigrationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Options;
+    use tempfile::TempDir;
+
+    fn create_test_state_machine() -> (TempDir, Arc<RwLock<ShardedStateMachine>>) {
+        let temp_dir = TempDir::new().unwrap();
+        let state_machine = ShardedStateMachine::new(temp_dir.path(), Options::default());
+        (temp_dir, Arc::new(RwLock::new(state_machine)))
+    }
+
+    fn create_test_router() -> Arc<Router> {
+        use super::super::meta_types::ClusterMeta;
+        // Create a simple router with uniform distribution
+        let meta = ClusterMeta::with_uniform_distribution(4);
+        Arc::new(Router::new(meta))
+    }
 
     #[test]
     fn test_migration_config_default() {
@@ -387,12 +402,176 @@ mod tests {
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.rate_limit, 1000);
         assert_eq!(config.max_retries, 3);
+        assert_eq!(config.key_timeout, Duration::from_secs(5));
+        assert_eq!(config.batch_delay, Duration::from_millis(10));
+    }
+
+    #[test]
+    fn test_migration_config_custom() {
+        let config = MigrationConfig {
+            batch_size: 50,
+            rate_limit: 500,
+            key_timeout: Duration::from_secs(10),
+            max_retries: 5,
+            batch_delay: Duration::from_millis(20),
+        };
+        assert_eq!(config.batch_size, 50);
+        assert_eq!(config.rate_limit, 500);
+        assert_eq!(config.max_retries, 5);
     }
 
     #[test]
     fn test_slot_validation() {
-        // This test will be expanded when we have a working migration manager
+        // Valid slots
         assert!(16383 < 16384);
+        
+        // Invalid slots
         assert!(16384 >= 16384);
+    }
+
+    #[test]
+    fn test_migration_manager_creation() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // Should have no active migrations initially
+        assert_eq!(manager.get_active_migrations().len(), 0);
+    }
+
+    #[test]
+    fn test_is_migrating() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // Initially no migration
+        assert!(!manager.is_migrating(100));
+    }
+
+    #[tokio::test]
+    async fn test_start_migration_invalid_slot() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // Try to migrate an invalid slot
+        let result = manager.start_migration(16384, 0, 1).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid slot"));
+    }
+
+    #[tokio::test]
+    async fn test_start_migration_valid() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // Start a valid migration
+        let result = manager.start_migration(100, 0, 1).await;
+        assert!(result.is_ok());
+        
+        // Should be marked as migrating
+        assert!(manager.is_migrating(100));
+        
+        // Should have one active migration
+        assert_eq!(manager.get_active_migrations().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_start_migration_duplicate() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // Start first migration
+        let result1 = manager.start_migration(100, 0, 1).await;
+        assert!(result1.is_ok());
+        
+        // Try to start duplicate migration for same slot
+        let result2 = manager.start_migration(100, 0, 1).await;
+        assert!(result2.is_err());
+        assert!(result2.unwrap_err().to_string().contains("already migrating"));
+    }
+
+    #[tokio::test]
+    async fn test_get_migration_progress() {
+        let (_temp_dir, state_machine) = create_test_state_machine();
+        let router = create_test_router();
+        let config = MigrationConfig::default();
+
+        let manager = MigrationManager::new(config, router, state_machine);
+        
+        // No migration initially
+        assert!(manager.get_migration_progress(100).is_none());
+        
+        // Start migration
+        manager.start_migration(100, 0, 1).await.unwrap();
+        
+        // Should be able to get progress
+        let progress = manager.get_migration_progress(100);
+        assert!(progress.is_some());
+        
+        let migration = progress.unwrap();
+        assert_eq!(migration.slot, 100);
+        match migration.state {
+            SlotMigrationState::Migrating { from_group, to_group } => {
+                assert_eq!(from_group, 0);
+                assert_eq!(to_group, 1);
+            }
+            _ => panic!("Expected Migrating state"),
+        }
+    }
+
+    #[test]
+    fn test_migration_progress_pct() {
+        let migration = SlotMigration {
+            slot: 100,
+            state: SlotMigrationState::Migrating { from_group: 0, to_group: 1 },
+            progress: 50,
+            total: 100,
+            started_at: 0,
+        };
+        
+        assert_eq!(migration.progress_pct(), 50.0);
+    }
+
+    #[test]
+    fn test_migration_progress_pct_zero_total() {
+        let migration = SlotMigration {
+            slot: 100,
+            state: SlotMigrationState::Migrating { from_group: 0, to_group: 1 },
+            progress: 0,
+            total: 0,
+            started_at: 0,
+        };
+        
+        assert_eq!(migration.progress_pct(), 0.0);
+    }
+
+    #[test]
+    fn test_migration_is_complete() {
+        let mut migration = SlotMigration {
+            slot: 100,
+            state: SlotMigrationState::Migrating { from_group: 0, to_group: 1 },
+            progress: 0,
+            total: 100,
+            started_at: 0,
+        };
+        
+        assert!(!migration.is_complete());
+        
+        migration.state = SlotMigrationState::Complete;
+        assert!(migration.is_complete());
     }
 }
