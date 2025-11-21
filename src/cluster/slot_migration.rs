@@ -14,16 +14,26 @@
 //! # Example
 //!
 //! ```no_run
-//! # use aidb::cluster::MigrationManager;
+//! # use aidb::cluster::{MigrationManager, MigrationConfig, Router, ShardedStateMachine, ClusterMeta};
+//! # use aidb::config::Options;
+//! # use std::sync::Arc;
+//! # use parking_lot::RwLock;
 //! # async fn example() -> aidb::error::Result<()> {
-//! let manager = MigrationManager::new(/* ... */);
+//! # let config = MigrationConfig::default();
+//! # let meta = ClusterMeta::with_uniform_distribution(4);
+//! # let router = Arc::new(Router::new(meta));
+//! # let state_machine = Arc::new(RwLock::new(
+//! #     ShardedStateMachine::new("/tmp/test", Options::default())
+//! # ));
+//! let manager = MigrationManager::new(config, router, state_machine);
 //!
 //! // Start migrating slot 100 from group 1 to group 2
 //! manager.start_migration(100, 1, 2).await?;
 //!
 //! // Check migration progress
-//! let progress = manager.get_migration_progress(100).await?;
-//! println!("Progress: {:.2}%", progress.progress_pct());
+//! if let Some(progress) = manager.get_migration_progress(100) {
+//!     println!("Progress: {:.2}%", progress.progress_pct());
+//! }
 //!
 //! // Migration completes automatically in background
 //! # Ok(())
