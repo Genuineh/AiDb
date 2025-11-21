@@ -69,6 +69,12 @@ pub mod multi_raft_network;
 #[cfg(feature = "raft-cluster")]
 pub mod multi_raft_node;
 
+#[cfg(feature = "raft-cluster")]
+pub mod router;
+
+#[cfg(feature = "raft-cluster")]
+pub mod sharded_state_machine;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -139,6 +145,12 @@ pub use multi_raft_network::{MultiRaftNetworkClient, MultiRaftNetworkFactory};
 
 #[cfg(feature = "raft-cluster")]
 pub use multi_raft_node::MultiRaftNode;
+
+#[cfg(feature = "raft-cluster")]
+pub use router::{Router, SLOT_COUNT};
+
+#[cfg(feature = "raft-cluster")]
+pub use sharded_state_machine::ShardedStateMachine;
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]
