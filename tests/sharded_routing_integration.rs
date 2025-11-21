@@ -24,11 +24,7 @@ mod sharded_routing_tests {
             let key = format!("user:{}", i);
             let slot = Router::key_to_slot(key.as_bytes());
 
-            assert!(
-                slot < SLOT_COUNT as u16,
-                "Slot {} is out of range",
-                slot
-            );
+            assert!(slot < SLOT_COUNT as u16, "Slot {} is out of range", slot);
 
             *slot_buckets.entry(slot / 100).or_insert(0) += 1;
         }
@@ -51,10 +47,7 @@ mod sharded_routing_tests {
 
         // Add group metadata
         for group_id in 0..16 {
-            meta.groups.insert(
-                group_id,
-                GroupMeta::new(group_id, vec![1, 2, 3]),
-            );
+            meta.groups.insert(group_id, GroupMeta::new(group_id, vec![1, 2, 3]));
         }
 
         // Add node information
@@ -65,12 +58,8 @@ mod sharded_routing_tests {
         let router = Router::new(meta);
 
         // Test routing multiple keys
-        let test_keys: Vec<&[u8]> = vec![
-            b"user:1000",
-            b"order:5000",
-            b"product:1234",
-            b"session:abcd",
-        ];
+        let test_keys: Vec<&[u8]> =
+            vec![b"user:1000", b"order:5000", b"product:1234", b"session:abcd"];
 
         let mut group_distribution = HashMap::new();
 
@@ -129,7 +118,11 @@ mod sharded_routing_tests {
             for other_group in 1..=5 {
                 if other_group != group_id {
                     let value = state_machine.get(other_group, key.as_bytes()).unwrap();
-                    assert_eq!(value, None, "Group {} should not have key from group {}", other_group, group_id);
+                    assert_eq!(
+                        value, None,
+                        "Group {} should not have key from group {}",
+                        other_group, group_id
+                    );
                 }
             }
         }
@@ -206,7 +199,7 @@ mod sharded_routing_tests {
     #[test]
     fn test_key_slot_consistency_across_restarts() {
         // Verify slot calculation is deterministic across restarts
-        let test_keys = vec![
+        let test_keys = [
             b"user:1".to_vec(),
             b"user:2".to_vec(),
             b"order:100".to_vec(),
@@ -238,18 +231,9 @@ mod sharded_routing_tests {
         state_machine.put(3, key.clone(), b"value_in_group_3".to_vec()).unwrap();
 
         // Verify each group has its own value
-        assert_eq!(
-            state_machine.get(1, &key).unwrap(),
-            Some(b"value_in_group_1".to_vec())
-        );
-        assert_eq!(
-            state_machine.get(2, &key).unwrap(),
-            Some(b"value_in_group_2".to_vec())
-        );
-        assert_eq!(
-            state_machine.get(3, &key).unwrap(),
-            Some(b"value_in_group_3".to_vec())
-        );
+        assert_eq!(state_machine.get(1, &key).unwrap(), Some(b"value_in_group_1".to_vec()));
+        assert_eq!(state_machine.get(2, &key).unwrap(), Some(b"value_in_group_2".to_vec()));
+        assert_eq!(state_machine.get(3, &key).unwrap(), Some(b"value_in_group_3".to_vec()));
     }
 
     #[test]
@@ -298,11 +282,7 @@ mod sharded_routing_tests {
         }
 
         // All 64 groups should have keys
-        assert_eq!(
-            group_counts.len(),
-            64,
-            "Not all groups received keys"
-        );
+        assert_eq!(group_counts.len(), 64, "Not all groups received keys");
 
         // Calculate standard deviation to ensure relatively even distribution
         let avg = 100000 / 64;

@@ -496,7 +496,9 @@ mod tests {
         for group_id in 1..=5 {
             let key = format!("key{}", group_id);
             let value = format!("value{}", group_id);
-            state_machine.put(group_id, key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
+            state_machine
+                .put(group_id, key.as_bytes().to_vec(), value.as_bytes().to_vec())
+                .unwrap();
         }
 
         // Read from different groups
@@ -554,7 +556,7 @@ mod tests {
     #[test]
     fn test_load_existing_groups() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create initial state machine and add some groups
         {
             let state_machine = ShardedStateMachine::new(temp_dir.path(), create_test_options());

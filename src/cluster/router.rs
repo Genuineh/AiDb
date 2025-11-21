@@ -16,11 +16,11 @@
 //! # use aidb::cluster::{Router, ClusterMeta};
 //! let meta = ClusterMeta::new();
 //! let router = Router::new(meta);
-//! 
+//!
 //! // Route a key to its group
 //! let key = b"user:12345";
 //! let group_id = router.route(key).unwrap();
-//! 
+//!
 //! // Get the slot for a key
 //! let slot = Router::key_to_slot(key);
 //! ```
@@ -271,7 +271,8 @@ impl Router {
         }
 
         let handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_millis(poll_interval_ms));
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_millis(poll_interval_ms));
             loop {
                 interval.tick().await;
 

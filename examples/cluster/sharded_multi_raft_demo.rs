@@ -29,8 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.init_meta_raft(meta_config).await?;
 
     // Bootstrap MetaRaft cluster (single node for demo)
-    node.initialize_meta_cluster(vec![(1, "127.0.0.1:50051".to_string())])
-        .await?;
+    node.initialize_meta_cluster(vec![(1, "127.0.0.1:50051".to_string())]).await?;
     println!("   ✓ MetaRaft initialized\n");
 
     // Step 3: Initialize Router
@@ -148,7 +147,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Keys per group:");
     for group_id in 0..group_count {
         let count = group_counts.get(&group_id).unwrap_or(&0);
-        println!("     Group {}: {} keys ({:.1}%)", group_id, count, (*count as f64 / 1000.0) * 100.0);
+        println!(
+            "     Group {}: {} keys ({:.1}%)",
+            group_id,
+            count,
+            (*count as f64 / 1000.0) * 100.0
+        );
     }
     println!();
 
