@@ -1,7 +1,9 @@
 //! Integration tests for dynamic member management (Stage 4)
 
 #[cfg(feature = "raft-cluster")]
-use aidb::cluster::{GroupMeta, MembershipCoordinator, MetaStateMachine, MultiRaftNode, ReplicaAllocator};
+use aidb::cluster::{
+    GroupMeta, MembershipCoordinator, MetaStateMachine, MultiRaftNode, ReplicaAllocator,
+};
 use aidb::config::Options;
 use openraft::Config;
 use std::collections::HashMap;
@@ -44,7 +46,7 @@ async fn test_node_join_with_automatic_rebalancing() {
     // Get meta and manually create a group (simulating what MetaRaft would do)
     let mut meta = meta_state.get_cluster_meta();
     meta.groups.insert(100, GroupMeta::new(100, vec![1, 2, 3]));
-    
+
     // Save the state back (in real implementation, this would go through MetaRaft)
     // For now, we'll test the allocator directly
     let allocator = ReplicaAllocator::new(3);
@@ -55,10 +57,10 @@ async fn test_node_join_with_automatic_rebalancing() {
     // Add node 4
     let result = allocator.allocate_replicas(101, &available_nodes, &current_allocation);
     assert!(result.is_ok());
-    
+
     let replicas = result.unwrap();
     assert_eq!(replicas.len(), 3);
-    
+
     // Should include some of the less loaded nodes (4 and 5)
     let has_new_nodes = replicas.contains(&4) || replicas.contains(&5);
     assert!(has_new_nodes, "New group should use less loaded nodes");
@@ -85,11 +87,8 @@ async fn test_node_removal_triggers_rebalancing() {
     // Test rebalancing when node 3 is removed
     let allocator = ReplicaAllocator::new(3);
     let available_nodes = vec![1, 2, 4, 5]; // Node 3 removed
-    let current_allocation: HashMap<u64, Vec<u64>> = meta
-        .groups
-        .iter()
-        .map(|(&gid, group)| (gid, group.replicas.clone()))
-        .collect();
+    let current_allocation: HashMap<u64, Vec<u64>> =
+        meta.groups.iter().map(|(&gid, group)| (gid, group.replicas.clone())).collect();
 
     let new_allocation = allocator.rebalance(&available_nodes, current_allocation).unwrap();
 
@@ -169,17 +168,20 @@ async fn test_replication_factor_configuration() {
     for rf in [3, 5] {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let meta_state = MetaStateMachine::with_replication_factor(temp_dir.path(), rf).unwrap();
-        
+
         // Add enough nodes
         for i in 1..=(rf + 2) {
-            meta_state.handle_add_node(i as u64, format!("127.0.0.1:{}", 50050 + i)).unwrap();
+            meta_state
+                .handle_add_node(i as u64, format!("127.0.0.1:{}", 50050 + i))
+                .unwrap();
         }
 
         let allocator = ReplicaAllocator::new(rf);
         let available_nodes: Vec<u64> = (1..=(rf + 2) as u64).collect();
         let current_allocation = HashMap::new();
 
-        let replicas = allocator.allocate_replicas(100, &available_nodes, &current_allocation).unwrap();
+        let replicas =
+            allocator.allocate_replicas(100, &available_nodes, &current_allocation).unwrap();
         assert_eq!(replicas.len(), rf, "Should allocate {} replicas", rf);
     }
 }
@@ -214,7 +216,7 @@ async fn test_remove_nonexistent_node() {
 async fn test_membership_coordinator_integration() {
     // Test membership coordinator with group creation
     use std::sync::Arc;
-    
+
     let temp_dir = tempfile::TempDir::new().unwrap();
     let config = Config::default();
     let mut node = MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap();

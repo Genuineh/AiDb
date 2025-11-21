@@ -9,10 +9,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse};
-use super::replica_allocator::ReplicaAllocator;
 use super::raft_storage::NodeId;
+use super::replica_allocator::ReplicaAllocator;
 use super::sharded_storage::GroupId;
 use crate::error::{Error, Result};
+
+/// Type alias for membership change results
+/// Returns (MetaResponse, list of (group_id, new_member_list) tuples)
+pub type MembershipChangeResult = (MetaResponse, Vec<(GroupId, Vec<NodeId>)>);
 
 /// MetaStateMachine for managing cluster metadata
 ///
@@ -109,11 +113,7 @@ impl MetaStateMachine {
     ///
     /// A tuple of (MetaResponse, Vec of pending membership changes)
     /// The membership changes should be executed by the caller to update individual groups
-    pub fn handle_add_node(
-        &self,
-        node_id: NodeId,
-        addr: String,
-    ) -> Result<(MetaResponse, Vec<(GroupId, Vec<NodeId>)>)> {
+    pub fn handle_add_node(&self, node_id: NodeId, addr: String) -> Result<MembershipChangeResult> {
         let mut meta = self.meta.write();
 
         // Check if node already exists
@@ -142,11 +142,8 @@ impl MetaStateMachine {
             .collect();
 
         // Build current allocation map
-        let current_allocation: HashMap<GroupId, Vec<NodeId>> = meta
-            .groups
-            .iter()
-            .map(|(&gid, group)| (gid, group.replicas.clone()))
-            .collect();
+        let current_allocation: HashMap<GroupId, Vec<NodeId>> =
+            meta.groups.iter().map(|(&gid, group)| (gid, group.replicas.clone())).collect();
 
         // Rebalance replicas
         let new_allocation = self.allocator.rebalance(&available_nodes, current_allocation)?;
@@ -157,7 +154,7 @@ impl MetaStateMachine {
         for (group_id, new_replicas) in &new_allocation {
             if let Some(group) = meta.groups.get(group_id) {
                 let old_replicas = &group.replicas;
-                
+
                 // Check if replicas changed
                 if old_replicas != new_replicas {
                     membership_changes.push((*group_id, new_replicas.clone()));
@@ -211,18 +208,12 @@ impl MetaStateMachine {
     /// # Returns
     ///
     /// A tuple of (MetaResponse, Vec of pending membership changes)
-    pub fn handle_remove_node(
-        &self,
-        node_id: NodeId,
-    ) -> Result<(MetaResponse, Vec<(GroupId, Vec<NodeId>)>)> {
+    pub fn handle_remove_node(&self, node_id: NodeId) -> Result<MembershipChangeResult> {
         let mut meta = self.meta.write();
 
         // Check if node exists
         if !meta.nodes.contains_key(&node_id) {
-            return Ok((
-                MetaResponse::Error(format!("Node {} not found", node_id)),
-                Vec::new(),
-            ));
+            return Ok((MetaResponse::Error(format!("Node {} not found", node_id)), Vec::new()));
         }
 
         // Remove the node
@@ -230,18 +221,11 @@ impl MetaStateMachine {
         meta.config_version += 1;
 
         // Get remaining available nodes
-        let available_nodes: Vec<NodeId> = meta
-            .nodes
-            .keys()
-            .copied()
-            .collect();
+        let available_nodes: Vec<NodeId> = meta.nodes.keys().copied().collect();
 
         // Build current allocation map
-        let current_allocation: HashMap<GroupId, Vec<NodeId>> = meta
-            .groups
-            .iter()
-            .map(|(&gid, group)| (gid, group.replicas.clone()))
-            .collect();
+        let current_allocation: HashMap<GroupId, Vec<NodeId>> =
+            meta.groups.iter().map(|(&gid, group)| (gid, group.replicas.clone())).collect();
 
         // Rebalance replicas
         let new_allocation = self.allocator.rebalance(&available_nodes, current_allocation)?;
@@ -252,7 +236,7 @@ impl MetaStateMachine {
         for (group_id, new_replicas) in &new_allocation {
             if let Some(group) = meta.groups.get(group_id) {
                 let old_replicas = &group.replicas;
-                
+
                 // Check if replicas changed
                 if old_replicas != new_replicas {
                     membership_changes.push((*group_id, new_replicas.clone()));

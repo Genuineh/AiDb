@@ -149,11 +149,7 @@ impl MembershipCoordinator {
     /// # Returns
     ///
     /// `Ok(())` on success
-    pub async fn promote_learner(
-        &self,
-        group_id: GroupId,
-        new_members: Vec<NodeId>,
-    ) -> Result<()> {
+    pub async fn promote_learner(&self, group_id: GroupId, new_members: Vec<NodeId>) -> Result<()> {
         self.apply_membership_change(group_id, new_members).await
     }
 
@@ -201,8 +197,7 @@ mod tests {
         let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap());
 
         let meta_dir = temp_dir.path().join("meta");
-        let meta_raft =
-            Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());
+        let meta_raft = Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());
 
         let _coordinator = MembershipCoordinator::new(node, meta_raft);
         // Just test creation succeeds
@@ -215,8 +210,7 @@ mod tests {
         let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap());
 
         let meta_dir = temp_dir.path().join("meta");
-        let meta_raft =
-            Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());
+        let meta_raft = Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());
 
         let coordinator = MembershipCoordinator::new(node, meta_raft);
 

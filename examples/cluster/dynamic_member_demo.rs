@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for node_id in 1..=5 {
         let addr = format!("127.0.0.1:{}", 50050 + node_id);
         let (response, changes) = meta_state.handle_add_node(node_id, addr.clone())?;
-        
+
         match response {
             aidb::cluster::MetaResponse::Ok => {
                 println!("   ✓ Node {} added at {}", node_id, addr);
@@ -51,8 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meta = meta_state.get_cluster_meta();
     println!("   Nodes: {}", meta.nodes.len());
     for (node_id, node_info) in &meta.nodes {
-        println!("     - Node {}: {} (groups: {})", 
-                 node_id, node_info.addr, node_info.group_count);
+        println!(
+            "     - Node {}: {} (groups: {})",
+            node_id, node_info.addr, node_info.group_count
+        );
     }
     println!();
 
@@ -64,12 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Allocate replicas for several groups
     for group_id in 100..105 {
-        let replicas = allocator.allocate_replicas(
-            group_id,
-            &available_nodes,
-            &current_allocation,
-        )?;
-        
+        let replicas =
+            allocator.allocate_replicas(group_id, &available_nodes, &current_allocation)?;
+
         println!("   Group {}: replicas = {:?}", group_id, replicas);
         current_allocation.insert(group_id, replicas);
     }
@@ -83,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             *node_loads.entry(replica).or_insert(0) += 1;
         }
     }
-    
+
     for node_id in 1..=5 {
         let load = node_loads.get(&node_id).unwrap_or(&0);
         println!("   Node {}: {} groups", node_id, load);
@@ -94,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("6. Simulating node 3 removal...");
     let remaining_nodes: Vec<u64> = vec![1, 2, 4, 5];
     let new_allocation = allocator.rebalance(&remaining_nodes, current_allocation.clone())?;
-    
+
     println!("   Rebalanced allocation:");
     for (group_id, replicas) in &new_allocation {
         let old_replicas = &current_allocation[group_id];
@@ -112,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             *new_node_loads.entry(replica).or_insert(0) += 1;
         }
     }
-    
+
     for node_id in &remaining_nodes {
         let load = new_node_loads.get(node_id).unwrap_or(&0);
         println!("   Node {}: {} groups", node_id, load);
@@ -124,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_dir = tempfile::TempDir::new()?;
     let config = Config::default();
     let mut node = MultiRaftNode::new(1, node_dir.path(), config).await?;
-    
+
     // Initialize MetaRaft
     let meta_config = Config::default();
     node.init_meta_raft(meta_config).await?;

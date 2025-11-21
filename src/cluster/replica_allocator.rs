@@ -77,8 +77,7 @@ impl ReplicaAllocator {
         }
 
         // Sort nodes by load (ascending)
-        let mut nodes_by_load: Vec<(NodeId, usize)> =
-            node_loads.into_iter().collect();
+        let mut nodes_by_load: Vec<(NodeId, usize)> = node_loads.into_iter().collect();
         nodes_by_load.sort_by_key(|(_, load)| *load);
 
         // Select the least loaded nodes
@@ -138,10 +137,7 @@ impl ReplicaAllocator {
                 let mut updated_replicas = valid_replicas.clone();
 
                 // Calculate node loads
-                let mut node_loads = self.calculate_node_loads(
-                    available_nodes,
-                    &new_allocation,
-                );
+                let mut node_loads = self.calculate_node_loads(available_nodes, &new_allocation);
 
                 // Add load from current group's valid replicas
                 for &replica in &valid_replicas {
@@ -166,14 +162,13 @@ impl ReplicaAllocator {
                 // Strategy: Keep replicas on nodes with higher overall load across the cluster,
                 // as these nodes are likely more stable and have proven capacity. This helps
                 // avoid moving replicas to underutilized nodes that might be new or unstable.
-                let mut replicas_with_load: Vec<(NodeId, usize)> =
-                    valid_replicas
-                        .iter()
-                        .map(|&node| {
-                            let load = self.count_node_load(node, &current_allocation);
-                            (node, load)
-                        })
-                        .collect();
+                let mut replicas_with_load: Vec<(NodeId, usize)> = valid_replicas
+                    .iter()
+                    .map(|&node| {
+                        let load = self.count_node_load(node, &current_allocation);
+                        (node, load)
+                    })
+                    .collect();
 
                 // Sort by load (descending) to keep the most loaded nodes' replicas
                 replicas_with_load.sort_by_key(|(_, load)| std::cmp::Reverse(*load));
@@ -224,10 +219,7 @@ impl ReplicaAllocator {
         node_id: NodeId,
         allocation: &HashMap<GroupId, Vec<NodeId>>,
     ) -> usize {
-        allocation
-            .values()
-            .filter(|replicas| replicas.contains(&node_id))
-            .count()
+        allocation.values().filter(|replicas| replicas.contains(&node_id)).count()
     }
 
     /// Get the replication factor
