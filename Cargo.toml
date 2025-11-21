@@ -140,6 +140,11 @@ name = "thin_replication_demo"
 path = "examples/cluster/thin_replication_demo.rs"
 required-features = ["raft-cluster"]
 
+[[example]]
+name = "sharded_multi_raft_demo"
+path = "examples/cluster/sharded_multi_raft_demo.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"
