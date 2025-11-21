@@ -4,10 +4,14 @@
 //! global cluster metadata including slot mappings, group memberships, and node information.
 
 use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse};
+use super::replica_allocator::ReplicaAllocator;
+use super::raft_storage::NodeId;
+use super::sharded_storage::GroupId;
 use crate::error::{Error, Result};
 
 /// MetaStateMachine for managing cluster metadata
@@ -25,6 +29,9 @@ pub struct MetaStateMachine {
     /// Data directory for persistence
     #[allow(dead_code)]
     data_dir: PathBuf,
+
+    /// Replica allocator for automatic replica assignment
+    allocator: ReplicaAllocator,
 }
 
 impl MetaStateMachine {
@@ -34,6 +41,19 @@ impl MetaStateMachine {
     ///
     /// * `data_dir` - Directory for storing metadata snapshots
     pub fn new<P: Into<PathBuf>>(data_dir: P) -> Result<Self> {
+        Self::with_replication_factor(data_dir, 3)
+    }
+
+    /// Create a new MetaStateMachine with custom replication factor
+    ///
+    /// # Arguments
+    ///
+    /// * `data_dir` - Directory for storing metadata snapshots
+    /// * `replication_factor` - Number of replicas per group (typically 3 or 5)
+    pub fn with_replication_factor<P: Into<PathBuf>>(
+        data_dir: P,
+        replication_factor: usize,
+    ) -> Result<Self> {
         let data_dir = data_dir.into();
         std::fs::create_dir_all(&data_dir)?;
 
@@ -44,6 +64,7 @@ impl MetaStateMachine {
             meta: Arc::new(RwLock::new(Box::new(meta))),
             last_applied: Arc::new(RwLock::new(0)),
             data_dir,
+            allocator: ReplicaAllocator::new(replication_factor),
         })
     }
 
@@ -72,6 +93,202 @@ impl MetaStateMachine {
     /// Get current cluster metadata (read-only access)
     pub fn get_cluster_meta(&self) -> ClusterMeta {
         (**self.meta.read()).clone()
+    }
+
+    /// Handle adding a node with automatic replica rebalancing
+    ///
+    /// This method adds a node and automatically rebalances group replicas
+    /// to distribute load evenly across all nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - ID of the node to add
+    /// * `addr` - Address of the node
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (MetaResponse, Vec of pending membership changes)
+    /// The membership changes should be executed by the caller to update individual groups
+    pub fn handle_add_node(
+        &self,
+        node_id: NodeId,
+        addr: String,
+    ) -> Result<(MetaResponse, Vec<(GroupId, Vec<NodeId>)>)> {
+        let mut meta = self.meta.write();
+
+        // Check if node already exists
+        if meta.nodes.contains_key(&node_id) {
+            return Ok((
+                MetaResponse::Error(format!("Node {} already exists", node_id)),
+                Vec::new(),
+            ));
+        }
+
+        // Add the node
+        use super::meta_types::NodeInfo;
+        let node_info = NodeInfo::new(node_id, addr);
+        meta.nodes.insert(node_id, node_info);
+        meta.config_version += 1;
+
+        // Get available nodes
+        let available_nodes: Vec<NodeId> = meta
+            .nodes
+            .iter()
+            .filter(|(_, info)| info.is_online() || info.status == super::meta_types::NodeStatus::Joining)
+            .map(|(&id, _)| id)
+            .collect();
+
+        // Build current allocation map
+        let current_allocation: HashMap<GroupId, Vec<NodeId>> = meta
+            .groups
+            .iter()
+            .map(|(&gid, group)| (gid, group.replicas.clone()))
+            .collect();
+
+        // Rebalance replicas
+        let new_allocation = self.allocator.rebalance(&available_nodes, current_allocation)?;
+
+        // Collect membership changes
+        let mut membership_changes = Vec::new();
+
+        for (group_id, new_replicas) in &new_allocation {
+            if let Some(group) = meta.groups.get(group_id) {
+                let old_replicas = &group.replicas;
+                
+                // Check if replicas changed
+                if old_replicas != new_replicas {
+                    membership_changes.push((*group_id, new_replicas.clone()));
+                }
+            }
+        }
+
+        // Update metadata with new allocations
+        for (group_id, new_replicas) in new_allocation {
+            // Clone old replicas before any mutable borrows
+            let old_replicas = if let Some(group) = meta.groups.get(&group_id) {
+                group.replicas.clone()
+            } else {
+                continue;
+            };
+
+            // Update node group counts for old replicas
+            for &old_replica in &old_replicas {
+                if let Some(node) = meta.nodes.get_mut(&old_replica) {
+                    if node.group_count > 0 {
+                        node.group_count -= 1;
+                    }
+                }
+            }
+
+            // Update group replicas
+            if let Some(group) = meta.groups.get_mut(&group_id) {
+                group.update_replicas(new_replicas.clone());
+            }
+
+            // Update node group counts for new replicas
+            for &new_replica in &new_replicas {
+                if let Some(node) = meta.nodes.get_mut(&new_replica) {
+                    node.group_count += 1;
+                }
+            }
+        }
+
+        Ok((MetaResponse::Ok, membership_changes))
+    }
+
+    /// Handle removing a node with automatic replica rebalancing
+    ///
+    /// This method removes a node and automatically rebalances group replicas
+    /// to maintain the replication factor.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - ID of the node to remove
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (MetaResponse, Vec of pending membership changes)
+    pub fn handle_remove_node(
+        &self,
+        node_id: NodeId,
+    ) -> Result<(MetaResponse, Vec<(GroupId, Vec<NodeId>)>)> {
+        let mut meta = self.meta.write();
+
+        // Check if node exists
+        if !meta.nodes.contains_key(&node_id) {
+            return Ok((
+                MetaResponse::Error(format!("Node {} not found", node_id)),
+                Vec::new(),
+            ));
+        }
+
+        // Remove the node
+        meta.nodes.remove(&node_id);
+        meta.config_version += 1;
+
+        // Get remaining available nodes
+        let available_nodes: Vec<NodeId> = meta
+            .nodes
+            .keys()
+            .copied()
+            .collect();
+
+        // Build current allocation map
+        let current_allocation: HashMap<GroupId, Vec<NodeId>> = meta
+            .groups
+            .iter()
+            .map(|(&gid, group)| (gid, group.replicas.clone()))
+            .collect();
+
+        // Rebalance replicas
+        let new_allocation = self.allocator.rebalance(&available_nodes, current_allocation)?;
+
+        // Collect membership changes
+        let mut membership_changes = Vec::new();
+
+        for (group_id, new_replicas) in &new_allocation {
+            if let Some(group) = meta.groups.get(group_id) {
+                let old_replicas = &group.replicas;
+                
+                // Check if replicas changed
+                if old_replicas != new_replicas {
+                    membership_changes.push((*group_id, new_replicas.clone()));
+                }
+            }
+        }
+
+        // Update metadata with new allocations
+        for (group_id, new_replicas) in new_allocation {
+            // Clone old replicas before any mutable borrows
+            let old_replicas = if let Some(group) = meta.groups.get(&group_id) {
+                group.replicas.clone()
+            } else {
+                continue;
+            };
+
+            // Update node group counts for old replicas
+            for &old_replica in &old_replicas {
+                if let Some(node) = meta.nodes.get_mut(&old_replica) {
+                    if node.group_count > 0 {
+                        node.group_count -= 1;
+                    }
+                }
+            }
+
+            // Update group replicas
+            if let Some(group) = meta.groups.get_mut(&group_id) {
+                group.update_replicas(new_replicas.clone());
+            }
+
+            // Update node group counts for new replicas
+            for &new_replica in &new_replicas {
+                if let Some(node) = meta.nodes.get_mut(&new_replica) {
+                    node.group_count += 1;
+                }
+            }
+        }
+
+        Ok((MetaResponse::Ok, membership_changes))
     }
 
     /// Apply a MetaRequest to the state machine

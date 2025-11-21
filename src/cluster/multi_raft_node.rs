@@ -12,6 +12,7 @@ use std::sync::Arc;
 use openraft::{storage::Adaptor, BasicNode, Config, Raft};
 
 use super::meta_raft_node::MetaRaftNode;
+use super::meta_types::ClusterMeta;
 use super::raft_network::RaftNetworkClientFactory;
 use super::raft_storage::{NodeId, Request, TypeConfig};
 use super::router::Router;
@@ -402,6 +403,103 @@ impl MultiRaftNode {
         };
 
         self.state_machine = Some(Arc::new(state_machine));
+        Ok(())
+    }
+
+    /// Start the node and join the cluster
+    ///
+    /// This method performs the complete node startup sequence:
+    /// 1. Joins MetaRaft (if not bootstrap node)
+    /// 2. Gets cluster metadata
+    /// 3. Loads groups that this node should participate in
+    ///
+    /// # Arguments
+    ///
+    /// * `is_bootstrap` - Whether this is the bootstrap node
+    /// * `meta_leader_addr` - Address of MetaRaft leader (required if not bootstrap)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub async fn start(&self, is_bootstrap: bool, meta_leader_addr: Option<String>) -> Result<()> {
+        // If not bootstrap node, join MetaRaft
+        if !is_bootstrap {
+            if let Some(addr) = meta_leader_addr {
+                self.join_meta_raft(&addr).await?;
+            } else {
+                return Err(Error::Internal(
+                    "MetaRaft leader address required for non-bootstrap node".to_string(),
+                ));
+            }
+        }
+
+        // Get cluster metadata
+        if let Some(meta_raft) = &self.meta_raft {
+            let meta = meta_raft.get_cluster_meta();
+
+            // Load groups that this node should participate in
+            self.load_groups_from_meta(&meta).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Join an existing MetaRaft cluster
+    ///
+    /// This method adds the node as a learner to the MetaRaft cluster
+    /// and waits for promotion to voter.
+    ///
+    /// # Arguments
+    ///
+    /// * `leader_addr` - Address of the current MetaRaft leader
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub async fn join_meta_raft(&self, _leader_addr: &str) -> Result<()> {
+        let meta_raft = self
+            .meta_raft
+            .as_ref()
+            .ok_or_else(|| Error::Internal("MetaRaft not initialized".to_string()))?;
+
+        // TODO: Connect to leader and add ourselves as learner
+        // For now, this is a placeholder that assumes MetaRaft is already initialized
+
+        // Add node to cluster metadata through MetaRaft
+        let node_addr = format!("127.0.0.1:{}", 50051 + self.node_id);
+        let _response = meta_raft.add_node(self.node_id, node_addr).await?;
+
+        // In a full implementation, we would:
+        // 1. Connect to the MetaRaft leader via gRPC
+        // 2. Call add_learner() on the leader
+        // 3. Wait for log replication to catch up
+        // 4. Call change_membership() to promote to voter
+
+        Ok(())
+    }
+
+    /// Load groups from cluster metadata
+    ///
+    /// Creates Raft instances for all groups that this node should participate in.
+    ///
+    /// # Arguments
+    ///
+    /// * `meta` - Cluster metadata
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    async fn load_groups_from_meta(&self, meta: &ClusterMeta) -> Result<()> {
+        // Find all groups where this node is a replica
+        for (group_id, group_meta) in &meta.groups {
+            if group_meta.is_replica(self.node_id) {
+                // Create the group if it doesn't exist
+                if !self.has_group(*group_id) {
+                    self.create_raft_group(*group_id, group_meta.replicas.clone()).await?;
+                }
+            }
+        }
+
         Ok(())
     }
 
