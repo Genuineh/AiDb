@@ -592,7 +592,7 @@ impl MigrationManager {
     ///
     /// This method attempts to cancel an in-progress migration and optionally
     /// roll back already-migrated keys. The rollback is best-effort.
-    fn cancel_migration(&self, slot: u16) {
+    pub fn cancel_migration(&self, slot: u16) {
         let migration = {
             let mut migrations = self.active_migrations.write();
             migrations.remove(&slot)
