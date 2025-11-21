@@ -75,6 +75,12 @@ pub mod router;
 #[cfg(feature = "raft-cluster")]
 pub mod sharded_state_machine;
 
+#[cfg(feature = "raft-cluster")]
+pub mod replica_allocator;
+
+#[cfg(feature = "raft-cluster")]
+pub mod membership_coordinator;
+
 // TODO: Phase 3 - Rewrite for openraft
 // #[cfg(feature = "raft-cluster")]
 // pub mod raft_transport;
@@ -151,6 +157,12 @@ pub use router::{Router, SLOT_COUNT};
 
 #[cfg(feature = "raft-cluster")]
 pub use sharded_state_machine::ShardedStateMachine;
+
+#[cfg(feature = "raft-cluster")]
+pub use replica_allocator::ReplicaAllocator;
+
+#[cfg(feature = "raft-cluster")]
+pub use membership_coordinator::MembershipCoordinator;
 
 // TODO: Phase 3-4 - Re-enable after rewriting for openraft
 // #[cfg(feature = "raft-cluster")]

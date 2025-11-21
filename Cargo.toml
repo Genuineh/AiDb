@@ -145,6 +145,11 @@ name = "sharded_multi_raft_demo"
 path = "examples/cluster/sharded_multi_raft_demo.rs"
 required-features = ["raft-cluster"]
 
+[[example]]
+name = "dynamic_member_demo"
+path = "examples/cluster/dynamic_member_demo.rs"
+required-features = ["raft-cluster"]
+
 # Monitoring examples (require --features monitoring)
 [[example]]
 name = "metrics_server"
