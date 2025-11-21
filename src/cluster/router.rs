@@ -12,19 +12,17 @@
 //!
 //! # Example
 //!
-//! ```no_run
-//! # use aidb::cluster::Router;
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let router = Router::new(/* ... */);
+//! ```
+//! # use aidb::cluster::{Router, ClusterMeta};
+//! let meta = ClusterMeta::new();
+//! let router = Router::new(meta);
 //! 
 //! // Route a key to its group
 //! let key = b"user:12345";
-//! let group_id = router.route(key)?;
+//! let group_id = router.route(key).unwrap();
 //! 
-//! // Get the nodes for that group
-//! let nodes = router.route_to_nodes(key)?;
-//! # Ok(())
-//! # }
+//! // Get the slot for a key
+//! let slot = Router::key_to_slot(key);
 //! ```
 
 use parking_lot::RwLock;
