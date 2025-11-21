@@ -13,8 +13,11 @@ use openraft::{storage::Adaptor, BasicNode, Config, Raft};
 
 use super::meta_raft_node::MetaRaftNode;
 use super::raft_network::RaftNetworkClientFactory;
-use super::raft_storage::{NodeId, TypeConfig};
+use super::raft_storage::{NodeId, Request, TypeConfig};
+use super::router::Router;
+use super::sharded_state_machine::ShardedStateMachine;
 use super::sharded_storage::{GroupId, ShardedRaftStorage};
+use crate::config::Options;
 use crate::error::{Error, Result};
 
 /// Multi-Raft Node managing multiple independent Raft groups
@@ -47,6 +50,12 @@ pub struct MultiRaftNode {
 
     /// Network factory for creating group-specific clients
     network_factory: Arc<RaftNetworkClientFactory>,
+
+    /// Router for key-to-group mapping
+    router: Option<Arc<Router>>,
+
+    /// Sharded state machine managing per-group AiDb instances
+    state_machine: Option<Arc<ShardedStateMachine>>,
 
     /// Data directory
     data_dir: PathBuf,
@@ -97,6 +106,8 @@ impl MultiRaftNode {
             groups: Arc::new(RwLock::new(HashMap::new())),
             storage,
             network_factory,
+            router: None,
+            state_machine: None,
             data_dir,
             raft_config: config,
         })
@@ -349,7 +360,159 @@ impl MultiRaftNode {
             }
         }
 
+        // Shutdown state machine
+        if let Some(state_machine) = &self.state_machine {
+            state_machine.shutdown()?;
+        }
+
         Ok(())
+    }
+
+    /// Initialize the router with metadata from MetaRaft
+    ///
+    /// This should be called after MetaRaft is initialized to enable
+    /// automatic key routing.
+    pub fn init_router(&mut self) -> Result<()> {
+        let meta_raft = self
+            .meta_raft
+            .as_ref()
+            .ok_or_else(|| Error::Internal("MetaRaft not initialized".to_string()))?;
+
+        let meta = meta_raft.get_cluster_meta();
+        self.router = Some(Arc::new(Router::with_meta_client(meta, Arc::clone(meta_raft))));
+
+        Ok(())
+    }
+
+    /// Initialize the sharded state machine
+    ///
+    /// This creates per-group AiDb instances for data storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Database options template for creating DBs
+    pub fn init_state_machine(&mut self, options: Options) -> Result<()> {
+        let db_dir = self.data_dir.join("state_machine");
+        std::fs::create_dir_all(&db_dir)?;
+
+        let state_machine = if let Some(router) = &self.router {
+            ShardedStateMachine::with_router(db_dir, options, Arc::clone(router))
+        } else {
+            ShardedStateMachine::new(db_dir, options)
+        };
+
+        self.state_machine = Some(Arc::new(state_machine));
+        Ok(())
+    }
+
+    /// Start watching MetaRaft for metadata updates
+    ///
+    /// This spawns a background task that keeps the router's metadata cache up-to-date.
+    ///
+    /// # Arguments
+    ///
+    /// * `poll_interval_ms` - How often to check for updates (milliseconds)
+    ///
+    /// # Returns
+    ///
+    /// A join handle for the background task
+    pub async fn start_metadata_watcher(
+        &self,
+        poll_interval_ms: u64,
+    ) -> Result<tokio::task::JoinHandle<()>> {
+        let router = self
+            .router
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
+
+        router.clone().start_watching(poll_interval_ms).await
+    }
+
+    /// Put a key-value pair with automatic routing
+    ///
+    /// This routes the key to the appropriate group and proposes a write.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Key to insert
+    /// * `value` - Value to insert
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let router = self
+            .router
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
+
+        let group_id = router.route(&key)?;
+        let raft = self
+            .get_raft_group(group_id)
+            .ok_or_else(|| Error::NotFound(format!("Group {} not found", group_id)))?;
+
+        let request = Request::Put { key, value };
+        raft.client_write(request)
+            .await
+            .map_err(|e| Error::Internal(format!("Raft write failed: {:?}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get a value with automatic routing
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Key to retrieve
+    ///
+    /// # Returns
+    ///
+    /// The value if found, `None` otherwise
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let state_machine = self
+            .state_machine
+            .as_ref()
+            .ok_or_else(|| Error::Internal("State machine not initialized".to_string()))?;
+
+        state_machine.get_routed(key)
+    }
+
+    /// Delete a key with automatic routing
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Key to delete
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub async fn delete(&self, key: &[u8]) -> Result<()> {
+        let router = self
+            .router
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
+
+        let group_id = router.route(key)?;
+        let raft = self
+            .get_raft_group(group_id)
+            .ok_or_else(|| Error::NotFound(format!("Group {} not found", group_id)))?;
+
+        let request = Request::Delete { key: key.to_vec() };
+        raft.client_write(request)
+            .await
+            .map_err(|e| Error::Internal(format!("Raft write failed: {:?}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get the router instance
+    pub fn router(&self) -> Option<&Arc<Router>> {
+        self.router.as_ref()
+    }
+
+    /// Get the state machine instance
+    pub fn state_machine(&self) -> Option<&Arc<ShardedStateMachine>> {
+        self.state_machine.as_ref()
     }
 }
 

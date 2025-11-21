@@ -19,6 +19,7 @@ serde-big-array = "0.5"
 
 # Checksums and hashing
 crc32fast = "1.4"
+crc = "3.0"
 
 # Concurrency
 parking_lot = "0.12"
@@ -36,6 +37,7 @@ lz4 = { version = "1.24", optional = true }
 # Logging
 log = "0.4"
 env_logger = "0.11"
+tracing = { version = "0.1", optional = true }
 
 # Filesystem utilities
 walkdir = "2.4"
@@ -90,7 +92,7 @@ default = ["snappy"]
 snappy = ["snap"]
 lz4-compression = ["lz4"]
 cluster = ["tonic", "prost", "tokio", "tower", "tokio-stream"]
-raft-cluster = ["cluster", "openraft", "async-trait"]
+raft-cluster = ["cluster", "openraft", "async-trait", "tracing"]
 monitoring = ["prometheus", "lazy_static", "hyper", "hyper-util", "http-body-util", "tokio"]
 admin-cli = ["clap", "comfy-table", "indicatif", "chrono", "tokio"]
 
@@ -136,6 +138,11 @@ required-features = ["raft-cluster"]
 [[example]]
 name = "thin_replication_demo"
 path = "examples/cluster/thin_replication_demo.rs"
+required-features = ["raft-cluster"]
+
+[[example]]
+name = "sharded_multi_raft_demo"
+path = "examples/cluster/sharded_multi_raft_demo.rs"
 required-features = ["raft-cluster"]
 
 # Monitoring examples (require --features monitoring)
