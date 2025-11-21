@@ -427,6 +427,103 @@ impl ShardedStateMachine {
         tracing::info!("Shutdown all group databases");
         Ok(())
     }
+
+    // ===== Migration Support Methods =====
+
+    /// Scan all keys in a specific slot for a group (synchronous)
+    ///
+    /// This is used during slot migration to find all keys that belong to a slot.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    /// * `slot` - Slot number (0-16383)
+    ///
+    /// # Returns
+    ///
+    /// Vector of keys that belong to the specified slot
+    pub fn scan_slot_keys_sync(&self, group_id: GroupId, slot: u16) -> Result<Vec<Vec<u8>>> {
+        use super::router::Router;
+
+        let db = self.get_or_create_db(group_id)?;
+        let mut keys = Vec::new();
+
+        // Create an iterator over all keys in the database
+        let mut iter = db.iter();
+        
+        // Iterate through all keys using the DBIterator API
+        while iter.valid() {
+            let key = iter.key();
+            
+            // Check if key belongs to the slot
+            let key_slot = Router::key_to_slot(key);
+            if key_slot == slot {
+                keys.push(key.to_vec());
+            }
+            
+            iter.next();
+        }
+
+        Ok(keys)
+    }
+
+    /// Get a value from a specific group (without routing, synchronous)
+    ///
+    /// This is used during migration to explicitly read from source/target groups.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    /// * `key` - Key to retrieve
+    ///
+    /// # Returns
+    ///
+    /// The value if found, `None` otherwise
+    pub fn get_from_group_sync(
+        &self,
+        group_id: GroupId,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        self.get(group_id, key)
+    }
+
+    /// Put a key-value pair to a specific group (without routing, synchronous)
+    ///
+    /// This is used during migration to explicitly write to target groups.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    /// * `key` - Key to insert
+    /// * `value` - Value to insert
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub fn put_to_group_sync(
+        &self,
+        group_id: GroupId,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<()> {
+        self.put(group_id, key, value)
+    }
+
+    /// Delete a key from a specific group (without routing, synchronous)
+    ///
+    /// This is used during migration to explicitly delete from source groups.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    /// * `key` - Key to delete
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub fn delete_from_group_sync(&self, group_id: GroupId, key: Vec<u8>) -> Result<()> {
+        self.delete(group_id, &key)
+    }
 }
 
 #[cfg(test)]
