@@ -115,7 +115,7 @@ impl Router {
     /// ```
     pub fn key_to_slot(key: &[u8]) -> u16 {
         let hash = CRC16_XMODEM.checksum(key);
-        (hash % SLOT_COUNT as u16) as u16
+        hash % SLOT_COUNT as u16
     }
 
     /// Look up the group ID for a given slot
