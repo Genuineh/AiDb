@@ -93,7 +93,7 @@ async fn test_node_removal_triggers_rebalancing() {
     let new_allocation = allocator.rebalance(&available_nodes, current_allocation).unwrap();
 
     // All groups should still have 3 replicas
-    for (_group_id, replicas) in &new_allocation {
+    for replicas in new_allocation.values() {
         assert_eq!(replicas.len(), 3, "Each group should maintain 3 replicas");
         assert!(!replicas.contains(&3), "Node 3 should not be in any group");
     }
@@ -266,5 +266,6 @@ async fn test_membership_change_workflow() {
 
     // Should have some groups that need membership changes
     // In a full system, these changes would be applied via MembershipCoordinator
-    assert!(changes.len() >= 0, "Should return membership change list");
+    // Just verify that we get a list back (might be empty if no rebalancing needed)
+    let _ = changes;
 }
