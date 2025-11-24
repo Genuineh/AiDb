@@ -83,7 +83,7 @@ tokio-stream = "0.1"
 criterion = { version = "0.7", features = ["html_reports"] }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-build = "0.14"
 # Protobuf compiler for tonic-build (to avoid system dependency)
 protobuf-src = "1.1"
 
