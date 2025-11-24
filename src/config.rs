@@ -1,5 +1,123 @@
 //! Configuration options for AiDb storage engine.
 
+/// Cluster configuration for Multi-Raft deployment.
+///
+/// This configuration specifies how data is distributed and replicated across
+/// the cluster using Multi-Raft architecture.
+#[derive(Debug, Clone)]
+pub struct ClusterConfig {
+    /// Total number of Raft groups for data sharding.
+    ///
+    /// This determines how data is partitioned across the cluster. More groups
+    /// allow for better load distribution but increase management overhead.
+    ///
+    /// Recommended: 16384 (same as Redis Cluster)
+    /// Default: 16
+    pub group_count: usize,
+
+    /// Number of replicas for each Raft group.
+    ///
+    /// This includes the leader, so replication_factor=3 means 1 leader + 2 followers.
+    ///
+    /// Default: 3
+    pub replication_factor: usize,
+
+    /// Maximum number of log entries to retain per group.
+    ///
+    /// Older entries are purged during log cleanup.
+    /// Set to 0 to disable automatic log cleanup.
+    ///
+    /// Default: 10000
+    pub max_log_entries: u64,
+
+    /// Maximum log size in bytes before triggering cleanup.
+    ///
+    /// Set to 0 to disable size-based cleanup.
+    ///
+    /// Default: 100MB
+    pub max_log_size_bytes: u64,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            group_count: 16,
+            replication_factor: 3,
+            max_log_entries: 10000,
+            max_log_size_bytes: 100 * 1024 * 1024, // 100MB
+        }
+    }
+}
+
+impl ClusterConfig {
+    /// Creates a new ClusterConfig with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the number of Raft groups.
+    pub fn group_count(mut self, count: usize) -> Self {
+        self.group_count = count;
+        self
+    }
+
+    /// Sets the replication factor.
+    pub fn replication_factor(mut self, factor: usize) -> Self {
+        self.replication_factor = factor;
+        self
+    }
+
+    /// Sets the maximum number of log entries to retain.
+    pub fn max_log_entries(mut self, entries: u64) -> Self {
+        self.max_log_entries = entries;
+        self
+    }
+
+    /// Sets the maximum log size in bytes.
+    pub fn max_log_size_bytes(mut self, bytes: u64) -> Self {
+        self.max_log_size_bytes = bytes;
+        self
+    }
+
+    /// Creates a production configuration with recommended settings.
+    ///
+    /// This uses 16384 groups (Redis Cluster compatible) and 3 replicas.
+    pub fn for_production() -> Self {
+        Self {
+            group_count: 16384,
+            replication_factor: 3,
+            max_log_entries: 10000,
+            max_log_size_bytes: 100 * 1024 * 1024, // 100MB
+        }
+    }
+
+    /// Creates a test configuration with minimal settings.
+    pub fn for_testing() -> Self {
+        Self {
+            group_count: 4,
+            replication_factor: 1,
+            max_log_entries: 100,
+            max_log_size_bytes: 1024 * 1024, // 1MB
+        }
+    }
+
+    /// Validates the cluster configuration.
+    pub fn validate(&self) -> crate::Result<()> {
+        if self.group_count == 0 {
+            return Err(crate::Error::invalid_argument("group_count must be > 0"));
+        }
+        if self.replication_factor == 0 {
+            return Err(crate::Error::invalid_argument("replication_factor must be > 0"));
+        }
+        if self.replication_factor > 7 {
+            return Err(crate::Error::invalid_argument(
+                "replication_factor should not exceed 7 for optimal performance",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Configuration options for opening a database.
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -325,6 +443,66 @@ impl Options {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cluster_config_default() {
+        let config = ClusterConfig::default();
+        assert_eq!(config.group_count, 16);
+        assert_eq!(config.replication_factor, 3);
+        assert_eq!(config.max_log_entries, 10000);
+        assert_eq!(config.max_log_size_bytes, 100 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_cluster_config_builder() {
+        let config = ClusterConfig::new()
+            .group_count(16384)
+            .replication_factor(5)
+            .max_log_entries(5000)
+            .max_log_size_bytes(50 * 1024 * 1024);
+
+        assert_eq!(config.group_count, 16384);
+        assert_eq!(config.replication_factor, 5);
+        assert_eq!(config.max_log_entries, 5000);
+        assert_eq!(config.max_log_size_bytes, 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_cluster_config_for_production() {
+        let config = ClusterConfig::for_production();
+        assert_eq!(config.group_count, 16384);
+        assert_eq!(config.replication_factor, 3);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_cluster_config_for_testing() {
+        let config = ClusterConfig::for_testing();
+        assert_eq!(config.group_count, 4);
+        assert_eq!(config.replication_factor, 1);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_cluster_config_validation() {
+        let mut config = ClusterConfig::default();
+        assert!(config.validate().is_ok());
+
+        // Invalid group_count
+        config = ClusterConfig::default();
+        config.group_count = 0;
+        assert!(config.validate().is_err());
+
+        // Invalid replication_factor (zero)
+        config = ClusterConfig::default();
+        config.replication_factor = 0;
+        assert!(config.validate().is_err());
+
+        // Invalid replication_factor (too high)
+        config = ClusterConfig::default();
+        config.replication_factor = 10;
+        assert!(config.validate().is_err());
+    }
 
     #[test]
     fn test_default_options() {

@@ -613,6 +613,178 @@ impl MultiRaftNode {
     pub fn state_machine(&self) -> Option<&Arc<ShardedStateMachine>> {
         self.state_machine.as_ref()
     }
+
+    /// Collect and update per-group metrics
+    ///
+    /// This method collects metrics from all active Raft groups and updates
+    /// Prometheus metrics. Should be called periodically (e.g., every 5-10 seconds).
+    ///
+    /// # Returns
+    ///
+    /// Number of groups for which metrics were collected
+    #[cfg(feature = "monitoring")]
+    pub async fn collect_group_metrics(&self) -> Result<usize> {
+        use crate::monitoring::MetricsCollector;
+
+        let metrics = MetricsCollector::new();
+        let group_ids = self.list_groups();
+        let mut collected = 0;
+
+        for group_id in group_ids {
+            // Get Raft instance
+            let raft = match self.get_raft_group(group_id) {
+                Some(r) => r,
+                None => continue,
+            };
+
+            // Get metrics from Raft
+            let raft_metrics = raft.metrics().borrow().clone();
+
+            // Update replication lag (committed - applied)
+            let committed = raft_metrics.last_log_index.unwrap_or(0);
+            let applied = raft_metrics.last_applied.map(|id| id.index).unwrap_or(0);
+            let lag = if committed >= applied {
+                committed - applied
+            } else {
+                0
+            };
+            metrics.update_raft_group_replication_lag(group_id, lag);
+
+            // Get log statistics
+            if let Some(storage) = self.storage.get_group(group_id) {
+                if let Ok((total_entries, total_bytes, _oldest, _newest)) = storage.get_log_stats()
+                {
+                    metrics.update_raft_group_log_size(group_id, total_entries);
+
+                    // Store for potential size-based cleanup
+                    if total_bytes > 0 {
+                        // Log size is available for cleanup decisions
+                        let _ = total_bytes; // Used in cleanup_group_logs
+                    }
+                }
+            }
+
+            collected += 1;
+        }
+
+        Ok(collected)
+    }
+
+    /// Cleanup logs for all groups based on cluster configuration
+    ///
+    /// This method runs log cleanup on all active Raft groups based on
+    /// the retention policy specified in ClusterConfig.
+    ///
+    /// # Arguments
+    ///
+    /// * `cluster_config` - Cluster configuration with retention settings
+    ///
+    /// # Returns
+    ///
+    /// Total number of log entries purged across all groups
+    pub async fn cleanup_all_group_logs(
+        &self,
+        cluster_config: &crate::config::ClusterConfig,
+    ) -> Result<u64> {
+        let group_ids = self.list_groups();
+        let mut total_purged = 0u64;
+
+        for group_id in group_ids {
+            match self
+                .cleanup_group_logs(
+                    group_id,
+                    cluster_config.max_log_entries,
+                    cluster_config.max_log_size_bytes,
+                )
+                .await
+            {
+                Ok(purged) => {
+                    total_purged += purged;
+                    if purged > 0 {
+                        #[cfg(feature = "monitoring")]
+                        {
+                            use crate::monitoring::MetricsCollector;
+                            let metrics = MetricsCollector::new();
+                            metrics.record_raft_group_log_compaction(group_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to cleanup logs for group {}: {}", group_id, e);
+                }
+            }
+        }
+
+        Ok(total_purged)
+    }
+
+    /// Cleanup logs for a specific group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    /// * `max_entries` - Maximum number of log entries to retain
+    /// * `max_size_bytes` - Maximum log size in bytes
+    ///
+    /// # Returns
+    ///
+    /// Number of entries purged
+    pub async fn cleanup_group_logs(
+        &self,
+        group_id: GroupId,
+        max_entries: u64,
+        max_size_bytes: u64,
+    ) -> Result<u64> {
+        let storage = self
+            .storage
+            .get_group(group_id)
+            .ok_or_else(|| Error::Internal(format!("Group {} not found", group_id)))?;
+
+        storage.cleanup_logs(max_entries, max_size_bytes)
+    }
+
+    /// Create snapshot for a specific group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    ///
+    /// # Returns
+    ///
+    /// Ok if snapshot was created successfully
+    pub async fn create_group_snapshot(&self, group_id: GroupId) -> Result<()> {
+        self.storage.create_group_snapshot(group_id).await?;
+
+        #[cfg(feature = "monitoring")]
+        {
+            use crate::monitoring::MetricsCollector;
+            let metrics = MetricsCollector::new();
+            metrics.record_raft_group_snapshot(group_id);
+        }
+
+        Ok(())
+    }
+
+    /// Create snapshots for all groups
+    ///
+    /// # Returns
+    ///
+    /// Number of snapshots created
+    pub async fn create_all_group_snapshots(&self) -> Result<usize> {
+        let group_ids = self.list_groups();
+        let mut created = 0;
+
+        for group_id in group_ids {
+            match self.create_group_snapshot(group_id).await {
+                Ok(_) => created += 1,
+                Err(e) => {
+                    eprintln!("Warning: Failed to create snapshot for group {}: {}", group_id, e);
+                }
+            }
+        }
+
+        Ok(created)
+    }
 }
 
 #[cfg(test)]
