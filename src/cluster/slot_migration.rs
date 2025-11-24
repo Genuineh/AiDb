@@ -861,15 +861,6 @@ mod tests {
     }
 
     #[test]
-    fn test_slot_validation() {
-        // Valid slots
-        assert!(16383 < 16384);
-
-        // Invalid slots
-        assert!(16384 >= 16384);
-    }
-
-    #[test]
     fn test_migration_manager_creation() {
         let (_temp_dir, state_machine) = create_test_state_machine();
         let router = create_test_router();

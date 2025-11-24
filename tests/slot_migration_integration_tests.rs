@@ -72,12 +72,12 @@ mod slot_migration_tests {
         assert!(manager.is_migrating(100));
         if let Some(progress) = manager.get_migration_progress(100) {
             assert_eq!(progress.slot, 100);
-            assert!(progress.total >= 0);
         }
 
         // Check metrics
         let metrics = manager.metrics();
-        assert!(metrics.keys_migrated.load(std::sync::atomic::Ordering::Relaxed) >= 0);
+        // Metrics exist (no need to check >= 0 for unsigned types)
+        let _ = metrics.keys_migrated.load(std::sync::atomic::Ordering::Relaxed);
     }
 
     #[tokio::test]
@@ -143,16 +143,12 @@ mod slot_migration_tests {
         let metrics = manager.metrics();
         let total_keys = metrics.total_keys();
 
-        // Metrics should be tracking something
-        assert!(total_keys >= 0, "Metrics should track processed keys");
+        // Metrics should be tracking (no need to check >= 0 for unsigned types)
 
         // Success rate should be reasonable (allowing for ongoing migration)
         if total_keys > 0 {
             let success_rate = metrics.success_rate();
-            assert!(
-                success_rate >= 0.0 && success_rate <= 100.0,
-                "Success rate should be between 0-100%"
-            );
+            assert!((0.0..=100.0).contains(&success_rate), "Success rate should be between 0-100%");
         }
     }
 
@@ -395,9 +391,8 @@ mod slot_migration_tests {
 
         // Check that bytes transferred is tracked
         let metrics = manager.metrics();
-        let bytes = metrics.bytes_transferred.load(std::sync::atomic::Ordering::Relaxed);
-        // Should track some bytes even if migration hasn't completed
-        assert!(bytes >= 0, "Should track bytes transferred");
+        let _bytes = metrics.bytes_transferred.load(std::sync::atomic::Ordering::Relaxed);
+        // Metrics exist (no need to check >= 0 for unsigned types)
     }
 
     #[tokio::test]
