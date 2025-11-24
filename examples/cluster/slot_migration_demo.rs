@@ -17,13 +17,11 @@
 //! cargo run --features raft-cluster --example slot_migration_demo
 //! ```
 
-use aidb::cluster::{
-    ClusterMeta, MigrationConfig, MigrationManager, Router, ShardedStateMachine,
-};
+use aidb::cluster::{ClusterMeta, MigrationConfig, MigrationManager, Router, ShardedStateMachine};
 use aidb::config::Options;
+use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
-use parking_lot::RwLock;
 use tempfile::TempDir;
 
 #[tokio::main]
@@ -33,10 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 1: Setup
     println!("Step 1: Setting up cluster environment...");
     let temp_dir = TempDir::new()?;
-    let state_machine = Arc::new(RwLock::new(ShardedStateMachine::new(
-        temp_dir.path(),
-        Options::default(),
-    )));
+    let state_machine =
+        Arc::new(RwLock::new(ShardedStateMachine::new(temp_dir.path(), Options::default())));
 
     // Create 2 groups
     {
@@ -53,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2: Insert test data
     println!("Step 2: Inserting test data...");
-    
+
     // Insert keys that will map to slot 100 (we'll migrate this slot)
     // For demo purposes, we'll just insert a few keys into group 0
     {
@@ -88,31 +84,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_retries: 3,
         batch_delay: Duration::from_millis(100),
     };
-    
-    let manager = MigrationManager::new(
-        config,
-        Arc::clone(&router),
-        Arc::clone(&state_machine),
-    );
+
+    let manager = MigrationManager::new(config, Arc::clone(&router), Arc::clone(&state_machine));
     println!("  ✓ Migration manager created");
     println!("  ✓ Config: batch_size=5, rate_limit=100 keys/sec\n");
 
     // Step 4: Start migration
     println!("Step 4: Starting slot migration...");
     println!("  Migrating slot 100 from group 0 to group 1");
-    
+
     manager.start_migration(100, 0, 1).await?;
     println!("  ✓ Migration started\n");
 
     // Step 5: Track progress
     println!("Step 5: Tracking migration progress...");
-    
+
     // In a real system, the background worker would handle this
     // For demo purposes, we'll just show the initial state
     if let Some(progress) = manager.get_migration_progress(100) {
         println!("  Slot: {}", progress.slot);
         println!("  State: {:?}", progress.state);
-        println!("  Progress: {}/{} keys ({:.1}%)",
+        println!(
+            "  Progress: {}/{} keys ({:.1}%)",
             progress.progress,
             progress.total,
             progress.progress_pct()
@@ -124,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 6: Verifying migration state...");
     assert!(manager.is_migrating(100), "Slot 100 should be migrating");
     println!("  ✓ Slot 100 is marked as migrating");
-    
+
     let active = manager.get_active_migrations();
     println!("  ✓ Active migrations: {}", active.len());
     println!();
