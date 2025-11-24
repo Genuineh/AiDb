@@ -450,17 +450,17 @@ impl ShardedStateMachine {
 
         // Create an iterator over all keys in the database
         let mut iter = db.iter();
-        
+
         // Iterate through all keys using the DBIterator API
         while iter.valid() {
             let key = iter.key();
-            
+
             // Check if key belongs to the slot
             let key_slot = Router::key_to_slot(key);
             if key_slot == slot {
                 keys.push(key.to_vec());
             }
-            
+
             iter.next();
         }
 
@@ -479,11 +479,7 @@ impl ShardedStateMachine {
     /// # Returns
     ///
     /// The value if found, `None` otherwise
-    pub fn get_from_group_sync(
-        &self,
-        group_id: GroupId,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>> {
+    pub fn get_from_group_sync(&self, group_id: GroupId, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.get(group_id, key)
     }
 
@@ -500,12 +496,7 @@ impl ShardedStateMachine {
     /// # Returns
     ///
     /// `Ok(())` on success
-    pub fn put_to_group_sync(
-        &self,
-        group_id: GroupId,
-        key: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<()> {
+    pub fn put_to_group_sync(&self, group_id: GroupId, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.put(group_id, key, value)
     }
 

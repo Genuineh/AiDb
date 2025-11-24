@@ -19,10 +19,8 @@ mod slot_migration_tests {
 
     fn create_test_environment() -> (TempDir, Arc<Router>, Arc<RwLock<ShardedStateMachine>>) {
         let temp_dir = TempDir::new().unwrap();
-        let state_machine = Arc::new(RwLock::new(ShardedStateMachine::new(
-            temp_dir.path(),
-            Options::default(),
-        )));
+        let state_machine =
+            Arc::new(RwLock::new(ShardedStateMachine::new(temp_dir.path(), Options::default())));
 
         // Create 4 groups
         {
@@ -53,8 +51,7 @@ mod slot_migration_tests {
             for i in 0..50 {
                 let key = format!("key_{}", i);
                 let value = format!("value_{}", i);
-                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec())
-                    .unwrap();
+                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
             }
         }
 
@@ -93,8 +90,7 @@ mod slot_migration_tests {
             for i in 0..20 {
                 let key = format!("rate_test_{}", i);
                 let value = format!("value_{}", i);
-                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec())
-                    .unwrap();
+                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
             }
         }
 
@@ -114,8 +110,10 @@ mod slot_migration_tests {
 
         // Migration should take some time due to rate limiting
         // Note: This is a basic check - actual migration happens in background worker
-        assert!(manager.metrics().current_rate.load(std::sync::atomic::Ordering::Relaxed) <= 50 || 
-               manager.metrics().keys_migrated.load(std::sync::atomic::Ordering::Relaxed) == 0);
+        assert!(
+            manager.metrics().current_rate.load(std::sync::atomic::Ordering::Relaxed) <= 50
+                || manager.metrics().keys_migrated.load(std::sync::atomic::Ordering::Relaxed) == 0
+        );
     }
 
     #[tokio::test]
@@ -146,10 +144,7 @@ mod slot_migration_tests {
         let total_keys = metrics.total_keys();
 
         // Metrics should be tracking something
-        assert!(
-            total_keys >= 0,
-            "Metrics should track processed keys"
-        );
+        assert!(total_keys >= 0, "Metrics should track processed keys");
 
         // Success rate should be reasonable (allowing for ongoing migration)
         if total_keys > 0 {
@@ -254,10 +249,7 @@ mod slot_migration_tests {
 
         // Cancel migration
         manager.cancel_migration(700);
-        assert!(
-            !manager.is_migrating(700),
-            "Migration should be cancelled"
-        );
+        assert!(!manager.is_migrating(700), "Migration should be cancelled");
     }
 
     #[tokio::test]
@@ -271,8 +263,7 @@ mod slot_migration_tests {
                 for i in 0..10 {
                     let key = format!("g{}_key_{}", group_id, i);
                     let value = format!("value_{}", i);
-                    sm.put(group_id, key.as_bytes().to_vec(), value.as_bytes().to_vec())
-                        .unwrap();
+                    sm.put(group_id, key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
                 }
             }
         }
@@ -325,8 +316,7 @@ mod slot_migration_tests {
             for i in 0..20 {
                 let key = format!("workflow_key_{}", i);
                 let value = format!("workflow_value_{}", i);
-                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec())
-                    .unwrap();
+                sm.put(0, key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
             }
         }
 
@@ -405,9 +395,7 @@ mod slot_migration_tests {
 
         // Check that bytes transferred is tracked
         let metrics = manager.metrics();
-        let bytes = metrics
-            .bytes_transferred
-            .load(std::sync::atomic::Ordering::Relaxed);
+        let bytes = metrics.bytes_transferred.load(std::sync::atomic::Ordering::Relaxed);
         // Should track some bytes even if migration hasn't completed
         assert!(bytes >= 0, "Should track bytes transferred");
     }
@@ -463,12 +451,8 @@ mod slot_migration_tests {
 
         // Get initial metrics
         let metrics = manager.metrics();
-        let initial_migrated = metrics
-            .keys_migrated
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let initial_failed = metrics
-            .keys_failed
-            .load(std::sync::atomic::Ordering::Relaxed);
+        let initial_migrated = metrics.keys_migrated.load(std::sync::atomic::Ordering::Relaxed);
+        let initial_failed = metrics.keys_failed.load(std::sync::atomic::Ordering::Relaxed);
 
         assert_eq!(initial_migrated, 0);
         assert_eq!(initial_failed, 0);
@@ -478,23 +462,8 @@ mod slot_migration_tests {
         metrics.record_success(2048, 150);
         metrics.record_failure();
 
-        assert_eq!(
-            metrics
-                .keys_migrated
-                .load(std::sync::atomic::Ordering::Relaxed),
-            2
-        );
-        assert_eq!(
-            metrics
-                .keys_failed
-                .load(std::sync::atomic::Ordering::Relaxed),
-            1
-        );
-        assert_eq!(
-            metrics
-                .bytes_transferred
-                .load(std::sync::atomic::Ordering::Relaxed),
-            3072
-        );
+        assert_eq!(metrics.keys_migrated.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(metrics.keys_failed.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(metrics.bytes_transferred.load(std::sync::atomic::Ordering::Relaxed), 3072);
     }
 }
