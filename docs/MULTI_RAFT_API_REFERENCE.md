@@ -263,6 +263,7 @@ let value = manager.get_with_migration_awareness(&key)?;
 manager.delete_with_migration_awareness(&key)?;
 
 // 获取迁移指标
+use std::sync::atomic::Ordering;
 let metrics = manager.metrics();
 println!("Keys migrated: {}", metrics.keys_migrated.load(Ordering::Relaxed));
 println!("Success rate: {:.2}%", metrics.success_rate());
@@ -449,10 +450,21 @@ fn cluster_nodes(meta_raft: &MetaRaftNode) -> Vec<String> {
 
 ```rust
 use aidb::cluster::MetaRaftNode;
+use aidb::error::Error;
 
 async fn cluster_meet(meta_raft: &MetaRaftNode, addr: &str) -> Result<u64, Error> {
-    // 生成新节点 ID (实际实现中可能需要更复杂的 ID 生成逻辑)
-    let node_id = generate_node_id();
+    // 生成新节点 ID
+    // 注意: 实际实现中需要使用适当的 ID 生成策略，如:
+    // - 使用 UUID 的低 64 位
+    // - 从集群协调器获取唯一 ID
+    // - 使用节点地址的哈希值
+    let node_id = {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        addr.hash(&mut hasher);
+        hasher.finish()
+    };
     
     // 添加节点到集群元数据
     meta_raft.add_node(node_id, addr.to_string()).await?;
@@ -465,6 +477,8 @@ async fn cluster_meet(meta_raft: &MetaRaftNode, addr: &str) -> Result<u64, Error
 
 ```rust
 use aidb::cluster::{MigrationManager, Router};
+use aidb::error::Error;
+use std::time::Duration;
 
 async fn migrate_slot(
     manager: &MigrationManager,
