@@ -643,11 +643,7 @@ impl MultiRaftNode {
             // Update replication lag (committed - applied)
             let committed = raft_metrics.last_log_index.unwrap_or(0);
             let applied = raft_metrics.last_applied.map(|id| id.index).unwrap_or(0);
-            let lag = if committed >= applied {
-                committed - applied
-            } else {
-                0
-            };
+            let lag = committed.saturating_sub(applied);
             metrics.update_raft_group_replication_lag(group_id, lag);
 
             // Get log statistics
