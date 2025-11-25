@@ -166,6 +166,43 @@ lazy_static! {
         &["method", "status"]
     )
     .unwrap();
+
+    // Multi-Raft per-group metrics
+    pub static ref RAFT_GROUP_REQUEST_DURATION: HistogramVec = register_histogram_vec!(
+        "aidb_raft_group_request_duration_seconds",
+        "Per-group request duration in seconds",
+        &["group_id", "operation"],
+        vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+    )
+    .unwrap();
+
+    pub static ref RAFT_GROUP_REPLICATION_LAG: GaugeVec = register_gauge_vec!(
+        "aidb_raft_group_replication_lag",
+        "Replication lag (committed index - applied index) per group",
+        &["group_id"]
+    )
+    .unwrap();
+
+    pub static ref RAFT_GROUP_LOG_SIZE: GaugeVec = register_gauge_vec!(
+        "aidb_raft_group_log_size",
+        "Total log entries per group",
+        &["group_id"]
+    )
+    .unwrap();
+
+    pub static ref RAFT_GROUP_SNAPSHOT_COUNT: CounterVec = register_counter_vec!(
+        "aidb_raft_group_snapshots_total",
+        "Total snapshots created per group",
+        &["group_id"]
+    )
+    .unwrap();
+
+    pub static ref RAFT_GROUP_LOG_COMPACTION_COUNT: CounterVec = register_counter_vec!(
+        "aidb_raft_group_log_compactions_total",
+        "Total log compactions per group",
+        &["group_id"]
+    )
+    .unwrap();
 }
 
 /// MetricsCollector provides a convenient interface for collecting metrics
@@ -302,6 +339,44 @@ impl MetricsCollector {
     pub fn record_cluster_request(&self, method: &str, success: bool) {
         let status = if success { "success" } else { "error" };
         CLUSTER_REQUESTS.with_label_values(&[method, status]).inc();
+    }
+
+    /// Record per-group request duration
+    pub fn record_raft_group_request(&self, group_id: u64, operation: &str, duration: f64) {
+        let group_id_str = group_id.to_string();
+        RAFT_GROUP_REQUEST_DURATION
+            .with_label_values(&[group_id_str.as_str(), operation])
+            .observe(duration);
+    }
+
+    /// Update per-group replication lag
+    ///
+    /// Replication lag is defined as: committed_index - applied_index
+    pub fn update_raft_group_replication_lag(&self, group_id: u64, lag: u64) {
+        let group_id_str = group_id.to_string();
+        RAFT_GROUP_REPLICATION_LAG
+            .with_label_values(&[group_id_str.as_str()])
+            .set(lag as f64);
+    }
+
+    /// Update per-group log size
+    pub fn update_raft_group_log_size(&self, group_id: u64, size: u64) {
+        let group_id_str = group_id.to_string();
+        RAFT_GROUP_LOG_SIZE.with_label_values(&[group_id_str.as_str()]).set(size as f64);
+    }
+
+    /// Record per-group snapshot creation
+    pub fn record_raft_group_snapshot(&self, group_id: u64) {
+        let group_id_str = group_id.to_string();
+        RAFT_GROUP_SNAPSHOT_COUNT.with_label_values(&[group_id_str.as_str()]).inc();
+    }
+
+    /// Record per-group log compaction
+    pub fn record_raft_group_log_compaction(&self, group_id: u64) {
+        let group_id_str = group_id.to_string();
+        RAFT_GROUP_LOG_COMPACTION_COUNT
+            .with_label_values(&[group_id_str.as_str()])
+            .inc();
     }
 }
 

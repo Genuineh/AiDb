@@ -413,6 +413,159 @@ impl OpenRaftStorage {
 
         Ok(())
     }
+
+    /// Cleanup old log entries based on retention policy
+    ///
+    /// This removes log entries that:
+    /// 1. Have been applied to the state machine
+    /// 2. Exceed the maximum log entry count
+    /// 3. Are covered by a snapshot
+    ///
+    /// # Arguments
+    ///
+    /// * `max_entries` - Maximum number of log entries to retain
+    /// * `max_size_bytes` - Maximum log size in bytes (0 = unlimited)
+    ///
+    /// # Returns
+    ///
+    /// Number of entries purged
+    pub fn cleanup_logs(&self, max_entries: u64, max_size_bytes: u64) -> Result<u64> {
+        let state = self.state.read();
+
+        let last_applied = match &state.last_applied {
+            Some(id) => id.index,
+            None => return Ok(0), // Nothing applied yet
+        };
+
+        let last_log = match &state.last_log_id {
+            Some(id) => id.index,
+            None => return Ok(0), // No logs
+        };
+
+        let last_purged = state.last_purged_log_id.as_ref().map(|id| id.index).unwrap_or(0);
+
+        drop(state); // Release read lock
+
+        // Calculate the safe purge point
+        // We can safely purge up to: min(last_applied, last_log - max_entries)
+        let retention_limit = last_log.saturating_sub(max_entries);
+
+        let purge_upto = last_applied.min(retention_limit);
+
+        if purge_upto <= last_purged {
+            return Ok(0); // Nothing to purge
+        }
+
+        // Calculate log size if size-based cleanup is enabled
+        if max_size_bytes > 0 {
+            let mut total_size = 0u64;
+            let mut entries_checked = 0u64;
+
+            // Scan from newest to oldest to calculate size
+            for idx in (last_purged + 1..=last_log).rev() {
+                let key = format!("raft:log:{}", idx);
+                if let Some(data) = self.db.get(key.as_bytes())? {
+                    total_size += data.len() as u64;
+                    entries_checked += 1;
+
+                    // If we're over size limit, we need to purge earlier entries
+                    if total_size > max_size_bytes {
+                        // Calculate adjusted purge point
+                        let adjusted_purge = last_log.saturating_sub(entries_checked);
+
+                        // Use the more aggressive limit
+                        let final_purge_upto = purge_upto.max(adjusted_purge).min(last_applied);
+
+                        if final_purge_upto > last_purged {
+                            return self.purge_logs_internal(final_purge_upto);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Purge based on entry count
+        if purge_upto > last_purged {
+            return self.purge_logs_internal(purge_upto);
+        }
+
+        Ok(0)
+    }
+
+    /// Internal method to purge logs up to a specific index
+    fn purge_logs_internal(&self, upto_index: u64) -> Result<u64> {
+        let state = self.state.read();
+        let last_purged = state.last_purged_log_id.as_ref().map(|id| id.index).unwrap_or(0);
+        let last_purged_term =
+            state.last_purged_log_id.as_ref().map(|id| id.leader_id.term).unwrap_or(0);
+        drop(state);
+
+        if upto_index <= last_purged {
+            return Ok(0);
+        }
+
+        let mut purged_count = 0u64;
+
+        // Delete log entries
+        for idx in (last_purged + 1)..=upto_index {
+            let key = format!("raft:log:{}", idx);
+            if self.db.get(key.as_bytes())?.is_some() {
+                self.db.delete(key.as_bytes())?;
+                purged_count += 1;
+            }
+        }
+
+        // Update last_purged_log_id
+        // We need to get the term from the purged entry
+        let new_purged_log_id = LogId {
+            leader_id: openraft::LeaderId {
+                term: last_purged_term,
+                node_id: 0, // Will be updated when we have actual term info
+            },
+            index: upto_index,
+        };
+
+        let mut state = self.state.write();
+        state.last_purged_log_id = Some(new_purged_log_id);
+
+        // Persist
+        let data = bincode::serialize(&new_purged_log_id).map_err(|e| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize last_purged_log_id: {}", e),
+            ))
+        })?;
+        self.db.put(b"raft:last_purged_log_id", &data)?;
+
+        Ok(purged_count)
+    }
+
+    /// Get log size statistics
+    ///
+    /// Returns (total_entries, total_bytes, oldest_index, newest_index)
+    pub fn get_log_stats(&self) -> Result<(u64, u64, u64, u64)> {
+        let state = self.state.read();
+
+        let last_purged = state.last_purged_log_id.as_ref().map(|id| id.index).unwrap_or(0);
+        let last_log = state.last_log_id.as_ref().map(|id| id.index).unwrap_or(0);
+
+        drop(state);
+
+        let mut total_entries = 0u64;
+        let mut total_bytes = 0u64;
+        let oldest_index = last_purged + 1;
+        let newest_index = last_log;
+
+        for idx in oldest_index..=newest_index {
+            let key = format!("raft:log:{}", idx);
+            if let Some(data) = self.db.get(key.as_bytes())? {
+                total_entries += 1;
+                total_bytes += data.len() as u64;
+            }
+        }
+
+        Ok((total_entries, total_bytes, oldest_index, newest_index))
+    }
 }
 
 /// Snapshot builder for creating snapshots

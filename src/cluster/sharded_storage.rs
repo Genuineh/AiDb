@@ -249,6 +249,53 @@ impl ShardedRaftStorage {
         &self.base_dir
     }
 
+    /// Create independent snapshot for a specific group
+    ///
+    /// This creates a snapshot of the group's state machine data without affecting
+    /// other groups. Snapshots are stored in the group's data directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - Group identifier
+    ///
+    /// # Returns
+    ///
+    /// Ok with snapshot metadata if successful
+    pub async fn create_group_snapshot(&self, group_id: GroupId) -> Result<()> {
+        let storage = self
+            .get_group(group_id)
+            .ok_or_else(|| Error::Internal(format!("Group {} not found", group_id)))?;
+
+        // Create snapshot using the storage's snapshot builder
+        #[cfg(feature = "raft-cluster")]
+        {
+            use openraft::{RaftSnapshotBuilder, RaftStorage};
+            // Note: get_snapshot_builder requires &mut self
+            // We'll use Arc::make_mut to get mutable access
+            let storage_clone = (*storage).clone();
+            let mut storage_mut = storage_clone;
+            let mut builder = storage_mut.get_snapshot_builder().await;
+
+            builder
+                .build_snapshot()
+                .await
+                .map_err(|e| Error::Internal(format!("Failed to build snapshot: {:?}", e)))?;
+        }
+
+        #[cfg(not(feature = "raft-cluster"))]
+        {
+            let _ = storage; // Use the variable
+            return Err(Error::Internal("raft-cluster feature not enabled".to_string()));
+        }
+
+        Ok(())
+    }
+
+    /// Get snapshot path for a group
+    pub fn group_snapshot_path(&self, group_id: GroupId) -> PathBuf {
+        self.group_path(group_id).join("snapshots")
+    }
+
     /// Get node ID
     pub fn node_id(&self) -> NodeId {
         self.node_id
