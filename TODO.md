@@ -304,7 +304,7 @@ Phase 5 的核心示例、基础测试和集成测试已完成。包含 25 个�
 
 ### 阶段9: Redis Cluster 协议 API 适配层 📋 **新增规划**
 
-**目标**: 为上层 AiKv 提供 Redis Cluster 协议的直接映射 API，实现"史上最薄的 Redis Cluster 协议胶水层"
+**目标**: 为上层 AiKv 提供 Redis Cluster 协议的直接映射 API，实现轻量级 Redis Cluster 协议胶水层
 
 **完整计划**: 📄 [docs/REDIS_CLUSTER_API_PLAN.md](docs/REDIS_CLUSTER_API_PLAN.md)
 

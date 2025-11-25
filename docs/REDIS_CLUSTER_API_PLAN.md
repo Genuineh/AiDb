@@ -1,6 +1,6 @@
 # AiDb MultiRaftCluster API for Redis Cluster Protocol
 
-**目标**: 为上层 AiKv 提供一个最薄的 Redis Cluster 协议胶水层，底层 99.9% 的工作由 AiDb 完成，上层只需将 Redis Cluster 命令 1:1 映射到 MultiRaftCluster API 调用。
+**目标**: 为上层 AiKv 提供一个轻量级的 Redis Cluster 协议胶水层，底层 99.9% 的工作由 AiDb 完成，上层只需将 Redis Cluster 命令 1:1 映射到 MultiRaftCluster API 调用。
 
 **创建时间**: 2025-11-25
 
@@ -369,6 +369,8 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_keyslot() {
         // 验证与 Redis CRC16 一致
+        // 使用 CRC16/XMODEM 算法: crc16(b"user:1000") % 16384 = 3572
+        // 可通过 Redis 命令 CLUSTER KEYSLOT "user:1000" 验证
         assert_eq!(MultiRaftCluster::cluster_keyslot(b"user:1000"), 3572);
     }
     
