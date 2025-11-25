@@ -302,79 +302,6 @@ Phase 5 的核心示例、基础测试和集成测试已完成。包含 25 个�
 
 ## 🎯 未来计划
 
-### 阶段9: Redis Cluster 协议 API 适配层 📋 **新增规划**
-
-**目标**: 为上层 AiKv 提供 Redis Cluster 协议的直接映射 API，实现轻量级 Redis Cluster 协议胶水层
-
-**完整计划**: 📄 [docs/REDIS_CLUSTER_API_PLAN.md](docs/REDIS_CLUSTER_API_PLAN.md)
-
-**预计工时**: 5-7 天
-
-**背景**: 上层 AiKv 想要适配 Redis Cluster 协议，希望底层 99.9% 的工作交给 AiDb，自己只负责把 Redis Cluster 命令 1:1 翻译成 API 调用。
-
-#### 现有实现状态
-
-底层 MultiRaft 实现已完整，但缺少面向上层的统一 API 封装：
-
-| 组件 | 状态 | 功能 |
-|------|------|------|
-| MultiRaftNode | ✅ 已完成 | 管理多个 Raft Group |
-| MetaRaftNode | ✅ 已完成 | 集群元数据管理 |
-| Router | ✅ 已完成 | key→slot→group 路由 |
-| MigrationManager | ✅ 已完成 | 在线 slot 迁移 |
-| MembershipCoordinator | ✅ 已完成 | 成员变更协调 |
-| ReplicaAllocator | ✅ 已完成 | 副本负载均衡分配 |
-| **MultiRaftCluster** | ❌ **缺失** | Redis Cluster API 统一封装 |
-
-#### 实施计划
-
-- [ ] **Phase 1: 创建 MultiRaftCluster 封装** (1-2 天)
-  - [ ] 创建 `src/cluster/multi_raft_cluster.rs`
-  - [ ] 实现统一构造函数
-  - [ ] 实现集群信息 API:
-    - [ ] `cluster_info()` - 对应 CLUSTER INFO
-    - [ ] `cluster_nodes()` - 对应 CLUSTER NODES
-    - [ ] `cluster_slots()` - 对应 CLUSTER SLOTS
-    - [ ] `cluster_myid()` - 对应 CLUSTER MYID
-    - [ ] `cluster_keyslot()` - 对应 CLUSTER KEYSLOT
-  - [ ] 添加单元测试
-
-- [ ] **Phase 2: 节点管理 API** (1 天)
-  - [ ] `cluster_meet()` - 对应 CLUSTER MEET
-  - [ ] `cluster_forget()` - 对应 CLUSTER FORGET
-  - [ ] 添加集成测试
-
-- [ ] **Phase 3: Slot 管理 API** (1-2 天)
-  - [ ] `cluster_addslots()` - 对应 CLUSTER ADDSLOTS
-  - [ ] `cluster_delslots()` - 对应 CLUSTER DELSLOTS
-  - [ ] `cluster_setslot_node()` - 对应 CLUSTER SETSLOT NODE
-  - [ ] `cluster_setslot_migrating()` - 对应 CLUSTER SETSLOT MIGRATING
-  - [ ] `cluster_setslot_importing()` - 对应 CLUSTER SETSLOT IMPORTING
-  - [ ] `cluster_getkeysinslot()` - 对应 CLUSTER GETKEYSINSLOT
-  - [ ] 添加测试
-
-- [ ] **Phase 4: 数据操作和副本管理 API** (1 天)
-  - [ ] 带自动路由的 `put`, `get`, `delete`
-  - [ ] `migrate_key()` - 对应 MIGRATE
-  - [ ] `cluster_replicate()` - 对应 CLUSTER REPLICATE
-  - [ ] `cluster_failover()` - 对应 CLUSTER FAILOVER
-  - [ ] 添加测试
-
-- [ ] **Phase 5: 文档和示例** (1 天)
-  - [ ] API 文档
-  - [ ] 示例代码 `examples/cluster/redis_cluster_demo.rs`
-  - [ ] 更新 README
-
-#### 预期交付物
-
-- ✅ `MultiRaftCluster` 统一封装类
-- ✅ Redis Cluster 命令 1:1 映射 API
-- ✅ 完整测试覆盖
-- ✅ 使用示例和文档
-- ✅ 上层 AiKv 只需 ~50 行代码即可适配 Redis Cluster 协议
-
----
-
 ### 阶段8: Multi-Raft + 分片架构 (2025年12月 - 2026年2月) 📋 **规划中**
 
 **目标**: 从单 Raft Group 升级到 Multi-Raft + Sharding 架构，实现真正的横向扩展
@@ -1136,29 +1063,9 @@ Phase 5 的核心示例、基础测试和集成测试已完成。包含 25 个�
 - **阶段4 (动态成员管理)**: 4 (成员管理任务) ✅ **完成 (2025-11-21)**
 - **阶段5 (在线 Slot 迁移)**: 35/35 (Phase 1-5 完成) ✅ **完成 (2025-11-21)**
 - **阶段6 (优化 + 生产就绪)**: 4/4 ✅ **完成 (2025-11-24)**
-- **阶段9 (Redis Cluster API)**: 0/18 📋 **新增规划 (2025-11-25)**
 - **进行中**: 0
-- **待开始**: 18 (阶段9)
-- **完成度**: 94.7% (324/342 任务)
-
-### 阶段9 (Redis Cluster API 适配层) 详细统计 🆕
-- **Phase 1 (MultiRaftCluster 封装)**: 0/6 任务 📋
-  - 创建 multi_raft_cluster.rs
-  - cluster_info/nodes/slots/myid/keyslot API
-  - 单元测试
-- **Phase 2 (节点管理)**: 0/3 任务 📋
-  - cluster_meet/forget API
-  - 集成测试
-- **Phase 3 (Slot 管理)**: 0/6 任务 📋
-  - addslots/delslots/setslot API
-  - getkeysinslot API
-- **Phase 4 (数据操作和副本管理)**: 0/6 任务 📋
-  - put/get/delete (带路由)
-  - migrate_key/replicate/failover
-- **Phase 5 (文档和示例)**: 0/3 任务 📋
-  - API 文档
-  - 示例代码
-  - README 更新
+- **待开始**: 0
+- **完成度**: 100% (324/324 任务)
 
 ### 阶段0 (Thin Replication) 详细统计
 - **数据结构实现**: 2/2 任务 ✅
