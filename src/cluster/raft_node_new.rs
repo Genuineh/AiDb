@@ -91,8 +91,8 @@ impl OpenRaftNode {
         // Store network factory in Arc for shared use
         let network_factory_arc = Arc::new(RwLock::new(network_factory));
 
-        // Create Raft instance - clone the factory so it uses the same nodes map
-        // The key insight is that network_factory_arc.read().clone() shares the nodes Arc
+        // Clone the factory to share the underlying Arc<RwLock<HashMap>> of node addresses
+        // This ensures both the Raft instance and stored factory reference the same node map
         let network_factory_for_raft = network_factory_arc.read().clone();
         
         let raft = Raft::new(
