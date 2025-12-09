@@ -88,15 +88,17 @@ impl OpenRaftNode {
             .validate()
             .map_err(|e| Error::ClusterError(format!("Invalid Raft config: {}", e)))?;
 
-        // Store network factory for later use
-        let network_factory_clone = RaftNetworkClientFactory::new(config.node_id);
+        // Store network factory in Arc for shared use
         let network_factory_arc = Arc::new(RwLock::new(network_factory));
 
-        // Create Raft instance - pass network factory directly (not wrapped in Arc)
+        // Clone the factory to share the underlying Arc<RwLock<HashMap>> of node addresses
+        // This ensures both the Raft instance and stored factory reference the same node map
+        let network_factory_for_raft = network_factory_arc.read().clone();
+
         let raft = Raft::new(
             config.node_id,
             Arc::new(raft_config),
-            network_factory_clone,
+            network_factory_for_raft,
             log_store,
             state_machine,
         )
