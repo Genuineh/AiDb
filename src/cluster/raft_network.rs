@@ -337,7 +337,9 @@ impl RaftService for RaftServiceImpl {
         for entry in req.entries {
             // Use MessagePack to match storage layer serialization format
             let payload: openraft::EntryPayload<TypeConfig> = rmp_serde::from_slice(&entry.payload)
-                .map_err(|e| tonic::Status::internal(format!("Failed to deserialize entry: {}", e)))?;
+                .map_err(|e| {
+                    tonic::Status::internal(format!("Failed to deserialize entry: {}", e))
+                })?;
 
             entries.push(openraft::Entry {
                 log_id: openraft::LogId::new(
@@ -358,11 +360,9 @@ impl RaftService for RaftServiceImpl {
         };
 
         // Convert leader_commit
-        let leader_commit = if let (Some(index), Some(term), Some(leader_id)) = (
-            req.leader_commit_index,
-            req.leader_commit_term,
-            req.leader_commit_leader_id,
-        ) {
+        let leader_commit = if let (Some(index), Some(term), Some(leader_id)) =
+            (req.leader_commit_index, req.leader_commit_term, req.leader_commit_leader_id)
+        {
             Some(openraft::LogId::new(openraft::LeaderId::new(term, leader_id), index))
         } else {
             None
@@ -430,7 +430,9 @@ impl RaftService for RaftServiceImpl {
     ) -> Result<tonic::Response<raft_rpc::InstallSnapshotResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        let meta = req.meta.ok_or_else(|| tonic::Status::invalid_argument("Missing snapshot meta"))?;
+        let meta = req
+            .meta
+            .ok_or_else(|| tonic::Status::invalid_argument("Missing snapshot meta"))?;
 
         // Convert metadata
         let last_log_id = if let (Some(index), Some(term), Some(leader_id)) =
@@ -447,11 +449,8 @@ impl RaftService for RaftServiceImpl {
                 tonic::Status::internal(format!("Failed to deserialize membership: {}", e))
             })?;
 
-        let snapshot_meta = SnapshotMeta {
-            last_log_id,
-            last_membership,
-            snapshot_id: meta.snapshot_id,
-        };
+        let snapshot_meta =
+            SnapshotMeta { last_log_id, last_membership, snapshot_id: meta.snapshot_id };
 
         let install_req = InstallSnapshotRequest {
             vote: openraft::Vote {

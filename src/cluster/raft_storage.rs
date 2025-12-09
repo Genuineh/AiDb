@@ -308,7 +308,7 @@ impl OpenRaftStorage {
 
         for entry in entries {
             let key = format!("raft:log:{}", entry.log_id.index);
-            
+
             // Use rmp_serde (MessagePack) for better compatibility with complex types
             // Openraft's Entry type with EntryPayload enum works better with MessagePack than bincode
             let data = rmp_serde::to_vec(entry).map_err(|e| {
