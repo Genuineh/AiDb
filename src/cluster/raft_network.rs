@@ -221,6 +221,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
 
 /// Factory for creating network clients
 #[cfg(feature = "raft-cluster")]
+#[derive(Clone)]
 pub struct RaftNetworkClientFactory {
     /// Current node ID
     node_id: NodeId,
