@@ -76,7 +76,8 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         // Convert request to protobuf
         let mut entries = Vec::new();
         for entry in rpc.entries {
-            let payload = bincode::serialize(&entry.payload)
+            // Use MessagePack to match storage layer serialization format
+            let payload = rmp_serde::to_vec(&entry.payload)
                 .map_err(|e| RPCError::Network(NetworkError::new(&Unreachable::new(&e))))?;
 
             entries.push(raft_rpc::LogEntry {
@@ -143,7 +144,8 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
             last_log_index: rpc.meta.last_log_id.map(|id| id.index),
             last_log_term: rpc.meta.last_log_id.map(|id| id.leader_id.term),
             last_log_leader_id: rpc.meta.last_log_id.map(|id| id.leader_id.node_id),
-            last_membership: bincode::serialize(&rpc.meta.last_membership)
+            // Use MessagePack to match storage layer serialization format
+            last_membership: rmp_serde::to_vec(&rpc.meta.last_membership)
                 .map_err(|e| RPCError::Network(NetworkError::new(&Unreachable::new(&e))))?,
             snapshot_id: rpc.meta.snapshot_id,
         };
@@ -333,7 +335,8 @@ impl RaftService for RaftServiceImpl {
         // Convert protobuf entries to openraft entries
         let mut entries = Vec::new();
         for entry in req.entries {
-            let payload: openraft::EntryPayload<TypeConfig> = bincode::deserialize(&entry.payload)
+            // Use MessagePack to match storage layer serialization format
+            let payload: openraft::EntryPayload<TypeConfig> = rmp_serde::from_slice(&entry.payload)
                 .map_err(|e| tonic::Status::internal(format!("Failed to deserialize entry: {}", e)))?;
 
             entries.push(openraft::Entry {
@@ -438,8 +441,9 @@ impl RaftService for RaftServiceImpl {
             None
         };
 
+        // Use MessagePack to match storage layer serialization format
         let last_membership: openraft::StoredMembership<NodeId, openraft::BasicNode> =
-            bincode::deserialize(&meta.last_membership).map_err(|e| {
+            rmp_serde::from_slice(&meta.last_membership).map_err(|e| {
                 tonic::Status::internal(format!("Failed to deserialize membership: {}", e))
             })?;
 
