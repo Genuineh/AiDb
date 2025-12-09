@@ -94,7 +94,7 @@ impl OpenRaftNode {
         // Clone the factory to share the underlying Arc<RwLock<HashMap>> of node addresses
         // This ensures both the Raft instance and stored factory reference the same node map
         let network_factory_for_raft = network_factory_arc.read().clone();
-        
+
         let raft = Raft::new(
             config.node_id,
             Arc::new(raft_config),
