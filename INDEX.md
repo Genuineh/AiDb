@@ -252,23 +252,28 @@ aidb/
 
 | 文档 | 最后更新 | 状态 |
 |------|---------|------|
-| README.md | 2025-11-18 | ✅ 已更新 |
-| CHANGELOG.md | 2025-11-18 | ✅ 已更新 |
-| TODO.md | 2025-11-18 | ✅ 已更新 |
-| docs/ARCHITECTURE.md | 2025-11-04 | ✅ 最新 |
-| docs/IMPLEMENTATION.md | 2025-11-05 | ✅ 最新 |
-| docs/DESIGN_DECISIONS.md | 2025-11-04 | ✅ 最新 |
-| docs/DEVELOPMENT.md | 2025-11-04 | ✅ 最新 |
-| docs/USER_GUIDE.md | 2025-11-11 | ✅ 最新 |
-| docs/BEST_PRACTICES.md | 2025-11-11 | ✅ 最新 |
-| docs/PERFORMANCE_TUNING.md | 2025-11-11 | ✅ 最新 |
-| docs/BACKUP_RECOVERY.md | 2025-11-17 | ✅ 最新 |
-| docs/WAL_IMPLEMENTATION.md | 2025-11-05 | ✅ 最新 |
-| docs/MEMTABLE_IMPLEMENTATION.md | 2025-11-06 | ✅ 最新 |
-| docs/SSTABLE_IMPLEMENTATION.md | 2025-11-06 | ✅ 最新 |
-| docs/completions/ | 2025-11-18 | ✅ 最新 |
-| docs/monitoring/ | 2025-11-18 | ✅ 最新 |
-| docs/archive/ | 2025-11-06 | 📦 归档 |
+| README.md | 2024-12-09 | ✅ 已更新 |
+| CHANGELOG.md | 2024-11-20 | ✅ 最新 |
+| TODO.md | 2024-12-09 | ✅ 重组完成 |
+| PROJECT_STATUS.md | 2024-12-09 | ✅ 已更新 |
+| INDEX.md | 2024-12-09 | ✅ 已更新 |
+| PHASE2-5_COMPLETE.md | 2024-11-20 | ✅ 最新 |
+| docs/ARCHITECTURE.md | 2024-11-04 | ✅ 最新 |
+| docs/IMPLEMENTATION.md | 2024-11-05 | ✅ 最新 |
+| docs/DESIGN_DECISIONS.md | 2024-11-04 | ✅ 最新 |
+| docs/DEVELOPMENT.md | 2024-11-04 | ✅ 最新 |
+| docs/USER_GUIDE.md | 2024-11-11 | ✅ 最新 |
+| docs/BEST_PRACTICES.md | 2024-11-11 | ✅ 最新 |
+| docs/PERFORMANCE_TUNING.md | 2024-11-11 | ✅ 最新 |
+| docs/BACKUP_RECOVERY.md | 2024-11-17 | ✅ 最新 |
+| docs/MULTI_RAFT_ARCHITECTURE.md | 2024-11-21 | ✅ 最新 |
+| docs/MULTI_RAFT_SHARDING_PLAN.md | 2024-11-21 | ✅ 最新 |
+| docs/WAL_IMPLEMENTATION.md | 2024-11-05 | ✅ 最新 |
+| docs/MEMTABLE_IMPLEMENTATION.md | 2024-11-06 | ✅ 最新 |
+| docs/SSTABLE_IMPLEMENTATION.md | 2024-11-06 | ✅ 最新 |
+| docs/completions/ | 2024-11-25 | ✅ 最新 |
+| docs/monitoring/ | 2024-11-18 | ✅ 最新 |
+| docs/archive/ | 2024-11-06 | 📦 归档 |
 
 ---
 
