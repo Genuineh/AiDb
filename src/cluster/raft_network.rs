@@ -16,7 +16,7 @@ use openraft::{
         AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
         InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
-    RaftNetwork, RaftNetworkFactory,
+    RaftNetwork, RaftNetworkFactory, SnapshotMeta,
 };
 
 use crate::cluster::raft_storage::{NodeId, TypeConfig};
@@ -257,6 +257,224 @@ impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
             .unwrap_or_else(|| format!("http://127.0.0.1:{}", 50000 + target));
 
         RaftNetworkClient::new(self.node_id, target, target_addr)
+    }
+}
+
+/// RPC server implementation for handling Raft requests from other nodes
+#[cfg(feature = "raft-cluster")]
+pub struct RaftServiceImpl {
+    /// The Raft instance
+    raft: Arc<openraft::Raft<TypeConfig>>,
+}
+
+#[cfg(feature = "raft-cluster")]
+impl RaftServiceImpl {
+    /// Create a new RaftServiceImpl
+    pub fn new(raft: Arc<openraft::Raft<TypeConfig>>) -> Self {
+        Self { raft }
+    }
+}
+
+#[cfg(feature = "raft-cluster")]
+use raft_rpc::raft_service_server::RaftService;
+
+#[cfg(feature = "raft-cluster")]
+#[tonic::async_trait]
+impl RaftService for RaftServiceImpl {
+    async fn vote(
+        &self,
+        request: TonicRequest<raft_rpc::VoteRequest>,
+    ) -> Result<tonic::Response<raft_rpc::VoteResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        // Convert protobuf request to openraft VoteRequest
+        let last_log_id = if req.last_log_index > 0 {
+            Some(openraft::LogId::new(
+                openraft::LeaderId::new(req.last_log_term, req.last_log_leader_id),
+                req.last_log_index,
+            ))
+        } else {
+            None
+        };
+
+        let vote_req = VoteRequest {
+            vote: openraft::Vote {
+                leader_id: openraft::LeaderId::new(req.vote_term, req.vote_node_id),
+                committed: req.vote_committed,
+            },
+            last_log_id,
+        };
+
+        // Call raft.vote()
+        let vote_resp = self
+            .raft
+            .vote(vote_req)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("Vote failed: {}", e)))?;
+
+        // Convert response to protobuf
+        let response = raft_rpc::VoteResponse {
+            vote_term: vote_resp.vote.leader_id.term,
+            vote_node_id: vote_resp.vote.leader_id.node_id,
+            vote_committed: vote_resp.vote.committed,
+            vote_granted: vote_resp.vote_granted,
+            is_in_membership: true, // Simplified for now
+        };
+
+        Ok(tonic::Response::new(response))
+    }
+
+    async fn append_entries(
+        &self,
+        request: TonicRequest<raft_rpc::AppendEntriesRequest>,
+    ) -> Result<tonic::Response<raft_rpc::AppendEntriesResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        // Convert protobuf entries to openraft entries
+        let mut entries = Vec::new();
+        for entry in req.entries {
+            let payload: openraft::EntryPayload<TypeConfig> = bincode::deserialize(&entry.payload)
+                .map_err(|e| tonic::Status::internal(format!("Failed to deserialize entry: {}", e)))?;
+
+            entries.push(openraft::Entry {
+                log_id: openraft::LogId::new(
+                    openraft::LeaderId::new(entry.log_term, entry.log_leader_id),
+                    entry.log_index,
+                ),
+                payload,
+            });
+        }
+
+        // Convert prev_log_id
+        let prev_log_id = if let (Some(index), Some(term), Some(leader_id)) =
+            (req.prev_log_index, req.prev_log_term, req.prev_log_leader_id)
+        {
+            Some(openraft::LogId::new(openraft::LeaderId::new(term, leader_id), index))
+        } else {
+            None
+        };
+
+        // Convert leader_commit
+        let leader_commit = if let (Some(index), Some(term), Some(leader_id)) = (
+            req.leader_commit_index,
+            req.leader_commit_term,
+            req.leader_commit_leader_id,
+        ) {
+            Some(openraft::LogId::new(openraft::LeaderId::new(term, leader_id), index))
+        } else {
+            None
+        };
+
+        let append_req = AppendEntriesRequest {
+            vote: openraft::Vote {
+                leader_id: openraft::LeaderId::new(req.vote_term, req.vote_node_id),
+                committed: req.vote_committed,
+            },
+            prev_log_id,
+            entries,
+            leader_commit,
+        };
+
+        // Call raft.append_entries()
+        let append_resp = self
+            .raft
+            .append_entries(append_req)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("AppendEntries failed: {}", e)))?;
+
+        // Convert response to protobuf
+        let response = match append_resp {
+            AppendEntriesResponse::Success => raft_rpc::AppendEntriesResponse {
+                vote_term: 0,
+                vote_node_id: 0,
+                vote_committed: false,
+                success: true,
+                conflict_index: None,
+                conflict_term: None,
+            },
+            AppendEntriesResponse::PartialSuccess(_) => raft_rpc::AppendEntriesResponse {
+                vote_term: 0,
+                vote_node_id: 0,
+                vote_committed: false,
+                success: true,
+                conflict_index: None,
+                conflict_term: None,
+            },
+            AppendEntriesResponse::Conflict => raft_rpc::AppendEntriesResponse {
+                vote_term: 0,
+                vote_node_id: 0,
+                vote_committed: false,
+                success: false,
+                conflict_index: Some(0),
+                conflict_term: Some(0),
+            },
+            AppendEntriesResponse::HigherVote(vote) => raft_rpc::AppendEntriesResponse {
+                vote_term: vote.leader_id.term,
+                vote_node_id: vote.leader_id.node_id,
+                vote_committed: vote.committed,
+                success: false,
+                conflict_index: None,
+                conflict_term: None,
+            },
+        };
+
+        Ok(tonic::Response::new(response))
+    }
+
+    async fn install_snapshot(
+        &self,
+        request: TonicRequest<raft_rpc::InstallSnapshotRequest>,
+    ) -> Result<tonic::Response<raft_rpc::InstallSnapshotResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        let meta = req.meta.ok_or_else(|| tonic::Status::invalid_argument("Missing snapshot meta"))?;
+
+        // Convert metadata
+        let last_log_id = if let (Some(index), Some(term), Some(leader_id)) =
+            (meta.last_log_index, meta.last_log_term, meta.last_log_leader_id)
+        {
+            Some(openraft::LogId::new(openraft::LeaderId::new(term, leader_id), index))
+        } else {
+            None
+        };
+
+        let last_membership: openraft::StoredMembership<NodeId, openraft::BasicNode> =
+            bincode::deserialize(&meta.last_membership).map_err(|e| {
+                tonic::Status::internal(format!("Failed to deserialize membership: {}", e))
+            })?;
+
+        let snapshot_meta = SnapshotMeta {
+            last_log_id,
+            last_membership,
+            snapshot_id: meta.snapshot_id,
+        };
+
+        let install_req = InstallSnapshotRequest {
+            vote: openraft::Vote {
+                leader_id: openraft::LeaderId::new(req.vote_term, req.vote_node_id),
+                committed: req.vote_committed,
+            },
+            meta: snapshot_meta,
+            offset: 0,
+            data: req.snapshot_data,
+            done: true,
+        };
+
+        // Call raft.install_snapshot()
+        let install_resp = self
+            .raft
+            .install_snapshot(install_req)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("InstallSnapshot failed: {}", e)))?;
+
+        // Convert response to protobuf
+        let response = raft_rpc::InstallSnapshotResponse {
+            vote_term: install_resp.vote.leader_id.term,
+            vote_node_id: install_resp.vote.leader_id.node_id,
+            vote_committed: install_resp.vote.committed,
+        };
+
+        Ok(tonic::Response::new(response))
     }
 }
 

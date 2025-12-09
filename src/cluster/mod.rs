@@ -126,7 +126,7 @@ pub use peer::{PeerInfo, PeerNode, PeerStats};
 pub use raft_storage::{NodeId, OpenRaftStorage, Request, Response, TypeConfig};
 
 #[cfg(feature = "raft-cluster")]
-pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory};
+pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory, RaftServiceImpl};
 
 #[cfg(feature = "raft-cluster")]
 pub use raft_node_new::{OpenRaftNode, RaftNodeConfig};
