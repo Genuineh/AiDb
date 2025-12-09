@@ -23,9 +23,6 @@ use crate::DB;
 /// Node ID type for AiDb Raft cluster
 pub type NodeId = u64;
 
-/// Raft log entry type for AiDb
-pub type LogEntry = Entry<TypeConfig>;
-
 /// Type configuration for OpenRaft
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeConfig;
@@ -36,11 +33,14 @@ impl openraft::RaftTypeConfig for TypeConfig {
     type R = Response;
     type NodeId = NodeId;
     type Node = BasicNode;
-    type Entry = LogEntry;
+    type Entry = Entry<TypeConfig>;
     type SnapshotData = Cursor<Vec<u8>>;
     type AsyncRuntime = openraft::TokioRuntime;
     type Responder = openraft::impls::OneshotResponder<TypeConfig>;
 }
+
+/// Raft log entry type for AiDb
+pub type LogEntry = Entry<TypeConfig>;
 
 /// Request type for state machine operations (Thin Replication Support)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,7 +284,8 @@ impl OpenRaftStorage {
         for idx in start..end {
             let key = format!("raft:log:{}", idx);
             if let Some(data) = self.db.get(key.as_bytes())? {
-                let entry: Entry<TypeConfig> = bincode::deserialize(&data).map_err(|e| {
+                // Deserialize using MessagePack to match how we serialized it
+                let entry: Entry<TypeConfig> = rmp_serde::from_slice(&data).map_err(|e| {
                     Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!("Failed to deserialize entry: {}", e),
@@ -307,7 +308,10 @@ impl OpenRaftStorage {
 
         for entry in entries {
             let key = format!("raft:log:{}", entry.log_id.index);
-            let data = bincode::serialize(entry).map_err(|e| {
+
+            // Use rmp_serde (MessagePack) for better compatibility with complex types
+            // Openraft's Entry type with EntryPayload enum works better with MessagePack than bincode
+            let data = rmp_serde::to_vec(entry).map_err(|e| {
                 Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Failed to serialize entry: {}", e),
@@ -353,7 +357,7 @@ impl OpenRaftStorage {
         if log_id.index > 0 {
             let prev_key = format!("raft:log:{}", log_id.index - 1);
             if let Some(data) = self.db.get(prev_key.as_bytes())? {
-                let entry: Entry<TypeConfig> = bincode::deserialize(&data).map_err(|e| {
+                let entry: Entry<TypeConfig> = rmp_serde::from_slice(&data).map_err(|e| {
                     Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!("Failed to deserialize entry: {}", e),

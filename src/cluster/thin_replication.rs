@@ -36,7 +36,7 @@ pub enum WriteOp {
         /// Value to insert
         value: Vec<u8>,
         /// Timestamp (for MVCC, optional)
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         ts: Option<u64>,
     },
     /// Delete a key
@@ -44,7 +44,7 @@ pub enum WriteOp {
         /// Key to delete
         key: Vec<u8>,
         /// Timestamp (for MVCC, optional)
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         ts: Option<u64>,
     },
 }
@@ -96,7 +96,7 @@ pub struct WriteBatch {
     /// List of write operations
     pub ops: Vec<WriteOp>,
     /// Batch sequence number (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<u64>,
 }
 

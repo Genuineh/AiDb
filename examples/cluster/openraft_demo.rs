@@ -25,22 +25,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db1 = DB::open(temp_dir1.path(), Options::default())?;
     let network_factory1 = RaftNetworkClientFactory::new(1);
     let config1 = RaftNodeConfig { node_id: 1, ..Default::default() };
-    let node1 = OpenRaftNode::new(config1, Arc::new(db1), network_factory1).await?;
+    let node1 = Arc::new(OpenRaftNode::new(config1, Arc::new(db1), network_factory1).await?);
     println!("✓ Node 1 created (will be leader)");
 
     // Node 2 - Follower
     let db2 = DB::open(temp_dir2.path(), Options::default())?;
     let network_factory2 = RaftNetworkClientFactory::new(2);
     let config2 = RaftNodeConfig { node_id: 2, ..Default::default() };
-    let node2 = OpenRaftNode::new(config2, Arc::new(db2), network_factory2).await?;
+    let node2 = Arc::new(OpenRaftNode::new(config2, Arc::new(db2), network_factory2).await?);
     println!("✓ Node 2 created");
 
     // Node 3 - Follower
     let db3 = DB::open(temp_dir3.path(), Options::default())?;
     let network_factory3 = RaftNetworkClientFactory::new(3);
     let config3 = RaftNodeConfig { node_id: 3, ..Default::default() };
-    let node3 = OpenRaftNode::new(config3, Arc::new(db3), network_factory3).await?;
+    let node3 = Arc::new(OpenRaftNode::new(config3, Arc::new(db3), network_factory3).await?);
     println!("✓ Node 3 created\n");
+
+    // Start RPC servers for each node
+    println!("Starting RPC servers...");
+    let addr1 = "127.0.0.1:50001".parse()?;
+    let addr2 = "127.0.0.1:50002".parse()?;
+    let addr3 = "127.0.0.1:50003".parse()?;
+
+    let node1_clone = node1.clone();
+    let server1 = tokio::spawn(async move { node1_clone.start_server(addr1).await });
+
+    let node2_clone = node2.clone();
+    let server2 = tokio::spawn(async move { node2_clone.start_server(addr2).await });
+
+    let node3_clone = node3.clone();
+    let server3 = tokio::spawn(async move { node3_clone.start_server(addr3).await });
+
+    println!("✓ RPC servers started on ports 50001, 50002, 50003");
+    println!("Waiting for servers to be ready...\n");
+    sleep(Duration::from_millis(500)).await;
 
     // Initialize cluster on node 1
     println!("Initializing cluster with 3 nodes...");
@@ -124,6 +143,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     node1.shutdown().await?;
     node2.shutdown().await?;
     node3.shutdown().await?;
+
+    // Abort the server tasks
+    server1.abort();
+    server2.abort();
+    server3.abort();
 
     println!("✓ All nodes shut down successfully");
 

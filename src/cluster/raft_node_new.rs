@@ -263,6 +263,61 @@ impl OpenRaftNode {
         self.raft.metrics().borrow().clone()
     }
 
+    /// Get the Raft instance (for server setup)
+    pub fn raft(&self) -> Arc<openraft::Raft<TypeConfig>> {
+        self.raft.clone()
+    }
+
+    /// Start RPC server on the given address
+    ///
+    /// This starts a gRPC server that listens for Raft protocol messages
+    /// from other nodes in the cluster.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - The socket address to bind to (e.g., "127.0.0.1:50001")
+    ///
+    /// # Returns
+    ///
+    /// Returns a future that will run the server until it's shut down.
+    /// The future should be spawned as a background task.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use aidb::cluster::{OpenRaftNode, RaftNodeConfig, RaftNetworkClientFactory};
+    /// # use aidb::{DB, Options};
+    /// # use std::sync::Arc;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db = DB::open("./data", Options::default())?;
+    /// # let network_factory = RaftNetworkClientFactory::new(1);
+    /// # let config = RaftNodeConfig { node_id: 1, ..Default::default() };
+    /// let node = OpenRaftNode::new(config, Arc::new(db), network_factory).await?;
+    ///
+    /// // Start server in background
+    /// let addr = "127.0.0.1:50001".parse()?;
+    /// tokio::spawn(async move {
+    ///     node.start_server(addr).await
+    /// });
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn start_server(&self, addr: std::net::SocketAddr) -> Result<()> {
+        use crate::cluster::raft_network::raft_rpc::raft_service_server::RaftServiceServer;
+        use crate::cluster::raft_network::RaftServiceImpl;
+
+        let service = RaftServiceImpl::new(self.raft.clone());
+        let server = RaftServiceServer::new(service);
+
+        tonic::transport::Server::builder()
+            .add_service(server)
+            .serve(addr)
+            .await
+            .map_err(|e| Error::ClusterError(format!("Server error: {}", e)))?;
+
+        Ok(())
+    }
+
     /// Shutdown the node
     pub async fn shutdown(&self) -> Result<()> {
         self.raft
