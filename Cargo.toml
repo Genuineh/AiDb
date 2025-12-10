@@ -1,6 +1,6 @@
 [package]
 name = "aidb"
-version = "0.3.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["AiDb Contributors"]
 description = "A high-performance LSM-Tree based key-value storage engine written in Rust"
