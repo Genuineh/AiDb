@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-10
+
+### 🚀 重大更新
+
+#### 版本升级
+- **版本号**: 从 0.3.0 升级到 0.5.0
+- **稳定性**: 进一步提升生产环境稳定性
+- **文档**: 更新所有相关文档以反映新版本
+
+### 📚 文档更新
+- 更新 Cargo.toml 版本号
+- 更新 README.md 中的版本引用
+- 更新 PROJECT_STATUS.md 项目状态
+- 更新 TODO.md 版本信息
+- 统一所有文档中的版本标识
+
+### 📊 当前状态
+- **版本**: 0.5.0
+- **核心功能**: 生产就绪 ✅
+- **集群功能**: 完整实现 ✅
+- **监控运维**: 完善 ✅
+- **代码质量**: 高标准 ✅
+
 ## [0.3.0] - 2025-11-20
 
 ### 🧹 代码清理和重构
@@ -217,7 +240,8 @@ AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产
 
 ---
 
-[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Genuineh/aidb/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/Genuineh/aidb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Genuineh/aidb/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Genuineh/aidb/releases/tag/v0.1.0
