@@ -75,7 +75,7 @@ impl MetaRaftNode {
         let db_dir = data_dir.join("db");
         let options = Options::default();
         let db = Arc::new(DB::open(&db_dir, options)?);
-        let storage = OpenRaftStorage::new(db)?;
+        let storage = OpenRaftStorage::with_meta_state(db, meta_state.clone())?;
 
         // Use Adaptor to split storage into log_store and state_machine
         let (log_store, state_machine) = Adaptor::new(storage);
@@ -220,17 +220,13 @@ impl MetaRaftNode {
     ///
     /// This serializes the MetaRequest and proposes it as a Raft log entry.
     async fn propose_meta_change(&self, request: MetaRequest) -> Result<MetaResponse> {
-        // Serialize the MetaRequest
-        let data = bincode::serialize(&request)
-            .map_err(|e| Error::Internal(format!("Failed to serialize request: {}", e)))?;
-
-        // Wrap in a Request::WriteBatch for compatibility with existing state machine
-        let batch_request = Request::Put { key: b"meta:request".to_vec(), value: data };
+        // Create a Request::Meta directly
+        let meta_request = Request::Meta(request);
 
         // Propose through Raft
         let _response = self
             .raft
-            .client_write(batch_request)
+            .client_write(meta_request)
             .await
             .map_err(|e| Error::Internal(format!("Failed to propose change: {:?}", e)))?;
 

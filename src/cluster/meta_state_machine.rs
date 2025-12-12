@@ -281,8 +281,7 @@ impl MetaStateMachine {
     /// Apply a MetaRequest to the state machine
     ///
     /// This is the core method that processes all metadata changes.
-    #[allow(dead_code)]
-    fn apply_meta_request(&self, request: MetaRequest) -> Result<MetaResponse> {
+    pub fn apply_meta_request(&self, request: MetaRequest) -> Result<MetaResponse> {
         let mut meta = self.meta.write();
 
         match request {
