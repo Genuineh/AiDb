@@ -5,7 +5,6 @@
 
 #[cfg(feature = "raft-cluster")]
 use aidb::cluster::{MetaRaftNode, MetaResponse};
-use aidb::config::Options;
 use openraft::Config;
 use std::time::Duration;
 use tempfile::TempDir;

@@ -59,6 +59,8 @@ pub enum Request {
     },
     /// Batch write operations (thin replication)
     WriteBatch(crate::cluster::thin_replication::WriteBatch),
+    /// Metadata operation (for MetaRaft group only)
+    Meta(super::meta_types::MetaRequest),
 }
 
 impl Request {
@@ -81,6 +83,10 @@ impl Request {
                 batch
             }
             Request::WriteBatch(batch) => batch,
+            Request::Meta(_) => {
+                // Meta requests should not be converted to batch
+                WriteBatch::new()
+            }
         }
     }
 }
@@ -103,6 +109,8 @@ pub struct OpenRaftStorage {
     db: Arc<DB>,
     /// In-memory state cache
     state: Arc<RwLock<StorageState>>,
+    /// Optional metadata state machine (only for MetaRaft group)
+    meta_state: Option<Arc<super::meta_state_machine::MetaStateMachine>>,
 }
 
 /// Cached storage state
@@ -123,8 +131,28 @@ struct StorageState {
 impl OpenRaftStorage {
     /// Create a new OpenRaft storage
     pub fn new(db: Arc<DB>) -> Result<Self> {
-        let storage =
-            Self { db: db.clone(), state: Arc::new(RwLock::new(StorageState::default())) };
+        let storage = Self {
+            db: db.clone(),
+            state: Arc::new(RwLock::new(StorageState::default())),
+            meta_state: None,
+        };
+
+        // Load existing state from database
+        storage.load_state()?;
+
+        Ok(storage)
+    }
+
+    /// Create a new OpenRaft storage with MetaStateMachine (for MetaRaft group)
+    pub fn with_meta_state(
+        db: Arc<DB>,
+        meta_state: Arc<super::meta_state_machine::MetaStateMachine>,
+    ) -> Result<Self> {
+        let storage = Self {
+            db: db.clone(),
+            state: Arc::new(RwLock::new(StorageState::default())),
+            meta_state: Some(meta_state),
+        };
 
         // Load existing state from database
         storage.load_state()?;
@@ -647,7 +675,11 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
     }
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
-        OpenRaftStorage { db: self.db.clone(), state: self.state.clone() }
+        OpenRaftStorage {
+            db: self.db.clone(),
+            state: self.state.clone(),
+            meta_state: self.meta_state.clone(),
+        }
     }
 
     // Vote management
@@ -734,13 +766,31 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
 
         for entry in entries {
             if let EntryPayload::Normal(ref request) = entry.payload {
-                // Convert request to WriteBatch (thin replication)
-                let batch = request.clone().to_batch();
+                let response = match request {
+                    Request::Meta(meta_request) => {
+                        // Handle metadata request if we have a meta state machine
+                        if let Some(ref meta_state) = self.meta_state {
+                            match meta_state.apply_meta_request(meta_request.clone()) {
+                                Ok(_meta_response) => Response::Ok,
+                                Err(e) => Response::Error(format!("Meta apply failed: {}", e)),
+                            }
+                        } else {
+                            Response::Error(
+                                "Meta request received but no meta state machine configured"
+                                    .to_string(),
+                            )
+                        }
+                    }
+                    _ => {
+                        // Convert request to WriteBatch (thin replication)
+                        let batch = request.clone().to_batch();
 
-                // Apply batch to local DB
-                let response = match self.apply_batch_internal(&batch) {
-                    Ok(_) => Response::Ok,
-                    Err(e) => Response::Error(format!("Apply failed: {}", e)),
+                        // Apply batch to local DB
+                        match self.apply_batch_internal(&batch) {
+                            Ok(_) => Response::Ok,
+                            Err(e) => Response::Error(format!("Apply failed: {}", e)),
+                        }
+                    }
                 };
 
                 responses.push(response);
