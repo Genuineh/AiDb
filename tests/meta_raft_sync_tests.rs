@@ -14,9 +14,6 @@ use tokio::time::sleep;
 #[cfg(feature = "raft-cluster")]
 #[tokio::test]
 async fn test_create_group_updates_metadata() {
-    // Clean up any existing test data
-    let _ = std::fs::remove_dir_all("/tmp/test_meta_raft_create_group");
-    
     let temp_dir = TempDir::new().unwrap();
     let config = Config::default();
     
@@ -57,9 +54,6 @@ async fn test_create_group_updates_metadata() {
 #[cfg(feature = "raft-cluster")]
 #[tokio::test]
 async fn test_add_node_updates_metadata() {
-    // Clean up any existing test data
-    let _ = std::fs::remove_dir_all("/tmp/test_meta_raft_add_node");
-    
     let temp_dir = TempDir::new().unwrap();
     let config = Config::default();
     
@@ -100,9 +94,6 @@ async fn test_add_node_updates_metadata() {
 #[cfg(feature = "raft-cluster")]
 #[tokio::test]
 async fn test_update_slots_updates_metadata() {
-    // Clean up any existing test data
-    let _ = std::fs::remove_dir_all("/tmp/test_meta_raft_update_slots");
-    
     let temp_dir = TempDir::new().unwrap();
     let config = Config::default();
     
@@ -152,9 +143,6 @@ async fn test_update_slots_updates_metadata() {
 #[cfg(feature = "raft-cluster")]
 #[tokio::test]
 async fn test_multiple_metadata_operations() {
-    // Clean up any existing test data
-    let _ = std::fs::remove_dir_all("/tmp/test_meta_raft_multiple");
-    
     let temp_dir = TempDir::new().unwrap();
     let config = Config::default();
     
@@ -216,9 +204,6 @@ async fn test_multiple_metadata_operations() {
 #[cfg(feature = "raft-cluster")]
 #[tokio::test]
 async fn test_config_version_increments() {
-    // Clean up any existing test data
-    let _ = std::fs::remove_dir_all("/tmp/test_meta_raft_config_version");
-    
     let temp_dir = TempDir::new().unwrap();
     let config = Config::default();
     

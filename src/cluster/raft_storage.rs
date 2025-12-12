@@ -84,7 +84,8 @@ impl Request {
             }
             Request::WriteBatch(batch) => batch,
             Request::Meta(_) => {
-                // Meta requests should not be converted to batch
+                // Meta requests don't convert to batch - they are handled separately
+                // in apply_to_state_machine by calling MetaStateMachine::apply_meta_request
                 WriteBatch::new()
             }
         }
