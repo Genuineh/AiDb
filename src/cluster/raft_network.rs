@@ -7,6 +7,9 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::Request as TonicRequest;
+use std::time::Duration;
+use tokio::time::timeout;
+use std::env;
 
 #[cfg(feature = "raft-cluster")]
 use openraft::{
@@ -25,7 +28,7 @@ use crate::cluster::raft_storage::{NodeId, TypeConfig};
 #[cfg(feature = "raft-cluster")]
 #[allow(missing_docs)]
 pub mod raft_rpc {
-    tonic::include_proto!("aidb.raft");
+    include!("aidb.raft.rs");
 }
 
 #[cfg(feature = "raft-cluster")]
@@ -38,13 +41,19 @@ pub struct RaftNetworkClient {
     target_addr: String,
     /// gRPC client
     client: Option<RaftServiceClient<tonic::transport::Channel>>,
-}
+    /// RPC request timeout
+    request_timeout: Duration,
+} 
 
 #[cfg(feature = "raft-cluster")]
 impl RaftNetworkClient {
     /// Create a new network client
     pub fn new(_node_id: NodeId, _target: NodeId, target_addr: String) -> Self {
-        Self { target_addr, client: None }
+        let timeout_ms: u64 = env::var("RAFT_RPC_TIMEOUT_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(200);
+        Self { target_addr, client: None, request_timeout: Duration::from_millis(timeout_ms) }
     }
 
     /// Get or create the gRPC client connection
@@ -71,6 +80,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         AppendEntriesResponse<NodeId>,
         RPCError<NodeId, openraft::BasicNode, RaftError<NodeId>>,
     > {
+        let req_timeout = self.request_timeout;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         // Convert request to protobuf
@@ -104,13 +114,22 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
             leader_commit_leader_id: rpc.leader_commit.map(|id| id.leader_id.node_id),
         };
 
-        let response = client.append_entries(TonicRequest::new(request)).await.map_err(|e| {
-            if e.code() == tonic::Code::Unavailable {
-                RPCError::Network(NetworkError::new(&Unreachable::new(&e)))
-            } else {
-                RPCError::Network(NetworkError::new(&e))
+        // Execute AppendEntries with a configurable timeout so transient network jitter doesn't fail quickly
+        let rpc_future = client.append_entries(TonicRequest::new(request));
+        let response = match tokio::time::timeout(req_timeout, rpc_future).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                if e.code() == tonic::Code::Unavailable {
+                    return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&e))));
+                } else {
+                    return Err(RPCError::Network(NetworkError::new(&e)));
+                }
             }
-        })?;
+            Err(_) => {
+                let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, format!("AppendEntries timeout after {}ms", req_timeout.as_millis()));
+                return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&io_err))));
+            }
+        };
 
         let resp = response.into_inner();
 
@@ -137,6 +156,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
             RaftError<NodeId, openraft::error::InstallSnapshotError>,
         >,
     > {
+        let req_timeout = self.request_timeout;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         // Convert metadata to protobuf
@@ -160,13 +180,21 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
             snapshot_data: rpc.data,
         };
 
-        let response = client.install_snapshot(TonicRequest::new(request)).await.map_err(|e| {
-            if e.code() == tonic::Code::Unavailable {
-                RPCError::Network(NetworkError::new(&Unreachable::new(&e)))
-            } else {
-                RPCError::Network(NetworkError::new(&e))
+        let rpc_future = client.install_snapshot(TonicRequest::new(request));
+        let response = match tokio::time::timeout(req_timeout, rpc_future).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                if e.code() == tonic::Code::Unavailable {
+                    return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&e))));
+                } else {
+                    return Err(RPCError::Network(NetworkError::new(&e)));
+                }
             }
-        })?;
+            Err(_) => {
+                let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, format!("InstallSnapshot timeout after {}ms", req_timeout.as_millis()));
+                return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&io_err))));
+            }
+        };
 
         let resp = response.into_inner();
 
@@ -186,6 +214,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         VoteResponse<NodeId>,
         RPCError<NodeId, openraft::BasicNode, RaftError<NodeId>>,
     > {
+        let req_timeout = self.request_timeout;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         let request = raft_rpc::VoteRequest {
@@ -198,13 +227,21 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
             last_log_leader_id: rpc.last_log_id.map(|id| id.leader_id.node_id).unwrap_or(0),
         };
 
-        let response = client.vote(TonicRequest::new(request)).await.map_err(|e| {
-            if e.code() == tonic::Code::Unavailable {
-                RPCError::Network(NetworkError::new(&Unreachable::new(&e)))
-            } else {
-                RPCError::Network(NetworkError::new(&e))
+        let rpc_future = client.vote(TonicRequest::new(request));
+        let response = match tokio::time::timeout(req_timeout, rpc_future).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                if e.code() == tonic::Code::Unavailable {
+                    return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&e))));
+                } else {
+                    return Err(RPCError::Network(NetworkError::new(&e)));
+                }
             }
-        })?;
+            Err(_) => {
+                let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, format!("Vote RPC timeout after {}ms", req_timeout.as_millis()));
+                return Err(RPCError::Network(NetworkError::new(&Unreachable::new(&io_err))));
+            }
+        };
 
         let resp = response.into_inner();
 
@@ -244,6 +281,12 @@ impl RaftNetworkClientFactory {
     /// Remove a node
     pub fn remove_node(&self, node_id: NodeId) {
         self.nodes.write().remove(&node_id);
+    }
+
+    /// List known node addresses
+    pub fn list_nodes(&self) -> Vec<(NodeId, String)> {
+        let map = self.nodes.read();
+        map.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 }
 

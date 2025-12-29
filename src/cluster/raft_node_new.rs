@@ -270,6 +270,25 @@ impl OpenRaftNode {
         self.raft.clone()
     }
 
+    /// Add a known node address to the network factory without changing membership.
+    /// This is used to pre-populate peer addresses from configuration so the node can
+    /// contact other nodes for elections and replication.
+    pub fn add_node_address(&self, node_id: NodeId, address: String) {
+        self.network_factory.write().add_node(node_id, address);
+    }
+
+    /// Remove a known node address from the network factory.
+    pub fn remove_node_address(&self, node_id: NodeId) {
+        self.network_factory.write().remove_node(node_id);
+    }
+
+    /// Return current node addresses known to the network factory
+    pub async fn node_addresses(&self) -> Vec<(NodeId, String)> {
+        // Access the underlying RaftNetworkClientFactory's nodes map
+        let factory = self.network_factory.read();
+        factory.list_nodes()
+    }
+
     /// Start RPC server on the given address
     ///
     /// This starts a gRPC server that listens for Raft protocol messages

@@ -1,0 +1,7 @@
+services:
+  node2:
+    environment:
+      RUST_LOG: "debug"
+  node3:
+    environment:
+      RUST_LOG: "debug"

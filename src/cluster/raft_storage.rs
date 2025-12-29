@@ -215,6 +215,49 @@ impl OpenRaftStorage {
             })?);
         }
 
+        // If we don't have an explicitly persisted membership, try to recover it by scanning
+        // recent logs up to last_applied for the most recent Membership entry and persist it.
+        if self.db.get(b"raft:membership")?.is_none() {
+            tracing::info!("No persisted raft:membership found; attempting recovery from logs");
+            if let Some(last_applied) = state.last_applied {
+                // scan backwards from last_applied.index down to 1
+                for idx in (1..=last_applied.index).rev() {
+                    let key = format!("raft:log:{}", idx);
+                    if let Some(data) = self.db.get(key.as_bytes())? {
+                        // Try to deserialize the log entry and check whether it's a membership entry
+                        let entry: Entry<TypeConfig> = match rmp_serde::from_slice(&data) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                tracing::warn!("Failed to parse log {} during membership recovery: {}", idx, e);
+                                continue;
+                            }
+                        };
+
+                        match &entry.payload {
+                            EntryPayload::Membership(ref m) => {
+                                // persist membership as StoredMembership with log_id so it can be deserialized later
+                                let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
+                                let mem_data = bincode::serialize(&stored).map_err(|e| {
+                                    Error::Io(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!("Failed to serialize recovered membership: {}", e),
+                                    ))
+                                })?;
+                                self.db.put(b"raft:membership", &mem_data)?;
+                                tracing::info!("Recovered membership from log index {}", idx);
+                                break;
+                            }
+                            EntryPayload::Normal(_) => tracing::debug!("Log {} is Normal payload", idx),
+                            EntryPayload::Blank => tracing::debug!("Log {} is Blank payload", idx),
+                            _ => tracing::debug!("Log {} has other payload variant", idx),
+                        }
+                    }
+                }
+            } else {
+                tracing::info!("No last_applied; cannot recover membership from logs");
+            }
+        }
+
         Ok(())
     }
 
@@ -741,17 +784,42 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
     > {
         let state = self.state.read();
 
-        // Get last membership from storage
+        // Get last membership from storage with fallback for legacy/corrupted formats
         let membership = if let Some(data) =
             self.db.get(b"raft:membership").map_err(|e| StorageError::IO {
                 source: StorageIOError::read(openraft::AnyError::error(e.to_string())),
             })? {
-            bincode::deserialize(&data).map_err(|e| StorageError::IO {
-                source: StorageIOError::read(openraft::AnyError::error(format!(
-                    "Failed to deserialize membership: {}",
-                    e
-                ))),
-            })?
+            // Try to parse as the modern StoredMembership first
+            match bincode::deserialize::<openraft::StoredMembership<NodeId, BasicNode>>(&data) {
+                Ok(stored) => stored,
+                Err(e) => {
+                    tracing::warn!("Failed to deserialize stored membership: {}; trying legacy Membership fallback", e);
+                    // Try legacy Membership format
+                    match bincode::deserialize::<openraft::Membership<NodeId, BasicNode>>(&data) {
+                        Ok(m) => {
+                            // Convert to StoredMembership using last_applied as the best-effort log id
+                            let log_id = state.last_applied;
+                            let stored = openraft::StoredMembership::new(log_id, m);
+                            // Persist corrected form back to DB for future startups
+                            let data2 = bincode::serialize(&stored).map_err(|e| StorageError::IO {
+                                source: StorageIOError::write(openraft::AnyError::error(format!(
+                                    "Failed to serialize repaired membership: {}",
+                                    e
+                                ))),
+                            })?;
+                            self.db.put(b"raft:membership", &data2).map_err(|e| StorageError::IO {
+                                source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
+                            })?;
+                            tracing::info!("Repaired and persisted membership in StoredMembership format");
+                            stored
+                        }
+                        Err(e2) => {
+                            tracing::warn!("Also failed to parse legacy Membership: {}; returning default StoredMembership", e2);
+                            openraft::StoredMembership::default()
+                        }
+                    }
+                }
+            }
         } else {
             openraft::StoredMembership::default()
         };
@@ -766,53 +834,70 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         let mut responses = Vec::new();
 
         for entry in entries {
-            if let EntryPayload::Normal(ref request) = entry.payload {
-                let response = match request {
-                    Request::Meta(meta_request) => {
-                        // Handle metadata request if we have a meta state machine
-                        if let Some(ref meta_state) = self.meta_state {
-                            match meta_state.apply_meta_request(meta_request.clone()) {
-                                Ok(_meta_response) => Response::Ok,
-                                Err(e) => Response::Error(format!("Meta apply failed: {}", e)),
+            // Compute the response for this entry (handle Normal payloads and Membership entries specially)
+            let response = match &entry.payload {
+                EntryPayload::Normal(ref request) => {
+                    match request {
+                        Request::Meta(meta_request) => {
+                            // Handle metadata request if we have a meta state machine
+                            if let Some(ref meta_state) = self.meta_state {
+                                match meta_state.apply_meta_request(meta_request.clone()) {
+                                    Ok(_meta_response) => Response::Ok,
+                                    Err(e) => Response::Error(format!("Meta apply failed: {}", e)),
+                                }
+                            } else {
+                                Response::Error(
+                                    "Meta request received but no meta state machine configured".to_string(),
+                                )
                             }
-                        } else {
-                            Response::Error(
-                                "Meta request received but no meta state machine configured"
-                                    .to_string(),
-                            )
+                        }
+                        _ => {
+                            // Convert request to WriteBatch (thin replication)
+                            let batch = request.clone().to_batch();
+
+                            // Apply batch to local DB
+                            match self.apply_batch_internal(&batch) {
+                                Ok(_) => Response::Ok,
+                                Err(e) => Response::Error(format!("Apply failed: {}", e)),
+                            }
                         }
                     }
-                    _ => {
-                        // Convert request to WriteBatch (thin replication)
-                        let batch = request.clone().to_batch();
+                }
+                EntryPayload::Membership(m) => {
+                    // Persist the latest membership as StoredMembership so `last_applied_state` can return it on restart
+                    let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
+                    let data = bincode::serialize(&stored).map_err(|e| StorageError::IO {
+                        source: StorageIOError::write(openraft::AnyError::error(format!(
+                            "Failed to serialize membership: {}",
+                            e
+                        ))),
+                    })?;
 
-                        // Apply batch to local DB
-                        match self.apply_batch_internal(&batch) {
-                            Ok(_) => Response::Ok,
-                            Err(e) => Response::Error(format!("Apply failed: {}", e)),
-                        }
-                    }
-                };
+                    self.db.put(b"raft:membership", &data).map_err(|e| StorageError::IO {
+                        source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
+                    })?;
 
-                responses.push(response);
+                    Response::Ok
+                }
+                _ => Response::Ok,
+            };
 
-                // Update last applied
-                let mut state = self.state.write();
-                state.last_applied = Some(entry.log_id);
+            responses.push(response);
 
-                // Persist last applied
-                let data = bincode::serialize(&entry.log_id).map_err(|e| StorageError::IO {
-                    source: StorageIOError::write(openraft::AnyError::error(format!(
-                        "Failed to serialize last_applied: {}",
-                        e
-                    ))),
-                })?;
-                self.db.put(b"raft:last_applied", &data).map_err(|e| StorageError::IO {
-                    source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
-                })?;
-            } else {
-                responses.push(Response::Ok);
-            }
+            // Update last applied for ALL entry types (including Membership / Blank)
+            let mut state = self.state.write();
+            state.last_applied = Some(entry.log_id);
+
+            // Persist last applied
+            let data = bincode::serialize(&entry.log_id).map_err(|e| StorageError::IO {
+                source: StorageIOError::write(openraft::AnyError::error(format!(
+                    "Failed to serialize last_applied: {}",
+                    e
+                ))),
+            })?;
+            self.db.put(b"raft:last_applied", &data).map_err(|e| StorageError::IO {
+                source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
+            })?;
         }
 
         Ok(responses)

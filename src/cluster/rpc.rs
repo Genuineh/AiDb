@@ -5,10 +5,10 @@
 
 use tonic::Status;
 
-// Include the generated protobuf code
+// Include the generated protobuf code (generated into src/cluster by build.rs)
 #[allow(missing_docs)]
 pub mod proto {
-    tonic::include_proto!("aidb");
+    include!("aidb.rs");
 }
 
 pub use proto::*;
