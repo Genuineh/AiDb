@@ -106,32 +106,7 @@ harness = false
 name = "read_bench"
 harness = false
 
-# Cluster examples (require --features cluster)
-[[example]]
-name = "primary_node"
-path = "examples/cluster/primary_node.rs"
-required-features = ["cluster"]
-
-[[example]]
-name = "replica_node"
-path = "examples/cluster/replica_node.rs"
-required-features = ["cluster"]
-
-[[example]]
-name = "rpc_client"
-path = "examples/cluster/rpc_client.rs"
-required-features = ["cluster"]
-
-[[example]]
-name = "coordinator_demo"
-path = "examples/cluster/coordinator_demo.rs"
-required-features = ["cluster"]
-
-[[example]]
-name = "peer_to_peer_demo"
-path = "examples/cluster/peer_to_peer_demo.rs"
-required-features = ["cluster"]
-
+# Multi-Raft cluster examples (require --features raft-cluster)
 [[example]]
 name = "openraft_demo"
 path = "examples/cluster/openraft_demo.rs"

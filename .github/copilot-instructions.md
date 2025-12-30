@@ -3,17 +3,18 @@
 Short, actionable orientation so an AI coding agent becomes productive quickly.
 
 ## Quick orientation
-- Project: a Rust-based LSM-Tree distributed KV engine (single-node + cluster modes). See `README.md` and `docs/ARCHITECTURE.md` for the big picture.
+- Project: a Rust-based LSM-Tree distributed KV engine (single-node + Multi-Raft cluster). See `README.md` and `docs/ARCHITECTURE.md` for the big picture.
 - Key dirs: `src/` (implementation), `tests/` (integration tests), `benches/` (benchmarks), `examples/` (usage examples), `docs/` (design + dev + CI docs), `deploy/` (ops scripts).
 
 ## Architecture pointers (read these first)
-- High-level design: `docs/ARCHITECTURE.md` (WAL → MemTable → SSTable, compaction, cluster modes). ✅
-- Cluster models: Peer-to-Peer (recommended) and Coordinator/Primary-Replica (both documented in `README.md` and `docs/`).
+- High-level design: `docs/ARCHITECTURE.md` (WAL → MemTable → SSTable, compaction, Multi-Raft cluster).
+- Cluster architecture: Multi-Raft with OpenRaft (see `docs/MULTI_RAFT_ARCHITECTURE.md` for details).
+- Redis Cluster compatibility: 16384 slots, CRC16 routing (see `docs/REDIS_CLUSTER_COMPATIBILITY.md`).
 - Internal key ordering and SSTable formats are documented in `docs/ARCHITECTURE.md` — changes here require careful compatibility consideration.
 
 ## Developer workflows & important commands
 - Build: `cargo build` (dev) / `cargo build --release` (optimized).
-- Feature-aware builds: use `--features cluster` or `--features raft-cluster` when working on cluster or raft code.
+- Feature-aware builds: use `--features raft-cluster` when working on cluster/raft code.
 - Tests: `cargo test` or `cargo test --all-features` for CI parity; run single tests with `cargo test <name>` and see output with `-- --nocapture`.
 - Benchmarks: `cargo bench` (local) and `cargo bench --no-run` (CI compile check). Use `criterion` benches in `benches/`.
 - Formatting & linting (enforced by CI): `cargo fmt --all` and `cargo clippy --all-targets --all-features -- -D warnings`.
@@ -38,8 +39,9 @@ Short, actionable orientation so an AI coding agent becomes productive quickly.
 - Add a benchmark to `benches/` for any performance-sensitive change.
 
 ## Cross-component and infra pointers
-- Cluster code: `src/cluster/` with `PeerNode`, `PrimaryNode`, `ReplicaNode` types and examples under `examples/cluster/`.
-- Admin scripts and quick checks: `deploy/admin_check.py` (useful for running small cluster commands locally).
+- Cluster code: `src/cluster/` with Multi-Raft implementation (`raft_*.rs`, `multi_raft_*.rs`, `sharded_*.rs`).
+- Examples: `examples/cluster/` with `openraft_demo.rs`, `node_runner.rs`, `sharded_multi_raft_demo.rs`.
+- Admin scripts and quick checks: `deploy/admin_check.py`, `deploy/verify_cluster.sh`, `deploy/membership_check.sh`.
 - CI secrets & release flow: `docs/CICD.md` (how tagging and crate publishing works; `CARGO_TOKEN` required for crates.io).
 
 ## Small PR checklist for AI-driven changes

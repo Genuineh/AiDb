@@ -1,106 +1,115 @@
-# AiDb Cluster Mode
+# AiDb Multi-Raft Cluster
 
-This directory contains the distributed cluster implementation for AiDb, including RPC networking, consistent hashing, Raft consensus, and cluster coordination.
+This directory contains the distributed Multi-Raft cluster implementation for AiDb, providing strong consistency through OpenRaft consensus.
 
 ## Architecture Overview
 
-AiDb supports three cluster architectures:
-
-1. **Raft-Based P2P** (NEW - Recommended for production)
-2. **Simple P2P** (Good for caching/eventual consistency)
-3. **Traditional Primary-Replica** (Simple centralized setup)
-
-### 1. Raft-Based P2P Architecture ⭐ NEW!
-
-Production-ready distributed consensus cluster:
+AiDb uses **Multi-Raft** architecture for distributed clustering:
 
 ```
-Application: RaftBasedPeer API
-        ↓
-Consensus: Raft (Leader Election, Log Replication)
-        ↓
-Storage: RaftStorage + LSM-Tree
+                     ┌─────────────────────────────────────┐
+                     │           Client Request            │
+                     └─────────────────┬───────────────────┘
+                                       │
+                     ┌─────────────────▼───────────────────┐
+                     │           Slot Router               │
+                     │     CRC16(key) % 16384 → Group     │
+                     └─────────────────┬───────────────────┘
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         │                             │                             │
+    ┌────▼────┐                  ┌────▼────┐                   ┌────▼────┐
+    │ Group 0 │                  │ Group 1 │                   │ Group N │
+    │(Raft)   │                  │(Raft)   │                   │(Raft)   │
+    └────┬────┘                  └────┬────┘                   └────┬────┘
+         │                             │                             │
+    ┌────▼─────────────────────────────▼─────────────────────────────▼────┐
+    │                         Multi-Raft Node                             │
+    │                    Local LSM-Tree Storage                           │
+    └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Features:**
-- ✅ Strong consistency guarantees
-- ✅ Automatic leader election  
-- ✅ Fault-tolerant consensus (tikv/raft-rs)
-- ✅ No single point of failure
-- ✅ Log replication across nodes
-- ✅ State machine for command application
-
-### 2. Simple P2P Architecture
-
-Lightweight peer-to-peer without consensus:
-
-**Features:**
-- ✅ No coordinator bottleneck
-- ✅ Decentralized routing (consistent hashing)
-- ✅ Simple peer discovery
-- ✅ Lower latency
-- ⚠️ Eventual consistency only
-
-### 3. Traditional Architecture
-
-Coordinator with Primary-Replica shards:
-
-**Features:**
-- ✅ Simple to understand and deploy
-- ✅ Centralized control
-- ⚠️ Coordinator is single point of failure
+**Key Features:**
+- ✅ Strong consistency (Raft consensus)
+- ✅ Automatic leader election
+- ✅ Fault tolerance (survives minority failures)
+- ✅ 16384 slots (Redis Cluster compatible)
+- ✅ Dynamic membership changes
+- ✅ Slot migration support
 
 ## Quick Start
 
-### Raft Cluster (Recommended)
+### Single-Group Raft Cluster
 
-**OpenRaft Demo (Production-Ready):**
+Start a basic 3-node Raft cluster:
+
+```bash
+# Build the Docker image
+docker build -f deploy/Dockerfile -t aidb:cluster .
+
+# Start the cluster
+cd deploy
+docker compose -f docker-compose.cluster.yml up -d
+
+# Initialize the cluster
+echo "INIT 1=http://node1:50001,2=http://node2:50002,3=http://node3:50003" | nc -q1 localhost 8001
+
+# Test PUT/GET
+echo "PUT mykey myvalue" | nc -q1 localhost 8001
+echo "GET mykey" | nc -q1 localhost 8001
+```
+
+### OpenRaft Demo
+
+Run the standalone demo:
+
 ```bash
 cargo run --example openraft_demo --features raft-cluster
 ```
 
-Demonstrates:
+This demonstrates:
 - 3-node Raft cluster formation
 - Automatic leader election
-- Write operations through consensus (Put/Delete)
-- State machine command application
+- Write operations through consensus
 - Adding learner nodes
 - Membership changes
-- Cluster metrics monitoring
-- Graceful shutdown
 
-### Simple P2P Cluster
+### Sharded Multi-Raft Demo
 
 ```bash
-cargo run --example peer_to_peer_demo --features cluster
+cargo run --example sharded_multi_raft_demo --features raft-cluster
 ```
 
-### Traditional Cluster
+### Slot Migration Demo
 
 ```bash
-# Terminal 1: Primary
-cargo run --example primary_node --features cluster
-
-# Terminal 2: Replica
-cargo run --example replica_node --features cluster
-
-# Terminal 3: Coordinator
-cargo run --example coordinator_demo --features cluster
+cargo run --example slot_migration_demo --features raft-cluster
 ```
+
+## Available Examples
+
+| Example | Description | Command |
+|---------|-------------|---------|
+| `openraft_demo.rs` | Basic Raft cluster | `cargo run --example openraft_demo --features raft-cluster` |
+| `node_runner.rs` | Docker cluster node | Used by Docker Compose |
+| `sharded_multi_raft_demo.rs` | Multi-group sharding | `cargo run --example sharded_multi_raft_demo --features raft-cluster` |
+| `slot_migration_demo.rs` | Slot migration | `cargo run --example slot_migration_demo --features raft-cluster` |
+| `thin_replication_demo.rs` | WAL-only replication | `cargo run --example thin_replication_demo --features raft-cluster` |
+| `dynamic_member_demo.rs` | Dynamic membership | `cargo run --example dynamic_member_demo --features raft-cluster` |
 
 ## API Examples
 
-### OpenRaft-Based Node
+### Basic Raft Operations
 
 ```rust
-use aidb::cluster::{OpenRaftNode, RaftNodeConfig, NodeId, Request};
+use aidb::cluster::{OpenRaftNode, RaftNodeConfig};
 use aidb::{Options, DB};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create nodes with addresses
+    // Create node configuration
     let mut nodes = BTreeMap::new();
     nodes.insert(1, "127.0.0.1:50051".to_string());
     nodes.insert(2, "127.0.0.1:50052".to_string());
@@ -119,16 +128,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.initialize().await?;
     
     // Write through consensus
-    let request = Request::Put {
-        key: b"key".to_vec(),
-        value: b"value".to_vec(),
-    };
     node.put(b"key", b"value").await?;
     
-    // Check if leader
+    // Read from local state machine
+    let value = node.get(b"key").await?;
+    
+    // Check leadership status
     let is_leader = node.is_leader().await;
     
-    // Get metrics
+    // Get cluster metrics
     let metrics = node.metrics().await;
     
     node.shutdown().await?;
@@ -136,104 +144,99 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Simple P2P Peer
+### Membership Changes
 
 ```rust
-use aidb::cluster::PeerNode;
-use aidb::{DB, Options};
-use std::sync::Arc;
+// Add a new node as learner
+node.add_learner(4, "127.0.0.1:50054".to_string()).await?;
 
-let db = DB::open("./data/peer1", Options::default())?;
-let peer = PeerNode::new(
-    "peer1".to_string(),
-    "127.0.0.1:50051".to_string(),
-    Arc::new(db),
-    Some(1000),  // Cache
-    150,         // Virtual nodes
-);
+// Promote to voter (change membership)
+node.change_membership(&[1, 2, 3, 4]).await?;
 
-peer.join_peer("peer2".to_string(), "http://127.0.0.1:50052".to_string()).await?;
-peer.handle_local_put(b"key", b"value")?;
+// Remove a node
+node.change_membership(&[1, 2, 4]).await?;  // Removes node 3
 ```
+
+### Multi-Group Operations
+
+```rust
+use aidb::cluster::{MultiRaftNode, Router};
+
+// Create multi-raft node
+let multi_raft = MultiRaftNode::new(node_id, Arc::new(db)).await?;
+
+// Create raft groups
+multi_raft.create_group(0, vec![1, 2, 3]).await?;
+multi_raft.create_group(1, vec![1, 2, 3]).await?;
+
+// Route key to correct group
+let router = Router::new();
+let slot = router.calculate_slot(b"mykey");
+let group_id = router.get_group_for_slot(slot);
+
+// Write to correct group
+multi_raft.put(group_id, b"mykey", b"myvalue").await?;
+```
+
+## Admin Commands
+
+The `node_runner` binary provides admin commands via TCP:
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `INIT nodes` | Initialize cluster | `INIT 1=http://node1:50001,2=http://node2:50002` |
+| `PUT key value` | Write key-value | `PUT mykey myvalue` |
+| `GET key` | Read value | `GET mykey` |
+| `DELETE key` | Delete key | `DELETE mykey` |
+| `ADD_LEARNER id=addr` | Add learner node | `ADD_LEARNER 4=http://node4:50004` |
+| `CHANGE_MEMBERS ids` | Change voter set | `CHANGE_MEMBERS 1,2,3,4` |
+| `LEADER` | Get current leader | `LEADER` |
+| `IS_LEADER` | Check if this node is leader | `IS_LEADER` |
+| `METRICS` | Get Raft metrics | `METRICS` |
+| `MEMBERS` | Get membership info | `MEMBERS` |
 
 ## Testing
 
 ```bash
-# All cluster tests
-cargo test --features cluster --lib cluster
+# Run all Raft tests
+cargo test --features raft-cluster
 
-# Raft tests only
-cargo test --features raft-cluster --lib cluster::raft
+# Run specific test suites
+cargo test --features raft-cluster raft_multi_node
+cargo test --features raft-cluster raft_edge_cases
+cargo test --features raft-cluster raft_chaos
+
+# Run with output
+cargo test --features raft-cluster -- --nocapture
 ```
 
-**Test Results:**
-- Traditional cluster: 71 tests ✅
-- Raft cluster: 17 tests ✅
+## Deployment Scripts
 
-## Implementation Status
+Located in `deploy/`:
 
-### ✅ Phase 1-3: Complete
-
-**Core Raft Implementation:**
-- RaftStorage (4 tests)
-- RaftNode + StateMachine (5 tests)
-- RaftTransport + RaftPeer (3 tests)
-- RaftBasedPeer (5 tests)
-
-**Examples:**
-- peer_to_peer_demo.rs (Simple P2P)
-- openraft_demo.rs (OpenRaft Consensus) ⭐ NEW!
-
-### ⏳ Phase 4-5: Optional
-
-- Full RPC integration (currently placeholders)
-- Network transport with retries
-- Cluster membership changes
-- Complete snapshot implementation
-- End-to-end distributed tests
-- Chaos testing
-- Performance benchmarks
-
-## Architecture Comparison
-
-| Feature | Traditional | Simple P2P | Raft P2P |
-|---------|------------|------------|----------|
-| **Coordinator** | Required | None | None |
-| **Consistency** | Eventual | Eventual | **Strong** |
-| **Leader Election** | N/A | N/A | **Automatic** |
-| **Fault Tolerance** | SPOF | Multi-node | **Consensus** |
-| **Complexity** | Low | Low | Medium |
-| **Production Ready** | Yes | Testing | **Yes** |
-| **Use Case** | Simple | Caching | **Critical Data** |
-
-## Performance
-
-**Raft P2P:**
-- Write: Requires majority quorum
-- Read: Fast local reads
-- Overhead: Raft log + messages
-- Best for: Strong consistency needs
-
-**Simple P2P:**
-- Write: Single node
-- Read: Local or forwarded
-- Overhead: Minimal
-- Best for: Eventual consistency OK
+| Script | Purpose |
+|--------|---------|
+| `verify_cluster.sh` | Verify cluster health |
+| `membership_check.sh` | Test membership changes |
+| `init_cluster.sh` | Initialize cluster |
+| `admin_check.py` | Admin command utility |
 
 ## Documentation
 
-- [RAFT_INTEGRATION_PLAN.md](../../docs/RAFT_INTEGRATION_PLAN.md) - Implementation details
-- [openraft_demo.rs](./openraft_demo.rs) - Complete OpenRaft example
-- [TODO.md](../../TODO.md) - OpenRaft integration status (Phase 2-5 complete)
-- Source: `src/cluster/raft_*.rs`
+- [Architecture](../../docs/ARCHITECTURE.md) - Overall architecture
+- [Multi-Raft Architecture](../../docs/MULTI_RAFT_ARCHITECTURE.md) - Detailed Multi-Raft design
+- [Multi-Raft Quickstart](../../docs/MULTI_RAFT_QUICKSTART.md) - Getting started guide
+- [Multi-Raft API Reference](../../docs/MULTI_RAFT_API_REFERENCE.md) - Complete API docs
+- [Redis Compatibility](../../docs/REDIS_CLUSTER_COMPATIBILITY.md) - Redis protocol adaptation
 
-## Contributing
+## Performance
 
-Areas of interest:
-- Complete Phase 4-5
-- Additional tests
-- Performance optimization
-- Documentation
+| Operation | Latency | Notes |
+|-----------|---------|-------|
+| Write (3-node) | ~1-2ms | Requires majority quorum |
+| Read (leader) | ~0.1ms | Local read |
+| Read (follower) | ~0.5ms | May forward to leader |
+| Leader election | ~5s | Configurable timeout |
 
 ## License
 

@@ -221,7 +221,7 @@ impl OpenRaftStorage {
             // Clear last_log_id
             self.db.delete(b"raft:last_log_id")?;
             state.last_log_id = None;
-            
+
             // Also clear vote if we're cleaning up logs to prevent "vote without logs" state
             // which would prevent re-initialization
             if state.vote.is_some() {
@@ -880,7 +880,7 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         } else {
             // No persisted membership - check if we should recover from logs or return default
             let last_applied_index = state.last_applied.as_ref().map(|id| id.index).unwrap_or(0);
-            
+
             if last_applied_index == 0 && state.last_log_id.is_some() {
                 // We have logs but nothing applied yet - try to find membership in log 1
                 if let Some(data) = self.db.get(b"raft:log:1").map_err(|e| StorageError::IO {
@@ -889,14 +889,15 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                     if let Ok(entry) = rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
                         if let EntryPayload::Membership(ref m) = entry.payload {
                             // Found membership in first log - return it with its log_id
-                            let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
+                            let stored =
+                                openraft::StoredMembership::new(Some(entry.log_id), m.clone());
                             tracing::info!("Recovered membership from log:1 in last_applied_state");
                             return Ok((state.last_applied, stored));
                         }
                     }
                 }
             }
-            
+
             openraft::StoredMembership::default()
         };
 
