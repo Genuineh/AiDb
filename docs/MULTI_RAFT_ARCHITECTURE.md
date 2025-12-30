@@ -1,6 +1,6 @@
 # AiDb Multi-Raft 架构说明
 
-**更新时间**: 2024-12-10  
+**更新时间**: 2024-12-30  
 **状态**: ✅ 已完成并生产就绪
 
 本文档提供 Multi-Raft + Sharding 架构的可视化说明，帮助快速理解系统设计和实现。
@@ -262,6 +262,9 @@
 │  └───────────────────────────────┘     │
 │                                         │
 │  已实现 API: ✅                          │
+│  • add_node_address(node_id, addr)      │ ← 预填充网络地址
+│  • remove_node_address(node_id)         │
+│  • node_addresses()                     │ ← 获取所有已知地址
 │  • add_node(node_id, addr)              │
 │  • remove_node(node_id)                 │
 │  • create_group(group_id, replicas)     │

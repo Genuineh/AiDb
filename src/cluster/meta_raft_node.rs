@@ -3,6 +3,7 @@
 //! This module implements a specialized Raft node for managing global cluster metadata,
 //! including slot mappings, group information, and node status.
 
+use parking_lot::RwLock;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,6 +24,10 @@ use crate::DB;
 ///
 /// This is a specialized Raft node (Group 0) that manages global cluster metadata
 /// including slot-to-group mappings, group membership, and node information.
+///
+/// Like `OpenRaftNode`, this node maintains a reference to the network factory,
+/// allowing callers to pre-populate node addresses before calling Raft membership
+/// operations like `add_learner` or `change_membership`.
 pub struct MetaRaftNode {
     /// Node ID
     node_id: NodeId,
@@ -32,6 +37,12 @@ pub struct MetaRaftNode {
 
     /// Metadata state machine
     meta_state: Arc<MetaStateMachine>,
+
+    /// Network factory for managing node addresses
+    ///
+    /// This is stored so that callers can add node addresses before Raft
+    /// membership changes. The factory is shared with the Raft instance.
+    network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
 
     /// Data directory (reserved for future use)
     #[allow(dead_code)]
@@ -80,8 +91,12 @@ impl MetaRaftNode {
         // Use Adaptor to split storage into log_store and state_machine
         let (log_store, state_machine) = Adaptor::new(storage);
 
-        // Create network factory
-        let network = RaftNetworkClientFactory::new(node_id);
+        // Create network factory and wrap in Arc<RwLock<>> for shared access
+        let network_factory = Arc::new(RwLock::new(RaftNetworkClientFactory::new(node_id)));
+
+        // Clone the factory to share the underlying Arc<RwLock<HashMap>> of node addresses
+        // This ensures both the Raft instance and stored factory reference the same node map
+        let network_for_raft = network_factory.read().clone();
 
         // Validate and build config
         let config = config
@@ -89,11 +104,11 @@ impl MetaRaftNode {
             .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
 
         // Create Raft instance
-        let raft = Raft::new(node_id, Arc::new(config), network, log_store, state_machine)
+        let raft = Raft::new(node_id, Arc::new(config), network_for_raft, log_store, state_machine)
             .await
             .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
 
-        Ok(Self { node_id, raft: Arc::new(raft), meta_state, data_dir })
+        Ok(Self { node_id, raft: Arc::new(raft), meta_state, network_factory, data_dir })
     }
 
     /// Initialize a new MetaRaft cluster
@@ -106,6 +121,8 @@ impl MetaRaftNode {
     pub async fn initialize(&self, members: Vec<(NodeId, String)>) -> Result<()> {
         let mut nodes = std::collections::BTreeMap::new();
         for (member_id, addr) in members {
+            // Store the address in network factory so openraft can reach peers
+            self.network_factory.write().add_node(member_id, addr.clone());
             nodes.insert(member_id, BasicNode { addr });
         }
 
@@ -119,6 +136,9 @@ impl MetaRaftNode {
 
     /// Add a learner node to the cluster
     pub async fn add_learner(&self, node_id: NodeId, node: BasicNode) -> Result<()> {
+        // Store the address in network factory so openraft can reach this peer
+        self.network_factory.write().add_node(node_id, node.addr.clone());
+
         self.raft
             .add_learner(node_id, node, true)
             .await
@@ -255,6 +275,71 @@ impl MetaRaftNode {
         &self.raft
     }
 
+    /// Add a known node address to the network factory without changing membership.
+    ///
+    /// This is used to pre-populate peer addresses from configuration so the node can
+    /// contact other nodes for elections and replication. Call this method before
+    /// `add_learner` or `change_membership` to ensure the network factory knows how
+    /// to reach the target nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - The ID of the node to register
+    /// * `address` - The network address (e.g., "http://127.0.0.1:50051")
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use aidb::cluster::MetaRaftNode;
+    /// use openraft::Config;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = Config::default();
+    /// let node = MetaRaftNode::new(1, "./data/meta", config).await?;
+    ///
+    /// // Pre-populate peer addresses before membership changes
+    /// node.add_node_address(2, "http://127.0.0.1:50052".to_string());
+    /// node.add_node_address(3, "http://127.0.0.1:50053".to_string());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn add_node_address(&self, node_id: NodeId, address: String) {
+        self.network_factory.write().add_node(node_id, address);
+    }
+
+    /// Remove a known node address from the network factory.
+    ///
+    /// This removes the address mapping for a node. Call this after removing a node
+    /// from the cluster to clean up the network factory.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - The ID of the node to remove
+    pub fn remove_node_address(&self, node_id: NodeId) {
+        self.network_factory.write().remove_node(node_id);
+    }
+
+    /// Return current node addresses known to the network factory.
+    ///
+    /// This returns all node addresses that have been registered via `add_node_address`,
+    /// `initialize`, or `add_learner`.
+    ///
+    /// # Returns
+    ///
+    /// A vector of (NodeId, address) tuples for all known nodes.
+    pub fn node_addresses(&self) -> Vec<(NodeId, String)> {
+        self.network_factory.read().list_nodes()
+    }
+
+    /// Get the network factory instance (for advanced operations).
+    ///
+    /// This provides direct access to the network factory, which can be useful
+    /// for integrating with other components that need to share node address
+    /// information.
+    pub fn network_factory(&self) -> &Arc<RwLock<RaftNetworkClientFactory>> {
+        &self.network_factory
+    }
+
     /// Shutdown the node gracefully
     pub async fn shutdown(&self) -> Result<()> {
         self.raft
@@ -305,5 +390,63 @@ mod tests {
         // Initialize should succeed
         let result = node.initialize(members).await;
         assert!(result.is_ok());
+
+        // Verify that initialize also registered the node address
+        let addresses = node.node_addresses();
+        assert!(addresses.iter().any(|(id, _)| *id == 1));
+    }
+
+    #[tokio::test]
+    async fn test_add_node_address() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = Config::default();
+
+        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+
+        // Initially no addresses (except possibly self)
+        let initial_count = node.node_addresses().len();
+
+        // Add node addresses
+        node.add_node_address(2, "http://127.0.0.1:50052".to_string());
+        node.add_node_address(3, "http://127.0.0.1:50053".to_string());
+
+        let addresses = node.node_addresses();
+        assert_eq!(addresses.len(), initial_count + 2);
+
+        // Verify addresses are correct
+        let addr_map: std::collections::HashMap<_, _> = addresses.into_iter().collect();
+        assert_eq!(addr_map.get(&2), Some(&"http://127.0.0.1:50052".to_string()));
+        assert_eq!(addr_map.get(&3), Some(&"http://127.0.0.1:50053".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_remove_node_address() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = Config::default();
+
+        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+
+        // Add and then remove a node address
+        node.add_node_address(2, "http://127.0.0.1:50052".to_string());
+        assert!(node.node_addresses().iter().any(|(id, _)| *id == 2));
+
+        node.remove_node_address(2);
+        assert!(!node.node_addresses().iter().any(|(id, _)| *id == 2));
+    }
+
+    #[tokio::test]
+    async fn test_network_factory_access() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = Config::default();
+
+        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+
+        // Verify network_factory() returns a valid reference
+        let factory = node.network_factory();
+        factory.write().add_node(5, "http://127.0.0.1:50055".to_string());
+
+        // Verify the address is accessible via node_addresses()
+        let addresses = node.node_addresses();
+        assert!(addresses.iter().any(|(id, _)| *id == 5));
     }
 }

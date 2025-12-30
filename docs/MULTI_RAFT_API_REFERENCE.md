@@ -4,7 +4,7 @@
 
 **版本**: v0.5.1
 
-**更新时间**: 2024-12-11
+**更新时间**: 2024-12-30
 
 **目的**: 为上层应用（如 AiKv）提供完整的 Multi-Raft API 参考文档，支持 Redis Cluster 协议适配和自定义分布式应用开发。
 
@@ -233,7 +233,18 @@ let meta_raft = MetaRaftNode::new(node_id, "./data/meta", config).await?;
 // 获取集群元数据
 let meta: ClusterMeta = meta_raft.get_cluster_meta();
 
-// 节点管理
+// 预先注册节点地址（在 add_learner 或 change_membership 之前调用）
+// 这确保 network factory 知道如何连接到目标节点
+meta_raft.add_node_address(2, "http://127.0.0.1:50052".to_string());
+meta_raft.add_node_address(3, "http://127.0.0.1:50053".to_string());
+
+// 获取所有已知节点地址
+let addresses = meta_raft.node_addresses();  // Vec<(NodeId, String)>
+
+// 移除节点地址
+meta_raft.remove_node_address(node_id);
+
+// 节点管理（通过 Raft 共识）
 meta_raft.add_node(node_id, addr).await?;
 meta_raft.remove_node(node_id).await?;
 
