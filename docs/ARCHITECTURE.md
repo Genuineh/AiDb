@@ -4,7 +4,7 @@
 
 - [1. 架构概览](#1-架构概览)
 - [2. 单机版架构](#2-单机版架构)
-- [3. 集群版架构](#3-集群版架构)
+- [3. Multi-Raft 集群架构](#3-multi-raft-集群架构)
 - [4. 数据模型](#4-数据模型)
 - [5. 关键设计决策](#5-关键设计决策)
 
@@ -17,9 +17,9 @@ AiDb采用分阶段演进的架构设计：
 ```
 阶段A-C: 单机版LSM-Tree引擎
     ↓
-阶段1-2: 添加RPC和Coordinator
+阶段1-2: 添加OpenRaft共识层
     ↓
-阶段3-6: 完整的分布式集群
+阶段3-6: 完整的Multi-Raft分布式集群
 ```
 
 ### 核心设计理念
@@ -39,9 +39,9 @@ AiDb采用分阶段演进的架构设计：
 - 不必要的特性（Column Families等）
 
 **创新设计**：
-- 🆕 Replica作为缓存层而非完整副本
-- 🆕 异步备份替代实时复制
-- 🆕 真正的水平扩展能力
+- 🆕 Multi-Raft实现真正的水平扩展
+- 🆕 Slot-based分片（兼容Redis Cluster）
+- 🆕 动态成员变更和热迁移
 
 ---
 
@@ -202,273 +202,221 @@ data_dir/
 
 ---
 
-## 3. 集群版架构
+## 3. Multi-Raft 集群架构
 
 ### 3.1 整体架构
 
 ```
-                    ┌──────────────────┐
-                    │   Coordinator    │
-                    │ ┌──────────────┐ │
-                    │ │  Router      │ │
-                    │ │  LB          │ │
-                    │ │  Health      │ │
-                    │ └──────────────┘ │
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-         ┌────▼────┐    ┌───▼────┐    ┌───▼────┐
-         │ Shard 1 │    │Shard 2 │    │Shard N │
-         │  Group  │    │ Group  │    │ Group  │
-         └────┬────┘    └────────┘    └────────┘
-              │
-    ┌─────────┴──────────┐
-    │                    │
-┌───▼────┐          ┌───▼────┐ × N
-│Primary │   RPC    │Replica │
-│        │◄─────────│        │
-│┌──────┐│          │┌──────┐│
-││Local ││          ││Cache ││
-││ SSD  ││          ││(LRU) ││
-││      ││          │└──────┘│
-││LSM-  ││          └────────┘
-││Tree  ││
-│└──┬───┘│
-│   │异步 │
-│   ▼    │
-│┌──────┐│
-││Backup││
-││ Mgr  ││
-│└──┬───┘│
-└───┼────┘
-    │
-    ▼
-┌─────────┐
-│ S3/OSS  │
-│ 网盘备份 │
-└─────────┘
+                     ┌─────────────────────────────────────┐
+                     │           Client Request            │
+                     └─────────────────┬───────────────────┘
+                                       │
+                     ┌─────────────────▼───────────────────┐
+                     │           Slot Router               │
+                     │     CRC16(key) % 16384 → Group     │
+                     └─────────────────┬───────────────────┘
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         │                             │                             │
+    ┌────▼────┐                  ┌────▼────┐                   ┌────▼────┐
+    │ Group 0 │                  │ Group 1 │                   │ Group N │
+    │Slots 0-X│                  │Slots X+1│                   │  ...    │
+    └────┬────┘                  └────┬────┘                   └────┬────┘
+         │                             │                             │
+    ┌────▼─────────────────────────────▼─────────────────────────────▼────┐
+    │                         Raft Consensus Layer                        │
+    │  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐         │
+    │  │ Node 1  │    │ Node 2  │    │ Node 3  │    │ Node 4  │ ...     │
+    │  │Leader G0│    │Follower │    │Leader G1│    │Follower │         │
+    │  │Follower │    │Leader G2│    │Follower │    │Leader G3│         │
+    │  └────┬────┘    └────┬────┘    └────┬────┘    └────┬────┘         │
+    └───────┼──────────────┼──────────────┼──────────────┼───────────────┘
+            │              │              │              │
+    ┌───────▼──────────────▼──────────────▼──────────────▼───────────────┐
+    │                       Local LSM-Tree Storage                       │
+    │                  WAL → MemTable → SSTable                          │
+    └────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 核心组件
+### 3.2 核心概念
 
-#### Coordinator (协调器)
-**职责**：路由和负载均衡
-
+#### Slot-based Sharding (槽分片)
 ```rust
-// 功能
-1. 一致性哈希路由
-   - 虚拟节点（默认150个/shard）
-   - 均衡分布
-   - 动态添加/删除shard
+// 16384个槽位，兼容Redis Cluster协议
+const SLOT_COUNT: u16 = 16384;
 
-2. 负载均衡
-   - 写请求 → Primary
-   - 读请求 → Replica (round-robin/least-conn)
-   
-3. 健康检查
-   - 定期检测节点
-   - 自动剔除故障节点
-   - 恢复后重新加入
-
-4. 元数据管理
-   - Shard映射
-   - 节点状态
-   - 集群拓扑
-```
-
-#### Primary Node (主节点)
-**职责**：完整的数据存储
-
-```rust
-pub struct PrimaryNode {
-    // 完整的LSM-Tree DB
-    db: DB,
-    
-    // RPC服务器（供Replica访问）
-    rpc_server: RpcServer,
-    
-    // 备份管理器
-    backup_manager: BackupManager,
+// 槽计算
+fn slot(key: &[u8]) -> u16 {
+    crc16::checksum_x25(key) % SLOT_COUNT
 }
 
-// 特性
-- 本地SSD存储（高性能）
-- 提供RPC接口
-- 处理所有写入
-- 处理读取（如果Replica miss）
-- 异步备份到网盘
+// 槽分配给Group
+// Group 0: slots 0-5460
+// Group 1: slots 5461-10922
+// Group 2: slots 10923-16383
 ```
 
-#### Replica Node (从节点)
-**职责**：缓存层 + 请求转发
-
+#### Raft Group (复制组)
 ```rust
-pub struct ReplicaNode {
-    // 内存LRU缓存
-    cache: LruCache<Vec<u8>, Vec<u8>>,
+// 每个Group是一个独立的Raft复制组
+pub struct RaftGroup {
+    group_id: GroupId,
+    slots: Vec<SlotRange>,    // 负责的槽位范围
     
-    // Primary的RPC客户端
-    primary_client: RpcClient,
+    // Raft状态
+    raft: OpenRaft<TypeConfig>,
+    log_storage: RaftStorage,
+    state_machine: StateMachine,
+    
+    // 成员信息
+    leader: Option<NodeId>,
+    voters: HashSet<NodeId>,
 }
-
-// 特性
-- 只有内存缓存（轻量级）
-- 缓存命中 → 直接返回（< 0.1ms）
-- 缓存miss → 转发Primary
-- 无状态，可随时重启
-- 秒级启动
 ```
 
-#### Backup Manager (备份管理器)
-**职责**：异步备份和恢复
-
+#### Node (集群节点)
 ```rust
-// 备份策略
-1. 快照（Snapshot）
-   - 定期（如每小时）
-   - 完整的SSTable + Manifest
-   - 上传到S3/OSS
-
-2. WAL归档
-   - 频繁（如每10分钟）
-   - 增量备份
-   - 缩小数据丢失窗口
-
-// 恢复流程
-1. 下载最新快照
-2. 恢复到本地磁盘
-3. Replay快照后的WAL
-4. 启动DB
-```
-
-### 3.3 数据分片
-
-#### 一致性哈希
-```rust
-// 原理
-1. 构建Hash环（0 ~ 2^64-1）
-2. 每个shard映射到多个虚拟节点
-3. Key哈希后，顺时针找到第一个虚拟节点
-4. 虚拟节点映射到实际shard
-
-// 优势
-- 添加/删除shard影响最小
-- 负载均衡
-- 无需数据迁移（新key自动路由）
-```
-
-#### Shard Group
-```rust
-pub struct ShardGroup {
-    shard_id: ShardId,
-    key_range: Option<(Vec<u8>, Vec<u8>)>,
+// 每个节点可以参与多个Raft Group
+pub struct MultiRaftNode {
+    node_id: NodeId,
+    address: String,
     
-    // 节点
-    primary: PrimaryNode,
-    replicas: Vec<ReplicaNode>,
+    // 本节点参与的所有Group
+    groups: HashMap<GroupId, RaftGroup>,
     
-    // 状态
-    health: ShardHealth,
+    // 底层存储（共享）
+    db: Arc<DB>,
+    
+    // gRPC服务
+    rpc_service: RaftServiceImpl,
 }
-
-// 数据隔离
-- 每个shard独立存储
-- shard之间不共享数据
-- 故障隔离
 ```
 
-### 3.4 数据流
+### 3.3 数据流
 
 #### 写入路径
 ```
-1. Client → Coordinator
+1. Client: PUT key value
    ↓
-2. Coordinator.route(key) → Shard X
+2. Router: slot = CRC16(key) % 16384
    ↓
-3. Shard X.Primary.put(key, value)
+3. Router: group = slot_to_group(slot)
    ↓
-4. Primary写入本地DB
+4. Router: leader = group.leader
    ↓
-5. 返回成功
+5. Leader: raft.propose(WriteOp::Put{key, value})
    ↓
-6. （异步）备份到网盘
+6. Raft: replicate log to majority
+   ↓
+7. Leader: apply to state machine (DB)
+   ↓
+8. Leader: respond OK
 ```
 
-#### 读取路径（缓存命中）
+#### 读取路径
 ```
-1. Client → Coordinator
+1. Client: GET key
    ↓
-2. Coordinator.route(key) → Shard X
+2. Router: slot = CRC16(key) % 16384
    ↓
-3. 负载均衡 → Replica Y
+3. Router: group = slot_to_group(slot)
    ↓
-4. Replica Y.cache.get(key)
-   ↓ (hit)
-5. 返回value (< 0.1ms)
+4. Any Node: read from local DB
+   ↓
+5. Return value
+
+注意：读取可以从任意节点，提供最终一致性
+如需强一致性读，可路由到Leader
 ```
 
-#### 读取路径（缓存miss）
-```
-1. Client → Coordinator
-   ↓
-2. Coordinator.route(key) → Shard X
-   ↓
-3. 负载均衡 → Replica Y
-   ↓
-4. Replica Y.cache.get(key)
-   ↓ (miss)
-5. Replica Y → RPC → Primary
-   ↓
-6. Primary.db.get(key)
-   ↓
-7. 返回value
-   ↓
-8. Replica Y更新缓存
-   ↓
-9. 返回value (< 2ms)
+### 3.4 成员变更
+
+#### 添加节点
+```rust
+// 1. 启动新节点
+let new_node = OpenRaftNode::new(node_id, config).await?;
+
+// 2. 作为Learner加入集群
+leader.add_learner(new_node_id, address).await?;
+
+// 3. 等待日志追赶
+// (openraft自动处理)
+
+// 4. 提升为Voter
+leader.change_membership(&[1, 2, 3, new_node_id]).await?;
 ```
 
-### 3.5 高可用设计
+#### 移除节点
+```rust
+// 1. 更改成员配置，移除节点
+leader.change_membership(&[1, 2, 4]).await?;  // 移除节点3
+
+// 2. 停止被移除的节点
+node3.shutdown().await?;
+```
+
+### 3.5 槽迁移
+
+```rust
+// 将slots 5000-5460从Group 0迁移到Group 1
+let migration = MigrationManager::new(config);
+
+// 1. 暂停对迁移槽的写入
+// 2. 快照迁移数据
+// 3. 追赶增量日志
+// 4. 切换槽所有权
+// 5. 恢复写入
+migration.migrate_slots(
+    source_group: 0,
+    target_group: 1,
+    slots: 5000..=5460
+).await?;
+```
+
+### 3.6 高可用设计
 
 #### 故障场景和处理
 
 | 故障类型 | 影响 | 恢复方式 | 恢复时间 |
 |---------|------|---------|---------|
-| Replica故障 | 读能力↓ | 自动剔除，启动新Replica | 秒级 |
-| Primary故障 | 单shard不可写 | 从备份恢复 | 5-30分钟 |
-| 磁盘损坏 | 单shard数据丢失 | 从网盘恢复 | 10-60分钟 |
-| 网络分区 | 部分不可达 | 自动重连 | 自愈 |
+| Follower故障 | 复制因子↓ | 自动重连/替换 | 秒级 |
+| Leader故障 | Group短暂不可写 | 自动选举新Leader | ~5秒 |
+| 少数节点故障 | 集群正常运行 | 无需操作 | 自愈 |
+| 多数节点故障 | 集群不可用 | 需人工恢复 | 分钟级 |
 
 #### 数据一致性
 
-**模型**：最终一致性
+**模型**：强一致性（通过Raft保证）
 
 ```
-Primary写入成功 → 立即返回
-   ↓
-Replica缓存可能有延迟
-   ↓
-但最终会一致（通过转发到Primary）
+写入流程：
+1. Client → Leader
+2. Leader appends to log
+3. Leader replicates to Followers
+4. Majority acknowledges
+5. Leader commits and applies
+6. Leader responds to Client
 
-可接受场景：
-- 缓存延迟 < 秒级
-- 不需要强一致性
-- 通过转发获取最新数据
+保证：
+- 写入被多数节点确认后才返回成功
+- 已提交的日志不会丢失
+- 所有节点最终应用相同的日志序列
 ```
 
-#### 数据丢失窗口
+### 3.7 与Redis Cluster的兼容性
 
-```
-快照间隔: 1小时
-WAL归档: 10分钟
-→ 最大丢失: 10分钟数据
+AiDb Multi-Raft架构设计考虑了Redis Cluster协议兼容性：
 
-通过调整频率可进一步降低：
-- 快照: 每30分钟
-- WAL: 每5分钟
-→ 最大丢失: 5分钟
-```
+| 特性 | Redis Cluster | AiDb Multi-Raft |
+|------|---------------|-----------------|
+| 槽数量 | 16384 | 16384 |
+| 槽计算 | CRC16 | CRC16 |
+| MOVED响应 | ✅ | ✅ (可实现) |
+| ASK响应 | ✅ | ✅ (可实现) |
+| Gossip协议 | ✅ | ❌ (使用Raft) |
+| 一致性 | 最终一致 | 强一致 |
+
+详细的Redis兼容性实现指南请参考：[REDIS_CLUSTER_COMPATIBILITY.md](REDIS_CLUSTER_COMPATIBILITY.md)
 
 ---
 
@@ -559,91 +507,85 @@ enum VersionEdit {
 
 ## 5. 关键设计决策
 
-### 5.1 为什么选择Replica作为缓存层？
+### 5.1 为什么选择Multi-Raft？
 
-**对比传统全量复制**：
+**对比其他方案**：
 
-| 维度 | 全量复制 | 缓存层 |
-|------|---------|--------|
-| 存储成本 | 100GB × 3 = 300GB | 100GB + 10GB缓存 = 110GB |
-| 网络成本 | 实时复制全量 | 只复制热数据 |
-| 启动时间 | 需要同步数据（小时级） | 秒级 |
-| 扩展性 | 复制是瓶颈 | 线性扩展 |
+| 方案 | 一致性 | 扩展性 | 复杂度 | 运维成本 |
+|------|--------|--------|--------|----------|
+| 单Raft组 | 强一致 | 差（单Leader瓶颈） | 低 | 低 |
+| Multi-Raft | 强一致 | 好（多Leader并行） | 中 | 中 |
+| 无共识P2P | 最终一致 | 好 | 低 | 低 |
+| Paxos | 强一致 | 中 | 高 | 高 |
 
-**我们的方案**：
-- 80%读取来自缓存（命中率）
-- 20%转发到Primary（可接受）
-- 成本降低60%+
-- 扩展性更好
+**选择Multi-Raft的原因**：
+- ✅ 强一致性保证，满足金融级场景
+- ✅ 水平扩展能力（添加Group增加吞吐）
+- ✅ OpenRaft库成熟可靠
+- ✅ 与Redis Cluster槽分片模型兼容
 
-### 5.2 为什么异步备份而非实时复制？
+### 5.2 为什么用16384个槽？
 
-**风险权衡**：
+**兼容性考虑**：
+- 与Redis Cluster完全兼容
+- 成熟的槽迁移协议可复用
+- 社区工具生态可复用
 
+**技术考虑**：
+- 16384槽足够细粒度进行负载均衡
+- 槽信息占用内存小（16KB位图）
+- CRC16计算高效
+
+### 5.3 为什么每个节点可以参与多个Group？
+
+**资源利用**：
 ```
-实时复制：
-+ 数据丢失: 0
-+ 成本: 高（网络+存储）
-+ 复杂度: 高
+传统方案（每Group独占节点）：
+- 3节点 × 3 Group = 9节点
+- 资源利用率低
 
-异步备份：
-+ 数据丢失: < 10分钟
-+ 成本: 低（批量上传）
-+ 复杂度: 低
-
-用户场景：
-- 限流措施做得好
-- 主要防意外而非灾难
-- 可接受短暂丢失
-→ 选择异步备份
+Multi-Raft（节点共享）：
+- 3节点，每个参与3个Group
+- Leader分布在不同节点
+- 资源利用率高
 ```
 
-### 5.3 为什么Replica通过RPC而非共享文件？
-
-**技术问题**：
-
-共享文件方案：
-- ❌ LSM Compaction会删除文件
-- ❌ Manifest不一致
-- ❌ 文件锁冲突
-- ❌ 页缓存问题
-
-RPC方案：
-- ✅ 无文件冲突
-- ✅ 实现简单
-- ✅ RPC开销小（微秒级）
-- ✅ 清晰的职责划分
-
-### 5.4 为什么用本地SSD而非网络盘？
-
-**性能对比**：
-
-| 存储类型 | 延迟 | IOPS | 吞吐 |
-|---------|------|------|------|
-| 本地SSD | < 0.1ms | 500K+ | 3GB/s |
-| 网络盘(EBS) | 1-10ms | 10K-20K | 500MB/s |
-
-**结论**：
-- Primary用本地SSD（性能）
-- 网盘只做备份（成本）
-- 不在热路径上
-
-### 5.5 为什么多Shard而非单一大节点？
-
-**扩展性**：
-
+**容错性**：
 ```
-单节点：
-- 写入: 受限于单机性能
-- 读取: 受限于单机性能
-- 容量: 受限于单机磁盘
+节点1: Leader(G0), Follower(G1), Follower(G2)
+节点2: Follower(G0), Leader(G1), Follower(G2)
+节点3: Follower(G0), Follower(G1), Leader(G2)
 
-多Shard：
-- 写入: 线性扩展（N × 单机）
-- 读取: 线性扩展
-- 容量: 近乎无限
-- 故障隔离: 单shard故障不影响其他
+任一节点故障：
+- 受影响Group自动选举新Leader
+- 其他Group不受影响
+- 集群整体可用
 ```
+
+### 5.4 为什么状态机数据使用前缀存储？
+
+```rust
+// Raft元数据：raft:vote, raft:log:1, raft:snapshot
+// 状态机数据：sm:user_key1, sm:user_key2
+
+优势：
+- 命名空间隔离
+- 可独立清理Raft日志
+- 便于调试和监控
+- 不影响用户key空间
+```
+
+### 5.5 为什么用gRPC而非自定义协议？
+
+| 维度 | gRPC | 自定义协议 |
+|------|------|-----------|
+| 开发效率 | 高（proto生成） | 低 |
+| 跨语言 | ✅ | 需额外工作 |
+| 性能 | 优秀（HTTP/2） | 可能更好 |
+| 调试 | grpcurl等工具 | 需自建 |
+| 流控 | 内置 | 需自建 |
+
+**结论**：gRPC的开发效率和生态优势大于自定义协议的性能优势。
 
 ---
 
@@ -651,16 +593,19 @@ RPC方案：
 
 AiDb的架构设计遵循以下原则：
 
-1. **渐进式演进**：单机 → 集群，每阶段独立可用
-2. **成本优化**：避免不必要的数据复制
-3. **实用主义**：不追求完美，满足80%需求
-4. **Rust优势**：类型安全、内存安全、高性能
-5. **借鉴经验**：学习RocksDB成熟设计，避免其复杂性
+1. **渐进式演进**：单机 → Multi-Raft集群，每阶段独立可用
+2. **强一致性**：通过Raft共识保证数据不丢失
+3. **水平扩展**：Multi-Raft多Group并行，无单点瓶颈
+4. **协议兼容**：16384槽设计兼容Redis Cluster协议
+5. **Rust优势**：类型安全、内存安全、高性能
 
-最终目标：构建一个**高性能、低成本、易扩展**的分布式KV存储引擎。
+最终目标：构建一个**高性能、强一致、易扩展**的分布式KV存储引擎。
 
 ---
 
 更多技术细节请参考：
-- [实施计划](IMPLEMENTATION.md)
+- [Multi-Raft架构详解](MULTI_RAFT_ARCHITECTURE.md)
+- [Multi-Raft快速入门](MULTI_RAFT_QUICKSTART.md)
+- [Multi-Raft API参考](MULTI_RAFT_API_REFERENCE.md)
+- [Redis兼容性指南](REDIS_CLUSTER_COMPATIBILITY.md)
 - [设计决策](DESIGN_DECISIONS.md)

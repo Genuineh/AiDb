@@ -22,6 +22,11 @@ Thumbs.db
 /data/
 /test_data/
 
+# Deploy data and runtime artifacts
+deploy/data/
+deploy/logs/
+deploy/backups/
+
 # Documentation
 /target/doc/
 

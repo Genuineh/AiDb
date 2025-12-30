@@ -1,0 +1,68 @@
+services:
+  node1:
+    image: aidb:cluster
+    environment:
+      NODE_ID: "1"
+      RAFT_ADDR: "0.0.0.0:50001"
+      ADMIN_ADDR: "0.0.0.0:8001"
+      RAFT_RPC_TIMEOUT_MS: "500"
+      RUST_LOG: "openraft=trace,openraft::replication=trace,openraft::core=trace,aidb=debug"
+      PEERS: "1=http://node1:50001,2=http://node2:50002,3=http://node3:50003"
+      DB_DIR: "/data/node1"
+    volumes:
+      - ./data/node1:/data/node1
+    ports:
+      - "50001:50001"
+      - "8001:8001"
+    restart: unless-stopped
+
+  node2:
+    image: aidb:cluster
+    environment:
+      NODE_ID: "2"
+      RAFT_ADDR: "0.0.0.0:50002"
+      ADMIN_ADDR: "0.0.0.0:8002"
+      RAFT_RPC_TIMEOUT_MS: "500"
+      PEERS: "1=http://node1:50001,2=http://node2:50002,3=http://node3:50003"
+      DB_DIR: "/data/node2"
+    volumes:
+      - ./data/node2:/data/node2
+    ports:
+      - "50002:50002"
+      - "8002:8002"
+    restart: unless-stopped
+
+  node3:
+    image: aidb:cluster
+    environment:
+      NODE_ID: "3"
+      RAFT_ADDR: "0.0.0.0:50003"
+      ADMIN_ADDR: "0.0.0.0:8003"
+      RAFT_RPC_TIMEOUT_MS: "500"
+      RUST_LOG: "openraft=trace,openraft::replication=trace,openraft::core=trace,aidb=debug"
+      PEERS: "1=http://node1:50001,2=http://node2:50002,3=http://node3:50003"
+      DB_DIR: "/data/node3"
+    volumes:
+      - ./data/node3:/data/node3
+    ports:
+      - "50003:50003"
+      - "8003:8003"
+    restart: unless-stopped
+
+  # Optional fourth node for testing dynamic membership. Not started by default.
+  node4:
+    image: aidb:cluster
+    environment:
+      NODE_ID: "4"
+      RAFT_ADDR: "0.0.0.0:50004"
+      ADMIN_ADDR: "0.0.0.0:8004"
+      RAFT_RPC_TIMEOUT_MS: "500"
+      RUST_LOG: "openraft=trace,openraft::replication=trace,openraft::core=trace,aidb=debug"
+      PEERS: "1=http://node1:50001,2=http://node2:50002,3=http://node3:50003,4=http://node4:50004"
+      DB_DIR: "/data/node4"
+    volumes:
+      - ./data/node4:/data/node4
+    ports:
+      - "50004:50004"
+      - "8004:8004"
+    restart: unless-stopped

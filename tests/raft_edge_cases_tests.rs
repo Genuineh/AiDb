@@ -14,11 +14,11 @@
 mod raft_edge_cases {
     use aidb::cluster::{OpenRaftNode, OpenRaftStorage, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::{Options, DB};
+    use rand::Rng;
     use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     use tokio::time::sleep;
-    use rand::Rng;
 
     // ========================================================================
     // Helper functions
@@ -139,10 +139,7 @@ mod raft_edge_cases {
 
         let metrics = node1.metrics().await;
         // Term should be at least initial_term (may have advanced)
-        assert!(
-            metrics.current_term >= initial_term,
-            "Term should not decrease"
-        );
+        assert!(metrics.current_term >= initial_term, "Term should not decrease");
 
         node1.shutdown().await.unwrap();
     }
@@ -152,7 +149,7 @@ mod raft_edge_cases {
         // Test that pre-vote mechanism (if enabled) prevents unnecessary term increases
         // This is important to avoid election storms
         let temp_dir1 = TempDir::new().unwrap();
-        
+
         // Create node with longer election timeout to observe behavior
         let node1 = create_test_node(1, &temp_dir1, 500, 1000).await.unwrap();
 
@@ -170,10 +167,7 @@ mod raft_edge_cases {
 
         // In a stable single-node cluster, term shouldn't increase excessively
         // Allow some increase but not too much (e.g., not more than 5 terms in this time)
-        assert!(
-            term2 - term1 < 5,
-            "Term should not increase excessively in stable cluster"
-        );
+        assert!(term2 - term1 < 5, "Term should not increase excessively in stable cluster");
 
         node1.shutdown().await.unwrap();
     }
@@ -196,11 +190,8 @@ mod raft_edge_cases {
         assert!(result.is_ok(), "Adding learner should succeed");
 
         // Try to promote to voter with timeout to avoid hanging
-        let promote_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2]),
-        )
-        .await;
+        let promote_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2])).await;
 
         // Result may timeout without actual node 2 running, but API should work
         let _ = promote_result;
@@ -221,18 +212,12 @@ mod raft_edge_cases {
         node1.add_learner(2, "http://127.0.0.1:50002".to_string()).await.ok();
 
         // Try to change membership to include node 2
-        let _ = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2]),
-        )
-        .await;
+        let _ =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2])).await;
 
         // Now try to remove node 2 (go back to just node 1)
-        let remove_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1]),
-        )
-        .await;
+        let remove_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1])).await;
 
         // May timeout without actual gRPC, but API should work
         let _ = remove_result;
@@ -255,7 +240,7 @@ mod raft_edge_cases {
         // 1. Add other nodes
         // 2. Remove node 1 from membership
         // 3. Verify leadership transfers to another node
-        
+
         // For this test, just verify the node can be shut down gracefully
         node1.shutdown().await.unwrap();
     }
@@ -297,11 +282,8 @@ mod raft_edge_cases {
 
         // During membership change, both old and new configurations should be respected
         // This is handled internally by Raft
-        let change_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2]),
-        )
-        .await;
+        let change_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2])).await;
 
         let _ = change_result;
 
@@ -379,7 +361,7 @@ mod raft_edge_cases {
         // 1. Nodes discover each other
         // 2. One steps down based on term comparison
         // 3. Logs are reconciled
-        
+
         // For now, just verify both can shut down cleanly
         node1.shutdown().await.unwrap();
         node2.shutdown().await.unwrap();
@@ -419,7 +401,7 @@ mod raft_edge_cases {
 
             // Write some data
             let _ = node.put(b"persistent_key".to_vec(), b"persistent_value".to_vec()).await;
-            
+
             node.shutdown().await.unwrap();
         }
 
@@ -428,7 +410,7 @@ mod raft_edge_cases {
             let node = create_node(1, &temp_dir).await.unwrap();
             // Node should recover state from storage
             // In a real cluster, it would rejoin and sync
-            
+
             node.shutdown().await.unwrap();
         }
     }
@@ -491,7 +473,7 @@ mod raft_edge_cases {
 
             // Write data
             let _ = node.put(b"consistency_key".to_vec(), b"consistency_value".to_vec()).await;
-            
+
             node.shutdown().await.unwrap();
         }
 
@@ -706,7 +688,7 @@ mod raft_edge_cases {
         // Write a large entry
         let large_value = vec![42u8; 10 * 1024]; // 10KB
         let result = node.put(b"large_key".to_vec(), large_value).await;
-        
+
         // Should handle large entries (success or failure, no panic)
         let _ = result;
 

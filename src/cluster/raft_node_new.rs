@@ -122,7 +122,8 @@ impl OpenRaftNode {
         let mut members = std::collections::BTreeMap::new();
 
         for (node_id, addr) in nodes {
-            members.insert(node_id, openraft::BasicNode::default());
+            // Store the address in BasicNode so openraft's RaftNetworkFactory can use it
+            members.insert(node_id, openraft::BasicNode { addr: addr.clone() });
             self.network_factory.write().add_node(node_id, addr);
         }
 
@@ -136,10 +137,10 @@ impl OpenRaftNode {
 
     /// Add a learner node to the cluster
     pub async fn add_learner(&self, node_id: NodeId, address: String) -> Result<()> {
-        self.network_factory.write().add_node(node_id, address);
+        self.network_factory.write().add_node(node_id, address.clone());
 
         self.raft
-            .add_learner(node_id, openraft::BasicNode::default(), true)
+            .add_learner(node_id, openraft::BasicNode { addr: address }, true)
             .await
             .map_err(|e| Error::ClusterError(format!("Failed to add learner: {}", e)))?;
 
@@ -268,6 +269,25 @@ impl OpenRaftNode {
     /// Get the Raft instance (for server setup)
     pub fn raft(&self) -> Arc<openraft::Raft<TypeConfig>> {
         self.raft.clone()
+    }
+
+    /// Add a known node address to the network factory without changing membership.
+    /// This is used to pre-populate peer addresses from configuration so the node can
+    /// contact other nodes for elections and replication.
+    pub fn add_node_address(&self, node_id: NodeId, address: String) {
+        self.network_factory.write().add_node(node_id, address);
+    }
+
+    /// Remove a known node address from the network factory.
+    pub fn remove_node_address(&self, node_id: NodeId) {
+        self.network_factory.write().remove_node(node_id);
+    }
+
+    /// Return current node addresses known to the network factory
+    pub async fn node_addresses(&self) -> Vec<(NodeId, String)> {
+        // Access the underlying RaftNetworkClientFactory's nodes map
+        let factory = self.network_factory.read();
+        factory.list_nodes()
     }
 
     /// Start RPC server on the given address

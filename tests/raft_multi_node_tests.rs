@@ -63,7 +63,7 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         let init_result = node1.initialize(members).await;
         assert!(init_result.is_ok(), "Cluster initialization should succeed");
 
@@ -92,7 +92,7 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(1000)).await;
 
@@ -131,7 +131,7 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
@@ -175,13 +175,13 @@ mod multi_node_raft_tests {
             (4, "http://127.0.0.1:50004".to_string()),
             (5, "http://127.0.0.1:50005".to_string()),
         ];
-        
+
         nodes[0].initialize(members).await.unwrap();
         sleep(Duration::from_millis(1000)).await;
 
         // With 5 nodes, quorum is 3
         // Test that cluster can tolerate 2 node failures
-        
+
         for node in nodes {
             node.shutdown().await.unwrap();
         }
@@ -199,15 +199,9 @@ mod multi_node_raft_tests {
         let node3 = create_node(3, &temp_dir3).await.unwrap();
 
         // Initialize separate clusters to simulate partition
-        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
-        node2.initialize(vec![(2, "http://127.0.0.1:50002".to_string())])
-            .await
-            .unwrap();
-        node3.initialize(vec![(3, "http://127.0.0.1:50003".to_string())])
-            .await
-            .unwrap();
+        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
+        node2.initialize(vec![(2, "http://127.0.0.1:50002".to_string())]).await.unwrap();
+        node3.initialize(vec![(3, "http://127.0.0.1:50003".to_string())]).await.unwrap();
 
         sleep(Duration::from_millis(500)).await;
 
@@ -244,7 +238,7 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
@@ -254,11 +248,9 @@ mod multi_node_raft_tests {
         let _ = add_result;
 
         // Promote to voter
-        let promote_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2, 3, 4]),
-        )
-        .await;
+        let promote_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2, 3, 4]))
+                .await;
 
         // May timeout without actual network, but API should work
         let _ = promote_result;
@@ -286,16 +278,13 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // Remove node3
-        let remove_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2]),
-        )
-        .await;
+        let remove_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2])).await;
 
         let _ = remove_result;
 
@@ -323,7 +312,7 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
@@ -331,11 +320,9 @@ mod multi_node_raft_tests {
         node1.add_learner(4, "http://127.0.0.1:50004".to_string()).await.ok();
 
         // Replace node3 with node4
-        let replace_result = tokio::time::timeout(
-            Duration::from_secs(2),
-            node1.change_membership(vec![1, 2, 4]),
-        )
-        .await;
+        let replace_result =
+            tokio::time::timeout(Duration::from_secs(2), node1.change_membership(vec![1, 2, 4]))
+                .await;
 
         let _ = replace_result;
 
@@ -366,21 +353,21 @@ mod multi_node_raft_tests {
             (2, "http://127.0.0.1:50002".to_string()),
             (3, "http://127.0.0.1:50003".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // Without actual gRPC network, node1 may not become leader of a multi-node cluster
         // In a real cluster with network communication, node1 would be leader
         let is_leader = node1.is_leader().await;
-        
+
         // Just verify the API works (leader status may vary without network)
         let _ = is_leader;
 
         // In a real cluster, removing node1 would trigger:
         // 1. Leadership transfer to node2 or node3
         // 2. New leader handles the membership change
-        
+
         // Shutdown node1 (simulating removal)
         node1.shutdown().await.unwrap();
 
@@ -405,13 +392,13 @@ mod multi_node_raft_tests {
             (1, "http://127.0.0.1:50001".to_string()),
             (2, "http://127.0.0.1:50002".to_string()),
         ];
-        
+
         node1.initialize(members).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // In a real implementation, we might have a transfer_leadership API
         // For now, just verify both nodes can exist
-        
+
         node1.shutdown().await.unwrap();
         node2.shutdown().await.unwrap();
     }
@@ -432,25 +419,24 @@ mod multi_node_raft_tests {
         let node3 = create_node(3, &temp_dir3).await.unwrap();
 
         // Create separate clusters to simulate partition
-        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
+        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
+        node2
+            .initialize(vec![
+                (2, "http://127.0.0.1:50002".to_string()),
+                (3, "http://127.0.0.1:50003".to_string()),
+            ])
             .await
             .unwrap();
-        node2.initialize(vec![
-            (2, "http://127.0.0.1:50002".to_string()),
-            (3, "http://127.0.0.1:50003".to_string()),
-        ])
-        .await
-        .unwrap();
 
         sleep(Duration::from_millis(500)).await;
 
         // Node1 is minority (1 out of 3)
         // Node2+Node3 are majority (2 out of 3)
-        
+
         // In a real cluster:
         // - Majority partition continues to operate
         // - Minority partition cannot make progress
-        
+
         node1.shutdown().await.unwrap();
         node2.shutdown().await.unwrap();
         node3.shutdown().await.unwrap();
@@ -466,32 +452,26 @@ mod multi_node_raft_tests {
         let node1 = create_node(1, &temp_dir1).await.unwrap();
         let node2 = create_node(2, &temp_dir2).await.unwrap();
 
-        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
-        node2.initialize(vec![(2, "http://127.0.0.1:50002".to_string())])
-            .await
-            .unwrap();
+        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
+        node2.initialize(vec![(2, "http://127.0.0.1:50002".to_string())]).await.unwrap();
 
         sleep(Duration::from_millis(500)).await;
 
         // Both write different data (simulating partition)
         for i in 0..5 {
-            let _ = node1.put(
-                format!("node1_key_{}", i).into_bytes(),
-                b"node1_value".to_vec(),
-            ).await;
-            let _ = node2.put(
-                format!("node2_key_{}", i).into_bytes(),
-                b"node2_value".to_vec(),
-            ).await;
+            let _ = node1
+                .put(format!("node1_key_{}", i).into_bytes(), b"node1_value".to_vec())
+                .await;
+            let _ = node2
+                .put(format!("node2_key_{}", i).into_bytes(), b"node2_value".to_vec())
+                .await;
         }
 
         // In a real cluster with healing:
         // 1. Nodes would discover each other
         // 2. One would step down based on term
         // 3. Logs would be reconciled (one side's writes would be discarded)
-        
+
         node1.shutdown().await.unwrap();
         node2.shutdown().await.unwrap();
     }
@@ -510,24 +490,19 @@ mod multi_node_raft_tests {
         let node2 = create_node(2, &temp_dir2).await.unwrap();
 
         // Initialize node1 with data
-        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // Write enough data to trigger snapshot
         for i in 0..150 {
-            let _ = node1.put(
-                format!("snapshot_key_{}", i).into_bytes(),
-                vec![42u8; 256],
-            ).await;
+            let _ = node1.put(format!("snapshot_key_{}", i).into_bytes(), vec![42u8; 256]).await;
         }
 
         sleep(Duration::from_millis(500)).await;
 
         // Add node2 - should receive snapshot
         let add_result = node1.add_learner(2, "http://127.0.0.1:50002".to_string()).await;
-        
+
         // In a real cluster, node2 would receive snapshot and catch up
         let _ = add_result;
 
@@ -541,18 +516,15 @@ mod multi_node_raft_tests {
         let temp_dir1 = TempDir::new().unwrap();
         let node1 = create_node(1, &temp_dir1).await.unwrap();
 
-        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node1.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // Write data to trigger snapshot
         for i in 0..200 {
-            let _ = node1.put(
-                format!("concurrent_snap_key_{}", i).into_bytes(),
-                vec![42u8; 256],
-            ).await;
-            
+            let _ = node1
+                .put(format!("concurrent_snap_key_{}", i).into_bytes(), vec![42u8; 256])
+                .await;
+
             // Small delay to allow snapshot to trigger
             if i % 50 == 0 {
                 sleep(Duration::from_millis(100)).await;
