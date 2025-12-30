@@ -13,8 +13,8 @@ use std::sync::Arc;
 #[cfg(feature = "raft-cluster")]
 use openraft::{
     storage::{LogState, Snapshot},
-    BasicNode, Entry, EntryPayload, LogId, RaftLogReader, RaftSnapshotBuilder, RaftStorage,
-    SnapshotMeta, StorageError, StorageIOError, Vote,
+    BasicNode, CommittedLeaderId, Entry, EntryPayload, LogId, RaftLogReader, RaftSnapshotBuilder,
+    RaftStorage, SnapshotMeta, StorageError, StorageIOError, Vote,
 };
 
 use crate::error::{Error, Result};
@@ -232,6 +232,32 @@ impl OpenRaftStorage {
                 self.db.delete(b"raft:vote")?;
                 state.vote = None;
             }
+
+            // Clear membership as well to ensure complete reset
+            self.db.delete(b"raft:membership")?;
+            tracing::warn!("Cleared raft:membership during log cleanup");
+        }
+
+        // Consistency check: verify that logs actually exist for the claimed range
+        // If last_log_id exists but the logs are missing, reset to clean state
+        if let Some(ref last_log) = state.last_log_id {
+            let log_key = format!("raft:log:{}", last_log.index);
+            if self.db.get(log_key.as_bytes())?.is_none() {
+                tracing::warn!(
+                    "last_log_id {:?} claims log exists but log is missing - resetting to clean state",
+                    last_log
+                );
+                // Reset all log-related state
+                self.db.delete(b"raft:last_log_id")?;
+                self.db.delete(b"raft:last_applied")?;
+                self.db.delete(b"raft:last_purged_log_id")?;
+                self.db.delete(b"raft:vote")?;
+                self.db.delete(b"raft:membership")?;
+                state.last_log_id = None;
+                state.last_applied = None;
+                state.last_purged_log_id = None;
+                state.vote = None;
+            }
         }
 
         // Load snapshot metadata
@@ -299,6 +325,42 @@ impl OpenRaftStorage {
                 }
             } else {
                 tracing::info!("No logs found; cannot recover membership from logs");
+            }
+        }
+
+        // Consistency fix: If we have logs but last_purged_log_id is None, and logs start at index > 0,
+        // we need to set a virtual last_purged_log_id to tell openraft where logs start.
+        // This prevents the 'try to get log at index 0 but got None' error.
+        if state.last_log_id.is_some() && state.last_purged_log_id.is_none() {
+            // Find the actual first log index by scanning from 0 upwards
+            let mut first_existing_log_index: Option<u64> = None;
+            let last_index = state.last_log_id.as_ref().unwrap().index;
+            for idx in 0..=last_index {
+                let key = format!("raft:log:{}", idx);
+                if self.db.get(key.as_bytes())?.is_some() {
+                    first_existing_log_index = Some(idx);
+                    break;
+                }
+            }
+
+            if let Some(first_idx) = first_existing_log_index {
+                if first_idx > 0 {
+                    // Logs don't start at 0, need to set last_purged_log_id to first_idx - 1
+                    // to indicate all logs before first_idx are "purged"
+                    let dummy_purged = LogId::<NodeId>::new(CommittedLeaderId::new(0, 0), first_idx - 1);
+                    let data = bincode::serialize(&dummy_purged).map_err(|e| {
+                        Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Failed to serialize dummy last_purged_log_id: {}", e),
+                        ))
+                    })?;
+                    self.db.put(b"raft:last_purged_log_id", &data)?;
+                    state.last_purged_log_id = Some(dummy_purged);
+                    tracing::info!(
+                        "Set virtual last_purged_log_id to index {} (logs start at index {})",
+                        first_idx - 1, first_idx
+                    );
+                }
             }
         }
 
