@@ -347,7 +347,8 @@ impl OpenRaftStorage {
                 if first_idx > 0 {
                     // Logs don't start at 0, need to set last_purged_log_id to first_idx - 1
                     // to indicate all logs before first_idx are "purged"
-                    let dummy_purged = LogId::<NodeId>::new(CommittedLeaderId::new(0, 0), first_idx - 1);
+                    let dummy_purged =
+                        LogId::<NodeId>::new(CommittedLeaderId::new(0, 0), first_idx - 1);
                     let data = bincode::serialize(&dummy_purged).map_err(|e| {
                         Error::Io(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
@@ -358,7 +359,8 @@ impl OpenRaftStorage {
                     state.last_purged_log_id = Some(dummy_purged);
                     tracing::info!(
                         "Set virtual last_purged_log_id to index {} (logs start at index {})",
-                        first_idx - 1, first_idx
+                        first_idx - 1,
+                        first_idx
                     );
                 }
             }
