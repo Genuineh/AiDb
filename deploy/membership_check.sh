@@ -35,6 +35,50 @@ if [[ ! -f "$ADMIN_CHECK" ]]; then
   exit 1
 fi
 
+# Ensure base cluster (nodes 1-3) is running and initialized
+echo "Checking if base cluster (nodes 1-3) is running..."
+$COMPOSE_CMD ps node1 node2 node3 | grep -q "Up" || {
+  echo "Base cluster not fully running. Starting nodes 1-3..."
+  $COMPOSE_CMD up -d node1 node2 node3
+  echo "Waiting for admin ports 8001-8003..."
+  for p in 8001 8002 8003; do
+    for i in {1..30}; do
+      if nc -z -w1 127.0.0.1 $p 2>/dev/null; then
+        echo "Port $p is up"
+        break
+      fi
+      sleep 1
+    done
+  done
+}
+
+# Check if base cluster needs initialization
+echo "Checking base cluster initialization status..."
+needs_init=false
+for p in 8001 8002 8003; do
+  if nc -z -w1 127.0.0.1 $p 2>/dev/null; then
+    METRICS=$(python3 "$ADMIN_CHECK" --port ${p} --cmd METRICS --timeout 2 2>/dev/null || true)
+    if echo "$METRICS" | grep -q "state=Learner"; then
+      if ! echo "$METRICS" | grep -qE 'membership:.*voters:\[[0-9]'; then
+        needs_init=true
+        echo "Node ${p} is Learner without voters - needs init"
+        break
+      fi
+    fi
+  fi
+done
+
+if [ "$needs_init" = true ]; then
+  echo "Initializing base cluster (1,2,3)..."
+  INIT_OUT=$(python3 "$ADMIN_CHECK" --port 8001 --cmd "INIT 1=http://node1:50001,2=http://node2:50002,3=http://node3:50003" --timeout 10 2>/dev/null || echo "FAILED")
+  echo "INIT response: ${INIT_OUT}"
+  if [[ "$INIT_OUT" != *"OK"* ]]; then
+    echo "Warning: INIT command did not return OK. Cluster may already be initialized or encountered an error." >&2
+  fi
+  echo "Waiting for cluster to stabilize after init..."
+  sleep 3
+fi
+
 echo "Starting node4..."
 $COMPOSE_CMD up -d node4
 
@@ -287,11 +331,11 @@ if ! put_with_retries "${TEST_KEY}" "${TEST_VAL}"; then
   echo "PUT failed after retries, proceeding to check replication status (best-effort)" >&2
 fi
 
-# Wait for sm:TEST_KEY to appear on node4
+# Wait for TEST_KEY to appear on node4
 end=$((SECONDS + TIMEOUT))
 while [ $SECONDS -le $end ]; do
-  GET4=$(python3 "$ADMIN_CHECK" --port 8004 --cmd "GET sm:${TEST_KEY}" --timeout 2 2>/dev/null || true)
-  echo "node4 GET sm:${TEST_KEY}: ${GET4}"
+  GET4=$(python3 "$ADMIN_CHECK" --port 8004 --cmd "GET ${TEST_KEY}" --timeout 2 2>/dev/null || true)
+  echo "node4 GET ${TEST_KEY}: ${GET4}"
   if echo "$GET4" | grep -q "OK ${TEST_VAL}"; then
     echo "Node4 received replicated data"
     break
@@ -375,7 +419,7 @@ sleep 1
 # verify replication to remaining nodes
 for p in 8002 8003 8004; do
   echo "checking node ${p} for rep_test"
-  python3 "$ADMIN_CHECK" --port ${p} --cmd "GET sm:rep_test" --timeout 2 || true
+  python3 "$ADMIN_CHECK" --port ${p} --cmd "GET rep_test" --timeout 2 || true
 done
 
 # --- Restore original membership state ---
@@ -482,7 +526,7 @@ fi
 sleep 1
 for p in 8001 8002 8003; do
   echo "checking node ${p} for post_removal_test"
-  python3 "$ADMIN_CHECK" --port ${p} --cmd "GET sm:post_removal_test" --timeout 2 || true
+  python3 "$ADMIN_CHECK" --port ${p} --cmd "GET post_removal_test" --timeout 2 || true
 done
 
 echo "Membership change test completed; cluster restored to 1,2,3" 

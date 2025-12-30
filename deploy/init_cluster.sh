@@ -20,7 +20,15 @@ done
 echo "Checking if cluster needs initialization..."
 METRICS=$(echo "METRICS" | nc -w5 localhost 8001 2>/dev/null || echo "")
 
-if echo "$METRICS" | grep -q "state=Learner"; then
+# Check if cluster has voters in membership (indicates initialization)
+if echo "$METRICS" | grep -qE 'membership:.*voters:\[[0-9]'; then
+  echo "Cluster already has voters in membership, skipping initialization."
+  echo "METRICS: $METRICS"
+elif echo "$METRICS" | grep -q "leader=Some"; then
+  echo "Cluster already has a leader, skipping initialization."
+  echo "METRICS: $METRICS"
+else
+  # Cluster not initialized (no voters, no leader)
   echo "Cluster not initialized. Sending INIT command to node1..."
   INIT_RESULT=$(echo "INIT 1=http://node1:50001,2=http://node2:50002,3=http://node3:50003" | nc -w10 localhost 8001 2>/dev/null || echo "FAILED")
   if echo "$INIT_RESULT" | grep -q "OK"; then
@@ -28,11 +36,8 @@ if echo "$METRICS" | grep -q "state=Learner"; then
     sleep 2
   else
     echo "WARNING: INIT command returned: $INIT_RESULT"
+    echo "This may indicate cluster already initialized or requires data cleanup (docker-compose down -v)"
   fi
-elif echo "$METRICS" | grep -q "leader="; then
-  echo "Cluster already initialized (has leader)."
-else
-  echo "WARNING: Could not determine cluster state. METRICS: $METRICS"
 fi
 
 # Verify leader election

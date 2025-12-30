@@ -11,12 +11,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use separate configure calls because `Builder::compile` takes self by value
     if std::env::var("CARGO_FEATURE_CLUSTER").is_ok() {
-        tonic_build::configure().out_dir(out.clone()).compile(&["proto/aidb.proto"], &["proto"])?;
+        tonic_build::configure()
+            .out_dir(out.clone())
+            .compile(&["proto/aidb.proto"], &["proto"])?;
         println!("cargo:rerun-if-changed=proto/aidb.proto");
     }
 
     if std::env::var("CARGO_FEATURE_RAFT_CLUSTER").is_ok() {
-        tonic_build::configure().out_dir(out.clone()).compile(&["proto/raft.proto"], &["proto"])?;
+        tonic_build::configure()
+            .out_dir(out.clone())
+            .compile(&["proto/raft.proto"], &["proto"])?;
         println!("cargo:rerun-if-changed=proto/raft.proto");
     }
 

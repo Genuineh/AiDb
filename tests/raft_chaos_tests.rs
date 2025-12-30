@@ -13,14 +13,14 @@
 
 #[cfg(feature = "raft-cluster")]
 mod raft_chaos_tests {
-    use aidb::cluster::{OpenRaftNode, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::cluster::thin_replication::WriteBatch;
+    use aidb::cluster::{OpenRaftNode, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::{Options, DB};
+    use rand::Rng;
     use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     use tokio::time::sleep;
-    use rand::Rng;
 
     // ========================================================================
     // Helper functions
@@ -51,18 +51,16 @@ mod raft_chaos_tests {
     async fn test_random_node_failures_single_node() {
         // Test random failure patterns on a single node
         let temp_dir = TempDir::new().unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for iteration in 0..3 {
             let node = create_node(1, &temp_dir).await.unwrap();
-            
+
             // Initialize if first iteration
             if iteration == 0 {
-                node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-                    .await
-                    .unwrap();
+                node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
             }
-            
+
             sleep(Duration::from_millis(200)).await;
 
             // Perform random operations
@@ -76,7 +74,7 @@ mod raft_chaos_tests {
             // Random shutdown timing
             let shutdown_delay = rng.random_range(50..300);
             sleep(Duration::from_millis(shutdown_delay)).await;
-            
+
             node.shutdown().await.unwrap();
 
             // Random restart delay
@@ -93,16 +91,16 @@ mod raft_chaos_tests {
         // First session: initialize and write
         {
             let node = create_node(1, &temp_dir).await.unwrap();
-            node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-                .await
-                .unwrap();
+            node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
             sleep(Duration::from_millis(300)).await;
 
             for i in 0..10 {
-                let _ = node.put(
-                    format!("pre_crash_{}", i).into_bytes(),
-                    format!("value_{}", i).into_bytes(),
-                ).await;
+                let _ = node
+                    .put(
+                        format!("pre_crash_{}", i).into_bytes(),
+                        format!("value_{}", i).into_bytes(),
+                    )
+                    .await;
             }
 
             node.shutdown().await.unwrap();
@@ -114,10 +112,12 @@ mod raft_chaos_tests {
             sleep(Duration::from_millis(300)).await;
 
             for i in 0..10 {
-                let _ = node.put(
-                    format!("post_crash_{}", i).into_bytes(),
-                    format!("value_{}", i).into_bytes(),
-                ).await;
+                let _ = node
+                    .put(
+                        format!("post_crash_{}", i).into_bytes(),
+                        format!("value_{}", i).into_bytes(),
+                    )
+                    .await;
             }
 
             node.shutdown().await.unwrap();
@@ -139,9 +139,7 @@ mod raft_chaos_tests {
         // Initialize once
         {
             let node = create_node(1, &temp_dir).await.unwrap();
-            node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-                .await
-                .unwrap();
+            node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
             sleep(Duration::from_millis(200)).await;
             node.shutdown().await.unwrap();
         }
@@ -165,12 +163,10 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for i in 0..20 {
             // Random delay before each operation
@@ -191,21 +187,16 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Try operations with different timeout expectations
         for i in 0..10 {
             let key = format!("timeout_key_{}", i).into_bytes();
             let value = format!("timeout_value_{}", i).into_bytes();
-            
+
             // Some operations might timeout in a real distributed setting
-            let result = tokio::time::timeout(
-                Duration::from_secs(2),
-                node.put(key, value),
-            ).await;
+            let result = tokio::time::timeout(Duration::from_secs(2), node.put(key, value)).await;
 
             // Should either succeed, fail gracefully, or timeout
             match result {
@@ -224,15 +215,13 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Simulate high latency by adding delays
         for i in 0..10 {
             sleep(Duration::from_millis(200)).await; // High latency
-            
+
             let key = format!("latency_key_{}", i).into_bytes();
             let value = format!("latency_value_{}", i).into_bytes();
             let _ = node.put(key, value).await;
@@ -251,9 +240,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = Arc::new(create_node(1, &temp_dir).await.unwrap());
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Spawn concurrent write tasks
@@ -298,15 +285,13 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Submit multiple batches concurrently
         for batch_id in 0..5 {
             let mut batch = WriteBatch::new();
-            
+
             for i in 0..20 {
                 let key = format!("batch_{}_key_{}", batch_id, i).into_bytes();
                 let value = format!("batch_{}_value_{}", batch_id, i).into_bytes();
@@ -326,25 +311,17 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         for round in 0..10 {
             // Single operation
-            let _ = node.put(
-                format!("single_{}", round).into_bytes(),
-                b"value".to_vec(),
-            ).await;
+            let _ = node.put(format!("single_{}", round).into_bytes(), b"value".to_vec()).await;
 
             // Batch operation
             let mut batch = WriteBatch::new();
             for i in 0..5 {
-                batch.put(
-                    format!("batch_{}_{}", round, i).into_bytes(),
-                    b"batch_value".to_vec(),
-                );
+                batch.put(format!("batch_{}_{}", round, i).into_bytes(), b"batch_value".to_vec());
             }
             let _ = node.write_batch(batch).await;
 
@@ -364,9 +341,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Run for multiple rounds
@@ -392,12 +367,10 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let op_type = rng.random_range(0..4);
@@ -444,9 +417,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Write large values
@@ -454,10 +425,10 @@ mod raft_chaos_tests {
             let key = format!("large_key_{}", i).into_bytes();
             let value = vec![42u8; 50 * 1024]; // 50KB per value
             let result = node.put(key, value).await;
-            
+
             // Some operations might fail under memory pressure
             let _ = result;
-            
+
             sleep(Duration::from_millis(50)).await;
         }
 
@@ -474,9 +445,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Apply same operations in order
@@ -501,9 +470,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Write the same key multiple times (should be idempotent)
@@ -529,26 +496,21 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Perform operations
         for i in 0..30 {
-            let _ = node.put(
-                format!("metrics_key_{}", i).into_bytes(),
-                b"value".to_vec(),
-            ).await;
+            let _ = node.put(format!("metrics_key_{}", i).into_bytes(), b"value".to_vec()).await;
         }
 
         // Check metrics multiple times
         for _ in 0..3 {
             let metrics = node.metrics().await;
-            
+
             // Basic sanity checks
             assert!(metrics.current_term >= 1);
-            
+
             sleep(Duration::from_millis(100)).await;
         }
 
@@ -561,9 +523,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(500)).await;
 
         // Check leader status multiple times
@@ -575,10 +535,7 @@ mod raft_chaos_tests {
 
         // In a stable single-node cluster, all checks should show leadership
         let leader_count = leader_checks.iter().filter(|&&x| x).count();
-        assert!(
-            leader_count >= 8,
-            "Leader status should be stable in single-node cluster"
-        );
+        assert!(leader_count >= 8, "Leader status should be stable in single-node cluster");
 
         node.shutdown().await.unwrap();
     }
@@ -593,19 +550,16 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = Arc::new(create_node(1, &temp_dir).await.unwrap());
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // Start writes
         let node_clone = Arc::clone(&node);
         let write_task = tokio::spawn(async move {
             for i in 0..20 {
-                let _ = node_clone.put(
-                    format!("shutdown_key_{}", i).into_bytes(),
-                    b"value".to_vec(),
-                ).await;
+                let _ = node_clone
+                    .put(format!("shutdown_key_{}", i).into_bytes(), b"value".to_vec())
+                    .await;
                 sleep(Duration::from_millis(50)).await;
             }
         });
@@ -626,9 +580,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
 
         // Shutdown immediately without waiting
         node.shutdown().await.unwrap();
@@ -640,9 +592,7 @@ mod raft_chaos_tests {
         let temp_dir = TempDir::new().unwrap();
         let node = create_node(1, &temp_dir).await.unwrap();
 
-        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())])
-            .await
-            .unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:50001".to_string())]).await.unwrap();
         sleep(Duration::from_millis(300)).await;
 
         // First shutdown

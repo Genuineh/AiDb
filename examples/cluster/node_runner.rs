@@ -8,8 +8,8 @@
 //!  INIT - if "1" or "true", call initialize with PEERS
 //!  DB_DIR - directory for DB data (default /data/node<N>)
 
-use aidb::cluster::{OpenRaftNode, RaftNetworkClientFactory, RaftNodeConfig, raft_storage};
-use aidb::{DB, Options};
+use aidb::cluster::{raft_storage, OpenRaftNode, RaftNetworkClientFactory, RaftNodeConfig};
+use aidb::{Options, DB};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -21,9 +21,7 @@ fn parse_peers(s: &str) -> Vec<(u64, String)> {
             if entry.is_empty() {
                 return None;
             }
-            let mut parts = entry.splitn(2, '=');
-            let id = parts.next()?;
-            let addr = parts.next()?;
+            let (id, addr) = entry.split_once('=')?;
             Some((id.parse().ok()?, addr.to_string()))
         })
         .collect()
@@ -34,14 +32,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let node_id: u64 = std::env::var("NODE_ID").unwrap_or_else(|_| "1".to_string()).parse()?;
-    let raft_addr = std::env::var("RAFT_ADDR").unwrap_or_else(|_| format!("0.0.0.0:5000{}", node_id));
-    let admin_addr = std::env::var("ADMIN_ADDR").unwrap_or_else(|_| format!("0.0.0.0:800{}", node_id));
+    let raft_addr =
+        std::env::var("RAFT_ADDR").unwrap_or_else(|_| format!("0.0.0.0:5000{}", node_id));
+    let admin_addr =
+        std::env::var("ADMIN_ADDR").unwrap_or_else(|_| format!("0.0.0.0:800{}", node_id));
     let peers = std::env::var("PEERS").unwrap_or_default();
     let init_flag = std::env::var("INIT").unwrap_or_default();
     let init_cluster = init_flag == "1" || init_flag.to_lowercase() == "true";
     let db_dir = std::env::var("DB_DIR").unwrap_or_else(|_| format!("/data/node{}", node_id));
 
-    println!("Starting node {}. Raft: {} Admin: {} DB: {}", node_id, raft_addr, admin_addr, db_dir);
+    println!(
+        "Starting node {}. Raft: {} Admin: {} DB: {}",
+        node_id, raft_addr, admin_addr, db_dir
+    );
 
     // Open DB
     let db = Arc::new(DB::open(&db_dir, Options::default())?);
@@ -109,10 +112,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             println!("Initializing cluster with peers: {}", peers);
             let parsed = parse_peers(&peers);
-            let nodes: Vec<(u64, String)> = parsed
-                .into_iter()
-                .map(|(id, addr)| (id, addr.trim().to_string()))
-                .collect();
+            let nodes: Vec<(u64, String)> =
+                parsed.into_iter().map(|(id, addr)| (id, addr.trim().to_string())).collect();
             node.initialize(nodes).await?;
             println!("Cluster init requested")
         }
@@ -134,7 +135,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_conn(
+    mut stream: TcpStream,
+    node: Arc<OpenRaftNode>,
+    db: Arc<DB>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let peer = stream.peer_addr()?;
     let (r, mut w) = stream.split();
     let mut reader = BufReader::new(r);
@@ -160,7 +165,7 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
             "INIT" => {
                 if let Some(arg) = parts.next() {
                     let peers = parse_peers(arg);
-                    let nodes: Vec<(u64, String)> = peers.into_iter().map(|(id, addr)| (id, addr)).collect();
+                    let nodes: Vec<(u64, String)> = peers.into_iter().collect();
                     match node.initialize(nodes).await {
                         Ok(_) => w.write_all(b"OK\n").await?,
                         Err(e) => w.write_all(format!("ERR {}\n", e).as_bytes()).await?,
@@ -221,13 +226,18 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
             }
             "GET" => {
                 if let Some(key) = parts.next() {
-                    match db.get(key.as_bytes()) {
+                    // State machine data is stored with "sm:" prefix
+                    let sm_key = format!("sm:{}", key);
+                    match db.get(sm_key.as_bytes()) {
                         Ok(Some(val)) => {
                             // return as utf8 if possible, else base64
                             if let Ok(s) = String::from_utf8(val.clone()) {
                                 w.write_all(format!("OK {}\n", s).as_bytes()).await?;
                             } else {
-                                w.write_all(format!("OK base64:{}\n", base64::encode(&val)).as_bytes()).await?;
+                                w.write_all(
+                                    format!("OK base64:{}\n", base64::encode(&val)).as_bytes(),
+                                )
+                                .await?;
                             }
                         }
                         Ok(None) => w.write_all(b"OK None\n").await?,
@@ -250,7 +260,14 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
             }
             "METRICS" => {
                 let m = node.metrics().await;
-                w.write_all(format!("OK term={} leader={:?} last_log_index={:?} state={:?}\n", m.current_term, m.current_leader, m.last_log_index, m.state).as_bytes()).await?;
+                w.write_all(
+                    format!(
+                        "OK term={} leader={:?} last_log_index={:?} state={:?}\n",
+                        m.current_term, m.current_leader, m.last_log_index, m.state
+                    )
+                    .as_bytes(),
+                )
+                .await?;
             }
             "ADDRS" => {
                 let addrs = node.node_addresses().await;
@@ -290,7 +307,8 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        w.write_all(format!("ERR failed to read last_applied: {}\n", e).as_bytes()).await?;
+                        w.write_all(format!("ERR failed to read last_applied: {}\n", e).as_bytes())
+                            .await?;
                         continue;
                     }
                 }
@@ -298,7 +316,10 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                 let mut mem_debug = String::from("None");
                 match db.get(b"raft:membership") {
                     Ok(Some(data)) => {
-                        if let Ok(mem) = bincode::deserialize::<openraft::StoredMembership<u64, openraft::BasicNode>>(&data) {
+                        if let Ok(mem) = bincode::deserialize::<
+                            openraft::StoredMembership<u64, openraft::BasicNode>,
+                        >(&data)
+                        {
                             mem_debug = format!("{:?}", mem);
                         } else {
                             mem_debug = String::from("ERR deser membership");
@@ -306,22 +327,28 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        w.write_all(format!("ERR failed to read membership: {}\n", e).as_bytes()).await?;
+                        w.write_all(format!("ERR failed to read membership: {}\n", e).as_bytes())
+                            .await?;
                         continue;
                     }
                 }
 
-                w.write_all(format!("OK last_applied_index={} membership_debug={}\n", last_applied_idx, mem_debug).as_bytes()).await?;
+                w.write_all(
+                    format!(
+                        "OK last_applied_index={} membership_debug={}\n",
+                        last_applied_idx, mem_debug
+                    )
+                    .as_bytes(),
+                )
+                .await?;
             }
-            "SHUTDOWN" => {
-                match node.shutdown().await {
-                    Ok(_) => {
-                        w.write_all(b"OK shutting down\n").await?;
-                        break;
-                    }
-                    Err(e) => w.write_all(format!("ERR {}\n", e).as_bytes()).await?,
+            "SHUTDOWN" => match node.shutdown().await {
+                Ok(_) => {
+                    w.write_all(b"OK shutting down\n").await?;
+                    break;
                 }
-            }
+                Err(e) => w.write_all(format!("ERR {}\n", e).as_bytes()).await?,
+            },
             "DUMP_LOG" => {
                 if let Some(idx_s) = parts.next() {
                     if let Ok(idx) = idx_s.parse::<u64>() {
@@ -329,16 +356,27 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                         match db.get(key.as_bytes()) {
                             Ok(Some(data)) => {
                                 // try to deserialize with rmp_serde
-                                match rmp_serde::from_slice::<openraft::Entry<raft_storage::TypeConfig>>(&data) {
+                                match rmp_serde::from_slice::<
+                                    openraft::Entry<raft_storage::TypeConfig>,
+                                >(&data)
+                                {
                                     Ok(entry) => {
                                         let info = format!("LOG {}: {:?}\n", idx, entry.log_id);
                                         w.write_all(info.as_bytes()).await?;
                                         match entry.payload {
                                             openraft::EntryPayload::Membership(m) => {
-                                                w.write_all(format!("  payload: Membership({:?})\n", m).as_bytes()).await?;
+                                                w.write_all(
+                                                    format!("  payload: Membership({:?})\n", m)
+                                                        .as_bytes(),
+                                                )
+                                                .await?;
                                             }
                                             openraft::EntryPayload::Normal(req) => {
-                                                w.write_all(format!("  payload: Normal({:?})\n", req).as_bytes()).await?;
+                                                w.write_all(
+                                                    format!("  payload: Normal({:?})\n", req)
+                                                        .as_bytes(),
+                                                )
+                                                .await?;
                                             }
                                             openraft::EntryPayload::Blank => {
                                                 w.write_all(b"  payload: Blank\n").await?;
@@ -346,7 +384,14 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                                         }
                                     }
                                     Err(e) => {
-                                        w.write_all(format!("ERR failed to deserialize log {}: {}\n", idx, e).as_bytes()).await?;
+                                        w.write_all(
+                                            format!(
+                                                "ERR failed to deserialize log {}: {}\n",
+                                                idx, e
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
                                     }
                                 }
                             }
@@ -354,7 +399,8 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                                 w.write_all(format!("OK no log {}\n", idx).as_bytes()).await?;
                             }
                             Err(e) => {
-                                w.write_all(format!("ERR reading log {}: {}\n", idx, e).as_bytes()).await?;
+                                w.write_all(format!("ERR reading log {}: {}\n", idx, e).as_bytes())
+                                    .await?;
                             }
                         }
                     } else {
@@ -370,19 +416,34 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                         for i in start..=end {
                             let cmd = format!("DUMP_LOG {}\n", i);
                             w.write_all(cmd.as_bytes()).await?; // echo command for clarity
-                            // reuse the same handler by reading the DB directly
+                                                                // reuse the same handler by reading the DB directly
                             let key = format!("raft:log:{}", i);
                             match db.get(key.as_bytes()) {
                                 Ok(Some(data)) => {
-                                    match rmp_serde::from_slice::<openraft::Entry<raft_storage::TypeConfig>>(&data) {
+                                    match rmp_serde::from_slice::<
+                                        openraft::Entry<raft_storage::TypeConfig>,
+                                    >(&data)
+                                    {
                                         Ok(entry) => {
-                                            w.write_all(format!("LOG {}: {:?}\n", i, entry.log_id).as_bytes()).await?;
+                                            w.write_all(
+                                                format!("LOG {}: {:?}\n", i, entry.log_id)
+                                                    .as_bytes(),
+                                            )
+                                            .await?;
                                             match entry.payload {
                                                 openraft::EntryPayload::Membership(m) => {
-                                                    w.write_all(format!("  payload: Membership({:?})\n", m).as_bytes()).await?;
+                                                    w.write_all(
+                                                        format!("  payload: Membership({:?})\n", m)
+                                                            .as_bytes(),
+                                                    )
+                                                    .await?;
                                                 }
                                                 openraft::EntryPayload::Normal(req) => {
-                                                    w.write_all(format!("  payload: Normal({:?})\n", req).as_bytes()).await?;
+                                                    w.write_all(
+                                                        format!("  payload: Normal({:?})\n", req)
+                                                            .as_bytes(),
+                                                    )
+                                                    .await?;
                                                 }
                                                 openraft::EntryPayload::Blank => {
                                                     w.write_all(b"  payload: Blank\n").await?;
@@ -390,7 +451,14 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                                             }
                                         }
                                         Err(e) => {
-                                            w.write_all(format!("ERR failed to deserialize log {}: {}\n", i, e).as_bytes()).await?;
+                                            w.write_all(
+                                                format!(
+                                                    "ERR failed to deserialize log {}: {}\n",
+                                                    i, e
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                         }
                                     }
                                 }
@@ -398,7 +466,10 @@ async fn handle_conn(mut stream: TcpStream, node: Arc<OpenRaftNode>, db: Arc<DB>
                                     w.write_all(format!("OK no log {}\n", i).as_bytes()).await?;
                                 }
                                 Err(e) => {
-                                    w.write_all(format!("ERR reading log {}: {}\n", i, e).as_bytes()).await?;
+                                    w.write_all(
+                                        format!("ERR reading log {}: {}\n", i, e).as_bytes(),
+                                    )
+                                    .await?;
                                 }
                             }
                         }

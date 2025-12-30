@@ -122,7 +122,8 @@ impl OpenRaftNode {
         let mut members = std::collections::BTreeMap::new();
 
         for (node_id, addr) in nodes {
-            members.insert(node_id, openraft::BasicNode::default());
+            // Store the address in BasicNode so openraft's RaftNetworkFactory can use it
+            members.insert(node_id, openraft::BasicNode { addr: addr.clone() });
             self.network_factory.write().add_node(node_id, addr);
         }
 
@@ -136,10 +137,10 @@ impl OpenRaftNode {
 
     /// Add a learner node to the cluster
     pub async fn add_learner(&self, node_id: NodeId, address: String) -> Result<()> {
-        self.network_factory.write().add_node(node_id, address);
+        self.network_factory.write().add_node(node_id, address.clone());
 
         self.raft
-            .add_learner(node_id, openraft::BasicNode::default(), true)
+            .add_learner(node_id, openraft::BasicNode { addr: address }, true)
             .await
             .map_err(|e| Error::ClusterError(format!("Failed to add learner: {}", e)))?;
 

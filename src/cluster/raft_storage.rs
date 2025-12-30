@@ -205,6 +205,35 @@ impl OpenRaftStorage {
             })?);
         }
 
+        // Consistency check: if we have logs but no last_applied, delete the unapplied logs
+        // This can happen if node crashes after initialize() but before logs are applied
+        if state.last_applied.is_none() && state.last_log_id.is_some() {
+            tracing::warn!(
+                "Found logs (last_log={:?}) but no last_applied - cleaning up unapplied logs from incomplete initialization",
+                state.last_log_id
+            );
+            // Delete all logs
+            let last_index = state.last_log_id.as_ref().unwrap().index;
+            for idx in 1..=last_index {
+                let key = format!("raft:log:{}", idx);
+                self.db.delete(key.as_bytes())?;
+            }
+            // Clear last_log_id
+            self.db.delete(b"raft:last_log_id")?;
+            state.last_log_id = None;
+            
+            // Also clear vote if we're cleaning up logs to prevent "vote without logs" state
+            // which would prevent re-initialization
+            if state.vote.is_some() {
+                tracing::warn!(
+                    "Clearing vote {:?} to maintain consistency after removing unapplied logs",
+                    state.vote
+                );
+                self.db.delete(b"raft:vote")?;
+                state.vote = None;
+            }
+        }
+
         // Load snapshot metadata
         if let Some(data) = self.db.get(b"raft:snapshot_meta")? {
             state.snapshot_meta = Some(bincode::deserialize(&data).map_err(|e| {
@@ -216,19 +245,32 @@ impl OpenRaftStorage {
         }
 
         // If we don't have an explicitly persisted membership, try to recover it by scanning
-        // recent logs up to last_applied for the most recent Membership entry and persist it.
+        // recent logs up to last_applied (or last_log) for the most recent Membership entry and persist it.
         if self.db.get(b"raft:membership")?.is_none() {
             tracing::info!("No persisted raft:membership found; attempting recovery from logs");
-            if let Some(last_applied) = state.last_applied {
-                // scan backwards from last_applied.index down to 1
-                for idx in (1..=last_applied.index).rev() {
+            // Prefer scanning up to last_applied (already applied), but fall back to last_log if last_applied is missing
+            let upper_index = if let Some(last_applied) = state.last_applied {
+                last_applied.index
+            } else if let Some(last_log) = state.last_log_id {
+                last_log.index
+            } else {
+                0
+            };
+
+            if upper_index > 0 {
+                // scan backwards from upper_index down to 1
+                for idx in (1..=upper_index).rev() {
                     let key = format!("raft:log:{}", idx);
                     if let Some(data) = self.db.get(key.as_bytes())? {
                         // Try to deserialize the log entry and check whether it's a membership entry
                         let entry: Entry<TypeConfig> = match rmp_serde::from_slice(&data) {
                             Ok(e) => e,
                             Err(e) => {
-                                tracing::warn!("Failed to parse log {} during membership recovery: {}", idx, e);
+                                tracing::warn!(
+                                    "Failed to parse log {} during membership recovery: {}",
+                                    idx,
+                                    e
+                                );
                                 continue;
                             }
                         };
@@ -236,7 +278,8 @@ impl OpenRaftStorage {
                         match &entry.payload {
                             EntryPayload::Membership(ref m) => {
                                 // persist membership as StoredMembership with log_id so it can be deserialized later
-                                let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
+                                let stored =
+                                    openraft::StoredMembership::new(Some(entry.log_id), m.clone());
                                 let mem_data = bincode::serialize(&stored).map_err(|e| {
                                     Error::Io(std::io::Error::new(
                                         std::io::ErrorKind::InvalidData,
@@ -247,14 +290,15 @@ impl OpenRaftStorage {
                                 tracing::info!("Recovered membership from log index {}", idx);
                                 break;
                             }
-                            EntryPayload::Normal(_) => tracing::debug!("Log {} is Normal payload", idx),
+                            EntryPayload::Normal(_) => {
+                                tracing::debug!("Log {} is Normal payload", idx)
+                            }
                             EntryPayload::Blank => tracing::debug!("Log {} is Blank payload", idx),
-                            _ => tracing::debug!("Log {} has other payload variant", idx),
                         }
                     }
                 }
             } else {
-                tracing::info!("No last_applied; cannot recover membership from logs");
+                tracing::info!("No logs found; cannot recover membership from logs");
             }
         }
 
@@ -327,20 +371,22 @@ impl OpenRaftStorage {
 
         let state = self.state.read();
 
+        // Calculate start index from range bounds
         let start = match range.start_bound() {
             Bound::Included(&x) => x,
-            Bound::Excluded(&x) => x + 1,
+            Bound::Excluded(&x) => x.saturating_add(1),
             Bound::Unbounded => {
                 if let Some(ref purged) = state.last_purged_log_id {
                     purged.index + 1
                 } else {
+                    // No purged logs and no explicit start bound: start from 0
                     0
                 }
             }
         };
 
         let end = match range.end_bound() {
-            Bound::Included(&x) => x + 1,
+            Bound::Included(&x) => x.saturating_add(1),
             Bound::Excluded(&x) => x,
             Bound::Unbounded => {
                 if let Some(ref last) = state.last_log_id {
@@ -350,6 +396,11 @@ impl OpenRaftStorage {
                 }
             }
         };
+
+        // If start >= end, return empty
+        if start >= end {
+            return Ok(Vec::new());
+        }
 
         let mut entries = Vec::new();
 
@@ -801,16 +852,22 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                             let log_id = state.last_applied;
                             let stored = openraft::StoredMembership::new(log_id, m);
                             // Persist corrected form back to DB for future startups
-                            let data2 = bincode::serialize(&stored).map_err(|e| StorageError::IO {
-                                source: StorageIOError::write(openraft::AnyError::error(format!(
-                                    "Failed to serialize repaired membership: {}",
-                                    e
-                                ))),
+                            let data2 =
+                                bincode::serialize(&stored).map_err(|e| StorageError::IO {
+                                    source: StorageIOError::write(openraft::AnyError::error(
+                                        format!("Failed to serialize repaired membership: {}", e),
+                                    )),
+                                })?;
+                            self.db.put(b"raft:membership", &data2).map_err(|e| {
+                                StorageError::IO {
+                                    source: StorageIOError::write(openraft::AnyError::error(
+                                        e.to_string(),
+                                    )),
+                                }
                             })?;
-                            self.db.put(b"raft:membership", &data2).map_err(|e| StorageError::IO {
-                                source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
-                            })?;
-                            tracing::info!("Repaired and persisted membership in StoredMembership format");
+                            tracing::info!(
+                                "Repaired and persisted membership in StoredMembership format"
+                            );
                             stored
                         }
                         Err(e2) => {
@@ -821,6 +878,25 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                 }
             }
         } else {
+            // No persisted membership - check if we should recover from logs or return default
+            let last_applied_index = state.last_applied.as_ref().map(|id| id.index).unwrap_or(0);
+            
+            if last_applied_index == 0 && state.last_log_id.is_some() {
+                // We have logs but nothing applied yet - try to find membership in log 1
+                if let Some(data) = self.db.get(b"raft:log:1").map_err(|e| StorageError::IO {
+                    source: StorageIOError::read(openraft::AnyError::error(e.to_string())),
+                })? {
+                    if let Ok(entry) = rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+                        if let EntryPayload::Membership(ref m) = entry.payload {
+                            // Found membership in first log - return it with its log_id
+                            let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
+                            tracing::info!("Recovered membership from log:1 in last_applied_state");
+                            return Ok((state.last_applied, stored));
+                        }
+                    }
+                }
+            }
+            
             openraft::StoredMembership::default()
         };
 
@@ -847,7 +923,8 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                                 }
                             } else {
                                 Response::Error(
-                                    "Meta request received but no meta state machine configured".to_string(),
+                                    "Meta request received but no meta state machine configured"
+                                        .to_string(),
                                 )
                             }
                         }
