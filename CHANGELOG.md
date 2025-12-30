@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2024-12-30
+
+### 🚀 重大更新
+
+#### Multi-Raft 架构优化与稳定性提升
+- **架构精简**: 移除 Primary-Replica、Peer-to-Peer、Coordinator 等过时的集群模式，专注于 Multi-Raft 架构
+- **代码清理**: 删除 9 个已废弃的源文件、5 个示例文件、6 个测试文件
+- **文档归档**: 将历史文档移至 `docs/archive/`，保持文档结构清晰
+
+### 🐛 Bug修复
+
+#### Raft 集群核心修复
+- **LogIndex(0) 错误修复**: 修复节点重启时的 'try to get log at index 0 but got None' 错误
+  - 实现了日志清除（log purge）恢复逻辑
+  - 在 `load_state()` 中扫描实际存在的日志条目
+  - 自动设置虚拟的 `last_purged_log_id` 以告知 OpenRaft 日志起始位置
+- **节点地址传播**: 修复 BasicNode 地址在 `initialize()` 和 `add_learner()` 中的传播问题
+- **日志条目读取**: 修复 `get_log_entries()` 对 index 0 的正确处理
+- **状态机数据查询**: 修复 GET 命令使用 `sm:` 前缀进行状态机数据查找
+- **元数据同步**: 修复 Multi-Raft 元数据同步问题
+
+### ✨ 新功能
+
+#### 集群部署与运维
+- **Docker 部署**: 添加 OpenRaft 集群的 Docker Compose 配置
+  - `docker-compose.cluster.yml`: 标准 3 节点集群
+  - `docker-compose.debug.*.yml`: 调试配置
+- **运维脚本**: 完整的集群管理脚本套件
+  - `init_cluster.sh`: 集群初始化
+  - `verify_cluster.sh`: 集群验证
+  - `membership_check.sh`: 成员状态检查
+  - `replication_check.sh`: 复制验证
+  - `admin_check.py`: Python 管理工具
+
+#### 测试增强
+- **Chaos 测试**: 添加 19 个混沌测试用例，验证故障恢复能力
+  - 随机节点故障和恢复
+  - 交错崩溃和恢复
+  - 快速重启循环
+  - 延迟操作和高延迟场景
+  - 内存压力模拟
+- **边界测试**: 添加 Raft 边界条件测试
+- **多节点测试**: 完整的多节点集成测试套件
+
+### 📚 文档更新
+
+#### 架构文档
+- 更新 `ARCHITECTURE.md`: 反映 Multi-Raft 唯一架构
+- 更新 `MULTI_RAFT_ARCHITECTURE.md`: 完整实现细节
+- 更新 `MULTI_RAFT_API_REFERENCE.md`: API 参考文档
+- 更新 `MULTI_RAFT_QUICKSTART.md`: 快速入门指南
+- 更新 `examples/cluster/README.md`: 集群示例说明
+
+#### 开发者指引
+- 更新 `.github/copilot-instructions.md`: AI 辅助开发指引
+- 明确项目只保留 Multi-Raft 架构的决策
+- 添加 Raft 测试指南 `RAFT_TESTING_GUIDE.md`
+
+### 🔧 技术改进
+
+#### 代码质量
+- ✅ **Clippy 通过**: 所有代码通过 `cargo clippy --all-targets --all-features -- -D warnings`
+- ✅ **格式化**: 代码自动格式化 (cargo fmt)
+- ✅ **测试覆盖**: 574+ 测试全部通过（包括 19 个新的 chaos 测试）
+
+#### 性能与可靠性
+- **持久化一致性**: 改进日志条目的持久化逻辑
+- **故障恢复**: 增强节点崩溃后的恢复能力
+- **状态一致性**: 修复多种状态不一致问题
+
+### 📊 测试统计
+
+- **总测试数**: 574+ 测试用例
+- **新增测试**: 19 个 chaos 测试 + 边界测试 + 多节点测试
+- **测试通过率**: 100%
+- **覆盖场景**: 
+  - 节点故障和恢复
+  - 日志压缩和清除
+  - 网络延迟和超时
+  - 内存压力
+  - 并发操作
+
+### 🎯 版本亮点
+
+1. **架构清晰**: 专注 Multi-Raft，移除所有过时代码
+2. **稳定性提升**: 修复关键的日志恢复 bug
+3. **运维完善**: 完整的 Docker 部署和管理脚本
+4. **测试增强**: 大幅提升混沌测试覆盖
+5. **文档完善**: 更新所有文档以反映当前架构
+
+### ⚠️ Breaking Changes
+
+- 移除了 `PrimaryNode`、`ReplicaNode`、`CoordinatorNode` 等旧 API
+- 移除了 `PeerToPeerCluster` 相关功能
+- 移除了 `ShardGroup` 和 `AutoScaler` (将在未来版本基于 Multi-Raft 重新实现)
+
+### 🔄 迁移指南
+
+如果你使用的是 0.5.x 版本的旧集群模式，请：
+1. 查看 `examples/cluster/` 中的 Multi-Raft 示例
+2. 参考 `docs/MULTI_RAFT_QUICKSTART.md` 进行迁移
+3. 使用 `OpenRaftNode` 替代旧的节点类型
+
 ## [0.5.0] - 2024-12-10
 
 ### 🚀 重大更新
@@ -240,7 +343,8 @@ AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产
 
 ---
 
-[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Genuineh/aidb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Genuineh/aidb/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/Genuineh/aidb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Genuineh/aidb/compare/v0.1.0...v0.2.0
