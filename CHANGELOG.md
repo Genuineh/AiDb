@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2024-12-30
+
+### ✨ 新功能
+
+#### MetaRaftNode 网络地址管理
+- **add_node_address() 方法**: 在 `MetaRaftNode` 中添加预注册节点地址功能
+  - 使 `MetaRaftNode` 与 `OpenRaftNode` 和 `MultiRaftNode` 行为一致
+  - 支持 Multi-Raft 集群场景下上层应用（如 AiKv）预填充节点地址
+  - 解决 `add_learner` 前 network factory 为空导致无法连接 peer 的问题
+- **remove_node_address() 方法**: 移除已注册的节点地址
+- **node_addresses() 方法**: 获取所有已知节点地址列表
+- **network_factory() 方法**: 提供 network factory 的直接访问，支持高级操作
+- **自动地址注册**: `initialize()` 和 `add_learner()` 现在会自动注册节点地址
+
+### 📚 文档更新
+- 更新 `MULTI_RAFT_API_REFERENCE.md`: 添加新 API 使用说明
+- 更新 `MULTI_RAFT_ARCHITECTURE.md`: 更新 MetaRaftNode API 列表
+
+### 🧪 测试增强
+- 添加 `test_add_node_address`: 测试添加节点地址功能
+- 添加 `test_remove_node_address`: 测试移除节点地址功能
+- 添加 `test_network_factory_access`: 测试 network factory 访问
+- 更新 `test_initialize_cluster`: 验证 initialize 自动注册地址
+
+### 🔧 技术改进
+- `MetaRaftNode` 现在保存 `Arc<RwLock<RaftNetworkClientFactory>>` 引用
+- 网络工厂与 Raft 实例共享底层节点地址 HashMap
+
 ## [0.6.0] - 2024-12-30
 
 ### 🚀 重大更新
@@ -343,7 +371,8 @@ AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产
 
 ---
 
-[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Genuineh/aidb/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Genuineh/aidb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Genuineh/aidb/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/Genuineh/aidb/compare/v0.2.0...v0.3.0
