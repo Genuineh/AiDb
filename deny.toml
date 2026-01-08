@@ -7,7 +7,9 @@
 # have been removed. Use the ignore list to ignore specific advisories.
 # db-path defaults to $CARGO_HOME/advisory-dbs
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+# Temporarily ignore the unmaintained bincode advisory (RUSTSEC-2025-0141)
+# We will migrate away from bincode in a follow-up issue/PR.
+ignore = ["RUSTSEC-2025-0141"]
 
 [licenses]
 # License policy

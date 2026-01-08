@@ -68,6 +68,15 @@ AiDb 是一个用 Rust 实现的高性能分布式 KV 存储引擎，基于 LSM-
 - [ ] 内存使用优化
 - [ ] 网络通信优化（批量消息、压缩）
 
+
+## ⚠️ 已知问题（Known Issues）
+
+- **依赖项 `bincode`（v1.3.3）被标记为 `unmaintained`（RUSTSEC-2025-0141）**：CI 中 `cargo-deny` 检测到该 advisory，短期内已在 `deny.toml` 中临时忽略（`ignore = ["RUSTSEC-2025-0141"]`）以保证 CI 绿色。长期计划是迁移到受维护的序列化库（例如 `postcard` 或 `rmp-serde`），并实现向后兼容（先尝试新格式反序列化，失败时回退到 bincode 并迁移数据）。
+  - 追踪 Issue: https://github.com/Genuineh/AiDb/issues/77
+  - 建议优先级：高（需尽快迁移）
+
+
+
 #### 2. 功能增强
 - [ ] S3/OSS 存储适配器完整实现
 - [ ] TLS 加密通信支持
