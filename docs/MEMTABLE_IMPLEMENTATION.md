@@ -105,7 +105,29 @@ for entry in memtable.iter() {
     println!("Key: {:?}", entry.user_key());
 }
 ```
+### keys() 与 keys_at_sequence(max_sequence)
 
+- `keys()`：返回 MemTable 中所有的 user keys（去重，但**不考虑序列号可见性**）。它适合用于需要知道当前 memtable 中有哪些 user keys 的工具性场景，但请注意它可能包含在某些 snapshot 下不可见（已被更高 sequence 删除的）键。
+
+- `keys_at_sequence(max_sequence)`：新的 snapshot-aware API。对于每个 user key，`keys_at_sequence` 会考虑仅有的 `sequence <= max_sequence` 的条目，并且仅当这些条目中最新的类型为 `Value` 时才包含该 key。返回结果按键排序。
+
+示例：
+```rust
+let memtable = MemTable::new(1);
+memtable.put(b"k", b"v", 1);
+memtable.delete(b"k", 3);
+
+// keys() 不考虑序列，仍会包含 "k"
+assert!(memtable.keys().contains(&b"k".to_vec()));
+
+// keys_at_sequence(2) 会看到 k（在序列 2 时仍存在）
+assert!(memtable.keys_at_sequence(2).contains(&b"k".to_vec()));
+
+// keys_at_sequence(3) 不会包含 k（在序列 3 已删除）
+assert!(!memtable.keys_at_sequence(3).contains(&b"k".to_vec()));
+```
+
+> 建议: 当实现迭代器或需要 snapshot 可见性时使用 `keys_at_sequence`；当仅需列出表内所有 user key（不关心快照）时使用 `keys()`。
 #### 5. 大小统计
 - 实时跟踪内存使用
 - 原子操作保证并发安全

@@ -192,6 +192,35 @@ while iter.valid() {
 }
 ```
 
+### MemTable API（高级）
+
+MemTable 提供面向内部实现和高级用户的若干帮助方法；其中两个需要特别注意：
+
+- `keys()`：列出 MemTable 中所有的 user keys（去重）。**重要**：该方法**不考虑**序列号可见性（snapshot），因此它可能包含在某些 snapshot 下不可见的键（例如：后续写入了更高 sequence 的 tombstone）。该方法适用于仅需要知道表中有哪些 user keys 的场景。
+
+- `keys_at_sequence(max_sequence)`：新增的 snapshot-aware API。对于每个 user key，仅考虑 `sequence <= max_sequence` 的条目；只有当这些条目中最新的类型为 `Value` 时才包含该 key。该方法适合用于需要快照可见性的场景（例如实现迭代器或生成 snapshot 的键列表）。
+
+示例：
+
+```rust
+let memtable = MemTable::new(1);
+memtable.put(b"k", b"v", 1);
+memtable.delete(b"k", 3);
+
+// keys() 不考虑序列，仍会包含 "k"
+assert!(memtable.keys().contains(&b"k".to_vec()));
+
+// keys_at_sequence(2) 会看到 k（在序列 2 时仍存在）
+assert!(memtable.keys_at_sequence(2).contains(&b"k".to_vec()));
+
+// keys_at_sequence(3) 不会包含 k（在序列 3 已删除）
+assert!(!memtable.keys_at_sequence(3).contains(&b"k".to_vec()));
+```
+
+**建议**：上层功能（例如 `DBIterator`、快照视图或外部工具）如需正确的 snapshot 行为，请使用 `keys_at_sequence(snapshot_seq)` 或直接通过 `DB::iter()` / `DB::snapshot()` 的迭代器接口进行枚举。
+
+### 范围查询 (Range Query)
+
 ### 范围查询 (Range Query)
 
 查询指定范围内的键值对。
