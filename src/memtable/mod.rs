@@ -260,6 +260,8 @@ impl MemTable {
     /// Returns all unique user keys in the MemTable.
     ///
     /// This collects all user keys, removing duplicates (keeping only latest version).
+    /// Note: this does not take visibility (sequence) into account — callers that need
+    /// snapshot-aware keys should use `keys_at_sequence` instead.
     pub fn keys(&self) -> Vec<Vec<u8>> {
         use std::collections::BTreeSet;
 
@@ -268,6 +270,45 @@ impl MemTable {
             keys.insert(entry.key().user_key().to_vec());
         }
         keys.into_iter().collect()
+    }
+
+    /// Returns all unique user keys visible at `max_sequence`.
+    ///
+    /// For each user key, we consider only entries with sequence <= max_sequence
+    /// and include the key only if the latest such entry is a Value (not Deletion).
+    /// Returned keys are in key-sorted order.
+    pub fn keys_at_sequence(&self, max_sequence: u64) -> Vec<Vec<u8>> {
+        use std::collections::BTreeMap;
+
+        // Map from user_key -> (sequence, ValueType) for entries with seq <= max_sequence
+        let mut latest = BTreeMap::<Vec<u8>, (u64, ValueType)>::new();
+
+        for entry in self.data.iter() {
+            let user = entry.key().user_key().to_vec();
+            let seq = entry.key().sequence();
+            let vtype = entry.key().value_type();
+
+            if seq > max_sequence {
+                continue;
+            }
+
+            match latest.get(&user) {
+                Some(&(existing_seq, _)) => {
+                    if seq > existing_seq {
+                        latest.insert(user, (seq, vtype));
+                    }
+                }
+                None => {
+                    latest.insert(user, (seq, vtype));
+                }
+            }
+        }
+
+        latest
+            .into_iter()
+            .filter(|(_, (_, t))| *t == ValueType::Value)
+            .map(|(k, _)| k)
+            .collect()
     }
 }
 
@@ -445,6 +486,37 @@ mod tests {
 
         // But both entries exist in the table
         assert_eq!(memtable.len(), 2);
+    }
+
+    #[test]
+    fn test_memtable_keys_excludes_tombstones() {
+        let memtable = MemTable::new(1);
+
+        memtable.put(b"key1", b"value1", 1);
+        memtable.put(b"key2", b"value2", 2);
+
+        let keys = memtable.keys();
+        assert!(keys.contains(&b"key1".to_vec()));
+        assert!(keys.contains(&b"key2".to_vec()));
+
+        // Delete key1
+        memtable.delete(b"key1", 3);
+        // keys() should still include the user key (non-snapshot-aware)
+        let keys = memtable.keys();
+        assert!(keys.contains(&b"key1".to_vec()));
+
+        // But keys_at_sequence with a snapshot before delete should include it,
+        // and keys_at_sequence after delete should not.
+        let keys_before = memtable.keys_at_sequence(2);
+        assert!(keys_before.contains(&b"key1".to_vec()));
+
+        let keys_after = memtable.keys_at_sequence(3);
+        assert!(!keys_after.contains(&b"key1".to_vec()));
+
+        // Re-put key1 at higher sequence -> should reappear for later sequences
+        memtable.put(b"key1", b"value3", 4);
+        let keys_late = memtable.keys_at_sequence(5);
+        assert!(keys_late.contains(&b"key1".to_vec()));
     }
 
     #[test]

@@ -101,17 +101,17 @@ impl DBIterator {
 
         let mut all_keys = BTreeSet::new();
 
-        // Collect from current MemTable
+        // Collect from current MemTable (snapshot-aware)
         {
             let memtable = self.db.memtable.read();
-            all_keys.extend(memtable.keys());
+            all_keys.extend(memtable.keys_at_sequence(self.sequence));
         }
 
-        // Collect from immutable MemTables
+        // Collect from immutable MemTables (snapshot-aware)
         {
             let immutable = self.db.immutable_memtables.read();
             for memtable in immutable.iter() {
-                all_keys.extend(memtable.keys());
+                all_keys.extend(memtable.keys_at_sequence(self.sequence));
             }
         }
 
@@ -363,6 +363,42 @@ mod tests {
 
         iter.prev();
         assert_eq!(iter.key(), b"key1");
+    }
+
+    #[test]
+    fn test_iterator_respects_snapshot_on_deletes() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = DB::open(tmp_dir.path(), Options::default()).unwrap();
+        let db = Arc::new(db);
+
+        // Put a key and take a snapshot
+        db.put(b"k", b"v1").unwrap();
+        let snapshot = db.snapshot();
+
+        // Delete after snapshot
+        db.delete(b"k").unwrap();
+
+        // Iterator with current DB should not see the key
+        let mut current_iter = db.iter();
+        let mut found_current = false;
+        while current_iter.valid() {
+            if current_iter.key() == b"k" {
+                found_current = true;
+            }
+            current_iter.next();
+        }
+        assert!(!found_current);
+
+        // Create iterator at snapshot sequence, it SHOULD see the key
+        let mut snap_iter = DBIterator::new(Arc::clone(&db), snapshot.sequence()).unwrap();
+        let mut found_snap = false;
+        while snap_iter.valid() {
+            if snap_iter.key() == b"k" {
+                found_snap = true;
+            }
+            snap_iter.next();
+        }
+        assert!(found_snap);
     }
 
     #[test]

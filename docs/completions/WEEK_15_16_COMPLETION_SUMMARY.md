@@ -96,8 +96,8 @@ assert_eq!(db.get(b"key")?, Some(b"value2".to_vec()));
 - ✅ 支持后向遍历：`prev()`
 - ✅ 支持查找定位：`seek(key)`
 - ✅ 支持边界定位：`seek_to_first()`, `seek_to_last()`
-- ✅ 为 MemTable 添加 `keys()` 方法
-- ✅ 为 SSTableReader 添加 `keys()` 方法
+- ✅ 为 MemTable 添加 `keys()` 方法（非 snapshot-aware）并新增 `keys_at_sequence(max_sequence)`（snapshot-aware，可用于迭代器与快照场景）
+- ✅ 为 SSTableReader 添加 `keys()` 方法（用于列出 SSTable 中的 user keys）
 
 **代码文件**:
 - `src/iterator.rs` (新增)
