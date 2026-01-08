@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- MemTable: Added `keys_at_sequence(max_seq)` and fixed `DBIterator` to use snapshot-aware key collection to avoid listing tombstoned keys in iterators and snapshot views.
+
+## [0.6.1] - 2024-12-30
+
 ## [0.6.1] - 2024-12-30
 
 ### ✨ 新功能
