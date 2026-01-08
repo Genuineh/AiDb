@@ -304,7 +304,11 @@ impl MemTable {
             }
         }
 
-        latest.into_iter().filter(|(_, (_, t))| *t == ValueType::Value).map(|(k, _)| k).collect()
+        latest
+            .into_iter()
+            .filter(|(_, (_, t))| *t == ValueType::Value)
+            .map(|(k, _)| k)
+            .collect()
     }
 }
 

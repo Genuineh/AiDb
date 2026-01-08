@@ -382,7 +382,9 @@ mod tests {
         let mut current_iter = db.iter();
         let mut found_current = false;
         while current_iter.valid() {
-            if current_iter.key() == b"k" { found_current = true; }
+            if current_iter.key() == b"k" {
+                found_current = true;
+            }
             current_iter.next();
         }
         assert!(!found_current);
@@ -391,7 +393,9 @@ mod tests {
         let mut snap_iter = DBIterator::new(Arc::clone(&db), snapshot.sequence()).unwrap();
         let mut found_snap = false;
         while snap_iter.valid() {
-            if snap_iter.key() == b"k" { found_snap = true; }
+            if snap_iter.key() == b"k" {
+                found_snap = true;
+            }
             snap_iter.next();
         }
         assert!(found_snap);
