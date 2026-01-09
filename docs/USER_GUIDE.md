@@ -128,6 +128,14 @@ db.delete(b"key1")?;
 assert!(db.get(b"key1")?.is_none());
 ```
 
+### 删除与 Tombstone 语义
+
+- 删除通过写入 tombstone（墓碑）标记实现；在本实现中 tombstone 在内部表示为一个空的 `Vec<u8>`（即 `Some(Vec::new())`）。
+- `MemTable::get()` 和 `SSTableReader::get()` 会在检测到删除时返回 `Some(Vec::new())`，而 `DB::get()` 将空的 `Vec` 解释为删除并对外返回 `None`（表示“键不存在”）。
+- 这意味着在当前实现中，空字节序列 `b""` 无法作为普通值存储 —— 它被视为删除标记。需要存储“空”或占位值时，请使用一个显式的占位字节（例如 `b"\x00"` 或单字节 `vec![0u8]`）。
+- 并发删除 + flush 的竞态已经修复：读取逻辑现在能正确区分 tombstone 与“未找到”，并且添加了并发测试以保证行为一致性（请参见 `tests/tombstone_concurrent_tests.rs`）。
+- 如果您依赖快照读取旧版本的数据，请注意：本实现不会在 flush 后保留旧版本以供长期快照访问；需要更强快照保证的场景应考虑短期快照或实现延迟清理策略。
+
 ### 批量写入 (WriteBatch)
 
 批量操作保证原子性，要么全部成功，要么全部失败。
