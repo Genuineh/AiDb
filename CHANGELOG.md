@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - MemTable: Added `keys_at_sequence(max_seq)` and fixed `DBIterator` to use snapshot-aware key collection to avoid listing tombstoned keys in iterators and snapshot views.
+- Tombstone / Delete semantics: Ensure MemTable and SSTable preserve tombstone markers (empty `Vec`) and `DB::get()` maps tombstones to `None` for the public API; fix search order to check newest SSTables first to avoid returning stale values. Added comprehensive concurrent delete+flush tests.
+
+## [0.6.3] - 2026-01-09
+
+### Fixed
+
+- Corrected tombstone handling so deleted keys cannot be read from SSTables; `MemTable::get()` and `SSTableReader::get()` return `Some(Vec::new())` for tombstones, and `DB::get()` converts that to `None` for callers.
+- Fixed a race condition between delete and concurrent flush that could cause old values to be visible after a deletion; added `tombstone_concurrent_tests` and related unit/integration tests to validate behavior.
+
+
 
 ## [0.6.1] - 2024-12-30
 
