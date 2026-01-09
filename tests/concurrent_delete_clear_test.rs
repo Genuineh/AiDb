@@ -9,11 +9,7 @@ use tempfile::TempDir;
 #[test]
 fn test_concurrent_clear_and_exists() {
     let temp_dir = TempDir::new().unwrap();
-    let options = Options {
-        use_wal: false,
-        memtable_size: 8192,
-        ..Default::default()
-    };
+    let options = Options { use_wal: false, memtable_size: 8192, ..Default::default() };
     let db = Arc::new(DB::open(temp_dir.path(), options).unwrap());
 
     // Insert initial data
@@ -77,10 +73,7 @@ fn test_concurrent_clear_and_exists() {
 #[test]
 fn test_batch_clear_with_concurrent_reads() {
     let temp_dir = TempDir::new().unwrap();
-    let options = Options {
-        use_wal: false,
-        ..Default::default()
-    };
+    let options = Options { use_wal: false, ..Default::default() };
     let db = Arc::new(DB::open(temp_dir.path(), options).unwrap());
 
     // Insert data
@@ -124,11 +117,7 @@ fn test_batch_clear_with_concurrent_reads() {
 #[test]
 fn test_clear_with_flush() {
     let temp_dir = TempDir::new().unwrap();
-    let options = Options {
-        use_wal: false,
-        memtable_size: 4096,
-        ..Default::default()
-    };
+    let options = Options { use_wal: false, memtable_size: 4096, ..Default::default() };
     let db = Arc::new(DB::open(temp_dir.path(), options).unwrap());
 
     // Insert and flush to SSTable
@@ -364,10 +353,6 @@ fn test_exists_check_during_concurrent_clear() {
     // Final verification: all should be deleted
     for i in 0..100 {
         let key = format!("key{}", i);
-        assert!(
-            db.get(key.as_bytes()).unwrap().is_none(),
-            "Key {} should be deleted",
-            key
-        );
+        assert!(db.get(key.as_bytes()).unwrap().is_none(), "Key {} should be deleted", key);
     }
 }
