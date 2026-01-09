@@ -457,6 +457,10 @@ impl DB {
         {
             let memtable = self.memtable.read();
             if let Some(value) = memtable.get(key, max_seq) {
+                // Empty value means tombstone (deleted)
+                if value.is_empty() {
+                    return Ok(None);
+                }
                 return Ok(Some(value));
             }
         }
@@ -466,6 +470,10 @@ impl DB {
             let immutable = self.immutable_memtables.read();
             for memtable in immutable.iter().rev() {
                 if let Some(value) = memtable.get(key, max_seq) {
+                    // Empty value means tombstone (deleted)
+                    if value.is_empty() {
+                        return Ok(None);
+                    }
                     return Ok(Some(value));
                 }
             }
@@ -476,11 +484,16 @@ impl DB {
             let sstables = self.sstables.read();
             for level_tables in sstables.iter() {
                 // For Level 0, search all tables (may overlap)
+                // Tables are stored newest-first, so iterate forward
                 // For other levels, tables don't overlap, so we can binary search
-                for table in level_tables.iter().rev() {
+                for table in level_tables.iter() {
                     // Since we store user_key only in SSTables (simplified version),
                     // we can directly search for the key
                     if let Some(value) = table.get(key)? {
+                        // Empty value means tombstone (deleted)
+                        if value.is_empty() {
+                            return Ok(None);
+                        }
                         return Ok(Some(value));
                     }
                 }
@@ -590,6 +603,10 @@ impl DB {
         {
             let memtable = self.memtable.read();
             if let Some(value) = memtable.get(key, max_seq) {
+                // Empty value means tombstone (deleted)
+                if value.is_empty() {
+                    return Ok(None);
+                }
                 return Ok(Some(value));
             }
         }
@@ -599,6 +616,10 @@ impl DB {
             let immutable = self.immutable_memtables.read();
             for memtable in immutable.iter().rev() {
                 if let Some(value) = memtable.get(key, max_seq) {
+                    // Empty value means tombstone (deleted)
+                    if value.is_empty() {
+                        return Ok(None);
+                    }
                     return Ok(Some(value));
                 }
             }
@@ -609,11 +630,16 @@ impl DB {
             let sstables = self.sstables.read();
             for level_tables in sstables.iter() {
                 // For Level 0, search all tables (may overlap)
+                // Tables are stored newest-first, so iterate forward
                 // For other levels, tables don't overlap, so we can binary search
-                for table in level_tables.iter().rev() {
+                for table in level_tables.iter() {
                     // Since we store user_key only in SSTables (simplified version),
                     // we can directly search for the key
                     if let Some(value) = table.get(key)? {
+                        // Empty value means tombstone (deleted)
+                        if value.is_empty() {
+                            return Ok(None);
+                        }
                         return Ok(Some(value));
                     }
                 }
@@ -793,7 +819,7 @@ impl DB {
 
         for entry in memtable.iter() {
             let user_key = entry.user_key();
-            let value = entry.value();
+            let value_type = entry.value_type();
 
             // Skip if this is an older version of the same key
             if let Some(ref last_key) = last_user_key {
@@ -803,7 +829,15 @@ impl DB {
             }
 
             // For SSTable at Level 0, we store both values and tombstones
+            // Tombstones are represented as empty Vec, actual values are non-empty
             // Tombstones will be removed during compaction
+            let value = if value_type == crate::memtable::ValueType::Deletion {
+                // Write empty value for tombstones
+                &[]
+            } else {
+                entry.value()
+            };
+
             builder.add(user_key, value)?;
             entry_count += 1;
 

@@ -185,11 +185,12 @@ fn test_sstable_bloom_filter_with_tombstones() {
         assert!(result.is_some(), "Key {} should be found", key);
     }
 
-    // Tombstones should return None
+    // Tombstones should return Some(empty vec) at SSTable level
+    // DB layer converts this to None for the user
     for i in 25..50 {
         let key = format!("key{:04}", i);
         let result = reader.get(key.as_bytes()).unwrap();
-        assert!(result.is_none(), "Deleted key {} should return None", key);
+        assert_eq!(result, Some(Vec::new()), "Deleted key {} should return empty tombstone", key);
     }
 }
 
