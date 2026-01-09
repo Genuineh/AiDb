@@ -102,7 +102,7 @@ impl MemTable {
 
     /// Retrieves the value for a key.
     ///
-    /// Returns the value if found and not deleted, `None` otherwise.
+    /// Returns the value if found. For deleted keys (tombstones), returns an empty Vec.
     /// The lookup will find the entry with the highest sequence number <= max_sequence.
     ///
     /// # Arguments
@@ -112,8 +112,8 @@ impl MemTable {
     ///
     /// # Returns
     ///
-    /// - `Some(value)` if the key exists and is not deleted
-    /// - `None` if the key doesn't exist or is deleted
+    /// - `Some(value)` if the key exists (non-empty for values, empty for tombstones)
+    /// - `None` if the key doesn't exist
     ///
     /// # Example
     ///
@@ -147,7 +147,7 @@ impl MemTable {
             if internal_key.user_key() == key && internal_key.sequence() <= max_sequence {
                 match internal_key.value_type() {
                     ValueType::Value => return Some(value.clone()),
-                    ValueType::Deletion => return None,
+                    ValueType::Deletion => return Some(Vec::new()), // Return empty Vec for tombstone
                 }
             }
         }
@@ -170,7 +170,8 @@ impl MemTable {
     /// let memtable = MemTable::new(1);
     /// memtable.put(b"key", b"value", 1);
     /// memtable.delete(b"key", 2);
-    /// assert_eq!(memtable.get(b"key", 100), None);
+    /// // Tombstone returns empty Vec, DB layer converts to None
+    /// assert_eq!(memtable.get(b"key", 100), Some(Vec::new()));
     /// ```
     pub fn delete(&self, key: &[u8], sequence: u64) {
         let internal_key = InternalKey::new(key.to_vec(), sequence, ValueType::Deletion);
@@ -418,7 +419,8 @@ mod tests {
         assert_eq!(memtable.get(b"key1", 100), Some(b"value1".to_vec()));
 
         memtable.delete(b"key1", 2);
-        assert_eq!(memtable.get(b"key1", 100), None);
+        // After delete, get returns empty Vec (tombstone marker)
+        assert_eq!(memtable.get(b"key1", 100), Some(Vec::new()));
 
         // Entry still exists (as tombstone)
         assert_eq!(memtable.len(), 2);

@@ -152,6 +152,10 @@ impl SSTableReader {
     }
 
     /// Get the value for a key
+    ///
+    /// Returns:
+    /// - `Some(value)` if the key exists (may be empty Vec for tombstones)
+    /// - `None` if the key doesn't exist
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Check bloom filter first (if available)
         if let Some(ref filter) = self.bloom_filter {
@@ -177,10 +181,8 @@ impl SSTableReader {
         while iter.advance() {
             if iter.key() == key {
                 let value = iter.value().to_vec();
-                // Empty value means tombstone (deleted)
-                if value.is_empty() {
-                    return Ok(None);
-                }
+                // Return the value even if it's empty (tombstone marker)
+                // Caller is responsible for interpreting empty Vec as deletion
                 return Ok(Some(value));
             }
             if iter.key() > key {
