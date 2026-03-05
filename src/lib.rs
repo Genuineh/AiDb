@@ -78,7 +78,7 @@ use memtable::MemTable;
 use parking_lot::RwLock;
 use sstable::{SSTableBuilder, SSTableReader};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use wal::WAL;
 
@@ -129,6 +129,9 @@ pub struct DB {
 
     /// Block cache for SSTable data blocks
     block_cache: Arc<BlockCache>,
+
+    /// Set to true when the DB is being dropped to signal the background flush thread to exit.
+    flush_thread_shutdown: Arc<AtomicBool>,
 }
 
 impl DB {
@@ -160,7 +163,7 @@ impl DB {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn open<P: AsRef<std::path::Path>>(path: P, options: Options) -> Result<Self> {
+    pub fn open<P: AsRef<std::path::Path>>(path: P, options: Options) -> Result<Arc<Self>> {
         let path = path.as_ref().to_path_buf();
 
         // Validate options
@@ -336,7 +339,9 @@ impl DB {
         let compaction_picker = CompactionPicker::new(options.max_levels);
 
         // Step 9: Construct DB instance
-        Ok(DB {
+        let flush_thread_shutdown = Arc::new(AtomicBool::new(false));
+
+        let db = Arc::new(DB {
             path,
             options,
             memtable: Arc::new(RwLock::new(memtable)),
@@ -349,7 +354,52 @@ impl DB {
             version_set: Arc::new(RwLock::new(version_set)),
             compaction_picker: Arc::new(compaction_picker),
             block_cache,
-        })
+            flush_thread_shutdown: Arc::clone(&flush_thread_shutdown),
+        });
+
+        // Step 10: Spawn background flush thread.
+        //
+        // This thread periodically flushes immutable MemTables to SSTable files.
+        // Without this, immutable MemTables accumulate in memory indefinitely when
+        // callers never invoke `flush()` explicitly.
+        //
+        // The thread holds a Weak reference so it exits automatically when the last
+        // Arc<DB> is dropped (Weak::upgrade() returns None).
+        let db_weak = Arc::downgrade(&db);
+        let shutdown_flag = Arc::clone(&flush_thread_shutdown);
+        std::thread::Builder::new()
+            .name("aidb-flush".to_string())
+            .spawn(move || {
+                log::info!("Background flush thread started");
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                    if shutdown_flag.load(Ordering::Acquire) {
+                        log::info!("Background flush thread: shutdown signal received, exiting");
+                        break;
+                    }
+
+                    let db = match db_weak.upgrade() {
+                        Some(db) => db,
+                        None => {
+                            log::info!("Background flush thread: DB dropped, exiting");
+                            break;
+                        }
+                    };
+
+                    if db.immutable_memtables.read().is_empty() {
+                        continue;
+                    }
+
+                    if let Err(e) = db.flush_pending() {
+                        log::error!("Background flush error: {}", e);
+                    }
+                }
+                log::info!("Background flush thread exited");
+            })
+            .expect("Failed to spawn aidb-flush thread");
+
+        Ok(db)
     }
 
     /// Inserts a key-value pair into the database.
@@ -942,6 +992,45 @@ impl DB {
         Ok(())
     }
 
+    /// Flush only the pending immutable MemTables without freezing the current (mutable) MemTable.
+    ///
+    /// This is called by the background flush thread. Unlike `flush()`, it does NOT
+    /// freeze the currently active MemTable - that happens automatically inside `put()`
+    /// when the MemTable reaches its size limit. This separation ensures writes are
+    /// never blocked by the background flush.
+    fn flush_pending(&self) -> Result<()> {
+        let mut flushed = 0u32;
+
+        loop {
+            let memtable_to_flush = {
+                let mut immutable = self.immutable_memtables.write();
+                if immutable.is_empty() {
+                    break;
+                }
+                immutable.remove(0) // FIFO: flush oldest first
+            };
+
+            self.flush_memtable_to_sstable(&memtable_to_flush)?;
+            flushed += 1;
+        }
+
+        if flushed > 0 {
+            log::info!("Background flush: {} MemTable(s) flushed to SSTable", flushed);
+
+            // NOTE: WAL rotation is intentionally skipped here.
+            // The WAL still contains entries for the current mutable MemTable that has
+            // NOT been frozen or flushed yet.  Rotating (and deleting) the old WAL
+            // at this point would cause permanent data loss if a crash occurs before
+            // that MemTable is persisted.
+            //
+            // WAL rotation only happens inside flush(), which first freezes the current
+            // MemTable and flushes everything — making the old WAL entries redundant.
+            self.maybe_trigger_compaction()?;
+        }
+
+        Ok(())
+    }
+
     /// Rotates the WAL file.
     ///
     /// This creates a new WAL file and removes the old one after a successful flush.
@@ -1231,6 +1320,11 @@ impl DB {
 
 impl Drop for DB {
     fn drop(&mut self) {
+        // Signal the background flush thread to stop.
+        // It will exit on its next iteration when Weak::upgrade() returns None
+        // (strong count is 0 at this point) or the shutdown flag is set.
+        self.flush_thread_shutdown.store(true, Ordering::Release);
+
         // Attempt to flush and close cleanly
         // Ignore errors during drop as we can't propagate them
         if let Err(e) = self.flush() {

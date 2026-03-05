@@ -3,11 +3,12 @@
 
 use aidb::{Options, DB};
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Helper function to simulate a crash by dropping DB without proper close
 /// Uses mem::forget to prevent Drop from running (simulates abrupt termination)
-fn simulate_crash(db: DB) {
+fn simulate_crash(db: Arc<DB>) {
     std::mem::forget(db);
 }
 
