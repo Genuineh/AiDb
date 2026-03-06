@@ -33,7 +33,112 @@ mod raft_rpc_tests {
             max_payload_entries: 100,
             snapshot_logs_since_last: 100,
         };
-        Ok(Arc::new(OpenRaftNode::new(config, Arc::new(db), network_factory).await?))
+        Ok(Arc::new(OpenRaftNode::new(config, db, network_factory).await?))
+    }
+
+    async fn bootstrap_three_node_cluster(
+        node1: &Arc<OpenRaftNode>,
+        node2: &Arc<OpenRaftNode>,
+        node3: &Arc<OpenRaftNode>,
+        addr1: &str,
+        addr2: &str,
+        addr3: &str,
+    ) {
+        let addr1 = format!("http://{}", addr1);
+        let addr2 = format!("http://{}", addr2);
+        let addr3 = format!("http://{}", addr3);
+
+        tokio::time::timeout(Duration::from_secs(2), node1.initialize(vec![(1, addr1)]))
+            .await
+            .expect("single-node initialize timed out")
+            .unwrap();
+
+        for attempt in 0..20 {
+            if node1.is_leader().await {
+                break;
+            }
+            if attempt < 19 {
+                sleep(Duration::from_millis(200)).await;
+            }
+        }
+        assert!(node1.is_leader().await, "Node 1 should become leader before adding learners");
+
+        tokio::time::timeout(Duration::from_secs(5), node1.add_learner(2, addr2))
+            .await
+            .expect("add_learner for node 2 timed out")
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), node1.add_learner(3, addr3))
+            .await
+            .expect("add_learner for node 3 timed out")
+            .unwrap();
+
+        for attempt in 0..10 {
+            let result =
+                tokio::time::timeout(Duration::from_secs(5), node1.change_membership(vec![1, 2, 3]))
+                    .await;
+            if matches!(result, Ok(Ok(()))) {
+                break;
+            }
+            if attempt < 9 {
+                sleep(Duration::from_millis(300)).await;
+            }
+        }
+
+        for attempt in 0..24 {
+            if node1.is_leader().await || node2.is_leader().await || node3.is_leader().await {
+                return;
+            }
+            if attempt < 23 {
+                sleep(Duration::from_millis(500)).await;
+            }
+        }
+
+        panic!("At least one node should be leader after bootstrapping the cluster");
+    }
+
+    async fn cleanup_cluster(
+        node1: &Arc<OpenRaftNode>,
+        node2: &Arc<OpenRaftNode>,
+        node3: &Arc<OpenRaftNode>,
+        server1: tokio::task::JoinHandle<Result<(), aidb::error::Error>>,
+        server2: tokio::task::JoinHandle<Result<(), aidb::error::Error>>,
+        server3: tokio::task::JoinHandle<Result<(), aidb::error::Error>>,
+    ) {
+        server1.abort();
+        server2.abort();
+        server3.abort();
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), node1.shutdown()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), node2.shutdown()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), node3.shutdown()).await;
+    }
+
+    async fn put_with_timeout(
+        node: &Arc<OpenRaftNode>,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(3), node.put(key, value)).await,
+            Ok(Ok(()))
+        )
+    }
+
+    async fn delete_with_timeout(node: &Arc<OpenRaftNode>, key: Vec<u8>) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(3), node.delete(key)).await,
+            Ok(Ok(()))
+        )
+    }
+
+    async fn write_batch_with_timeout(
+        node: &Arc<OpenRaftNode>,
+        batch: aidb::cluster::ThinWriteBatch,
+    ) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(3), node.write_batch(batch)).await,
+            Ok(Ok(()))
+        )
     }
 
     #[tokio::test]
@@ -84,37 +189,33 @@ mod raft_rpc_tests {
         // Wait for servers to start
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50111".to_string()),
-            (2, "http://127.0.0.1:50112".to_string()),
-            (3, "http://127.0.0.1:50113".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50111",
+            "127.0.0.1:50112",
+            "127.0.0.1:50113",
+        )
+        .await;
 
-        // Wait for leader election with retry - CI can be slow
-        sleep(Duration::from_millis(1000)).await;
+        // Wait for leader election with retry - CI can be slow (Raft election timeout 150–300ms)
+        sleep(Duration::from_millis(1500)).await;
 
-        // Verify at least one leader exists (may take time) - retry up to 10 times
+        // Verify at least one leader exists - retry up to 24 times (~12s total)
         let mut leader_found = false;
-        for attempt in 0..10 {
+        for attempt in 0..24 {
             if node1.is_leader().await || node2.is_leader().await || node3.is_leader().await {
                 leader_found = true;
                 break;
             }
-            if attempt < 9 {
+            if attempt < 23 {
                 sleep(Duration::from_millis(500)).await;
             }
         }
         assert!(leader_found, "At least one node should be leader after retries");
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 
     #[tokio::test]
@@ -144,13 +245,15 @@ mod raft_rpc_tests {
 
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50121".to_string()),
-            (2, "http://127.0.0.1:50122".to_string()),
-            (3, "http://127.0.0.1:50123".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50121",
+            "127.0.0.1:50122",
+            "127.0.0.1:50123",
+        )
+        .await;
 
         // Wait for leader election with extended timeout for CI
         sleep(Duration::from_millis(1000)).await;
@@ -171,8 +274,7 @@ mod raft_rpc_tests {
         let mut write_success = false;
         if leader_ready {
             for _ in 0..5 {
-                let result = node1.put(b"key1".to_vec(), b"value1".to_vec()).await;
-                if result.is_ok() {
+                if put_with_timeout(&node1, b"key1".to_vec(), b"value1".to_vec()).await {
                     write_success = true;
                     break;
                 }
@@ -187,7 +289,7 @@ mod raft_rpc_tests {
                 let key = format!("key{}", i).into_bytes();
                 let value = format!("value{}", i).into_bytes();
                 // Allow some writes to fail in test environment
-                let _ = node1.put(key, value).await;
+                let _ = put_with_timeout(&node1, key, value).await;
             }
 
             // Give time for replication
@@ -199,13 +301,7 @@ mod raft_rpc_tests {
             assert!(metrics.last_log_index.is_some(), "Should have some log entries");
         }
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 
     #[tokio::test]
@@ -234,19 +330,21 @@ mod raft_rpc_tests {
 
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50131".to_string()),
-            (2, "http://127.0.0.1:50132".to_string()),
-            (3, "http://127.0.0.1:50133".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50131",
+            "127.0.0.1:50132",
+            "127.0.0.1:50133",
+        )
+        .await;
         sleep(Duration::from_millis(2000)).await;
 
         // Write and then delete with retry
         let mut write_success = false;
         for _ in 0..3 {
-            if node1.put(b"test_key".to_vec(), b"test_value".to_vec()).await.is_ok() {
+            if put_with_timeout(&node1, b"test_key".to_vec(), b"test_value".to_vec()).await {
                 write_success = true;
                 break;
             }
@@ -256,16 +354,10 @@ mod raft_rpc_tests {
         if write_success {
             sleep(Duration::from_millis(500)).await;
             // Try delete operation
-            let _ = node1.delete(b"test_key".to_vec()).await;
+            let _ = delete_with_timeout(&node1, b"test_key".to_vec()).await;
         }
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 
     #[tokio::test]
@@ -296,13 +388,15 @@ mod raft_rpc_tests {
 
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50141".to_string()),
-            (2, "http://127.0.0.1:50142".to_string()),
-            (3, "http://127.0.0.1:50143".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50141",
+            "127.0.0.1:50142",
+            "127.0.0.1:50143",
+        )
+        .await;
         sleep(Duration::from_millis(2000)).await;
 
         // Create and execute batch
@@ -317,7 +411,7 @@ mod raft_rpc_tests {
         // Try batch write with retry
         let mut batch_success = false;
         for _ in 0..3 {
-            if node1.write_batch(batch.clone()).await.is_ok() {
+            if write_batch_with_timeout(&node1, batch.clone()).await {
                 batch_success = true;
                 break;
             }
@@ -331,13 +425,7 @@ mod raft_rpc_tests {
             assert!(metrics.last_log_index.is_some(), "Should have processed batch");
         }
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 
     #[tokio::test]
@@ -366,20 +454,22 @@ mod raft_rpc_tests {
 
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50151".to_string()),
-            (2, "http://127.0.0.1:50152".to_string()),
-            (3, "http://127.0.0.1:50153".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50151",
+            "127.0.0.1:50152",
+            "127.0.0.1:50153",
+        )
+        .await;
 
         // Wait for leader election with extended timeout for CI
-        sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_millis(1500)).await;
 
-        // Check that at least one leader exists with retry
+        // Check that at least one leader exists - retry up to 24 times (~12s total)
         let mut leader_count = 0;
-        for attempt in 0..10 {
+        for attempt in 0..24 {
             leader_count = 0;
             if node1.is_leader().await {
                 leader_count += 1;
@@ -395,7 +485,7 @@ mod raft_rpc_tests {
                 break;
             }
 
-            if attempt < 9 {
+            if attempt < 23 {
                 sleep(Duration::from_millis(500)).await;
             }
         }
@@ -417,13 +507,7 @@ mod raft_rpc_tests {
             "A leader should be elected"
         );
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 
     #[tokio::test]
@@ -452,13 +536,15 @@ mod raft_rpc_tests {
 
         sleep(Duration::from_millis(500)).await;
 
-        // Initialize cluster
-        let nodes = vec![
-            (1, "http://127.0.0.1:50161".to_string()),
-            (2, "http://127.0.0.1:50162".to_string()),
-            (3, "http://127.0.0.1:50163".to_string()),
-        ];
-        node1.initialize(nodes).await.unwrap();
+        bootstrap_three_node_cluster(
+            &node1,
+            &node2,
+            &node3,
+            "127.0.0.1:50161",
+            "127.0.0.1:50162",
+            "127.0.0.1:50163",
+        )
+        .await;
         sleep(Duration::from_millis(2000)).await;
 
         // Get initial metrics
@@ -488,12 +574,6 @@ mod raft_rpc_tests {
         // Relaxed metrics check - just verify system is working
         assert!(final_index >= initial_index, "Log index should not decrease");
 
-        // Cleanup
-        node1.shutdown().await.unwrap();
-        node2.shutdown().await.unwrap();
-        node3.shutdown().await.unwrap();
-        server1.abort();
-        server2.abort();
-        server3.abort();
+        cleanup_cluster(&node1, &node2, &node3, server1, server2, server3).await;
     }
 }

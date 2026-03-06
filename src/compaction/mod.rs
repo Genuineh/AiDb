@@ -76,7 +76,7 @@ impl CompactionJob {
         let output_path = self.db_path.join(format!("{:06}.sst", file_number));
 
         // Create merge iterator
-        let merge_iter = MergeIterator::new(self.inputs.clone())?;
+        let mut merge_iter = MergeIterator::new(self.inputs.clone())?;
 
         // Create SSTable builder
         let mut builder = SSTableBuilder::new(&output_path)?;
@@ -86,9 +86,18 @@ impl CompactionJob {
         let mut entry_count = 0;
         let mut last_user_key: Option<Vec<u8>> = None;
 
-        for (key, value) in merge_iter {
+        while let Some((key, value)) = merge_iter.next_entry()? {
             // Skip duplicate keys (keep only the newest version)
             if let Some(ref last_key) = last_user_key {
+                if key.as_slice() < last_key.as_slice() {
+                    log::error!(
+                        "Compaction output order violation for {:?}: prev_key={:?}, current_key={:?}, output_level={}",
+                        output_path,
+                        String::from_utf8_lossy(last_key),
+                        String::from_utf8_lossy(&key),
+                        self.output_level
+                    );
+                }
                 if last_key.as_slice() == key.as_slice() {
                     continue;
                 }
@@ -101,7 +110,19 @@ impl CompactionJob {
                 continue;
             }
 
-            builder.add(&key, &value)?;
+            if let Err(err) = builder.add(&key, &value) {
+                log::error!(
+                    "Compaction write failed for {:?}: prev_key={:?}, current_key={:?}, output_level={}, entry_count={}",
+                    output_path,
+                    last_user_key
+                        .as_ref()
+                        .map(|prev| String::from_utf8_lossy(prev).into_owned()),
+                    String::from_utf8_lossy(&key),
+                    self.output_level,
+                    entry_count
+                );
+                return Err(err);
+            }
             entry_count += 1;
             last_user_key = Some(key.to_vec());
         }

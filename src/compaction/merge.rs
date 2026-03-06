@@ -92,22 +92,30 @@ impl MergeIterator {
 
         Ok(())
     }
+
+    /// Return the next merged entry, propagating iterator errors to the caller.
+    pub fn next_entry(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        let entry = match self.heap.pop() {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+
+        self.advance_iterator(entry.iterator_index)?;
+        Ok(Some((entry.key, entry.value)))
+    }
 }
 
 impl Iterator for MergeIterator {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Pop the smallest entry from the heap
-        let entry = self.heap.pop()?;
-
-        // Advance the iterator that provided this entry
-        if let Err(e) = self.advance_iterator(entry.iterator_index) {
+        match self.next_entry() {
+            Ok(entry) => entry,
+            Err(e) => {
             log::error!("Error advancing iterator: {}", e);
             return None;
         }
-
-        Some((entry.key, entry.value))
+        }
     }
 }
 

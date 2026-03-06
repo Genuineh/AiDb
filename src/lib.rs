@@ -75,7 +75,7 @@ pub use write_batch::WriteBatch;
 use cache::BlockCache;
 use compaction::{CompactionJob, CompactionPicker, VersionEdit, VersionSet};
 use memtable::MemTable;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use sstable::{SSTableBuilder, SSTableReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,6 +129,9 @@ pub struct DB {
 
     /// Block cache for SSTable data blocks
     block_cache: Arc<BlockCache>,
+
+    /// Serializes flush work so manual and background flush do not race.
+    flush_lock: Mutex<()>,
 
     /// Set to true when the DB is being dropped to signal the background flush thread to exit.
     flush_thread_shutdown: Arc<AtomicBool>,
@@ -354,6 +357,7 @@ impl DB {
             version_set: Arc::new(RwLock::new(version_set)),
             compaction_picker: Arc::new(compaction_picker),
             block_cache,
+            flush_lock: Mutex::new(()),
             flush_thread_shutdown: Arc::clone(&flush_thread_shutdown),
         });
 
@@ -469,7 +473,7 @@ impl DB {
             );
             // Freeze the current MemTable
             // The actual flush will happen in the background or on next flush() call
-            self.freeze_memtable()?;
+            self.freeze_memtable_if_full()?;
         }
 
         Ok(())
@@ -815,7 +819,7 @@ impl DB {
                 memtable_size,
                 self.options.memtable_size
             );
-            self.freeze_memtable()?;
+            self.freeze_memtable_if_full()?;
         }
 
         Ok(())
@@ -839,6 +843,30 @@ impl DB {
         log::info!("MemTable frozen, {} immutable memtables waiting for flush", immutable.len());
 
         Ok(())
+    }
+
+    /// Freeze the current MemTable only if it is still full after acquiring the write lock.
+    fn freeze_memtable_if_full(&self) -> Result<bool> {
+        let mut memtable = self.memtable.write();
+        if memtable.approximate_size() < self.options.memtable_size {
+            return Ok(false);
+        }
+
+        let mut immutable = self.immutable_memtables.write();
+
+        // Get current sequence number for the new MemTable
+        let current_seq = self.sequence.load(Ordering::SeqCst);
+
+        // Move current memtable to immutable list
+        let old_memtable = std::mem::replace(&mut *memtable, MemTable::new(current_seq + 1));
+        immutable.push(Arc::new(old_memtable));
+
+        log::info!(
+            "MemTable frozen after full check, {} immutable memtables waiting for flush",
+            immutable.len()
+        );
+
+        Ok(true)
     }
 
     /// Flushes an immutable MemTable to an SSTable file.
@@ -873,6 +901,15 @@ impl DB {
 
             // Skip if this is an older version of the same key
             if let Some(ref last_key) = last_user_key {
+                if user_key < last_key.as_slice() {
+                    log::error!(
+                        "Flush output order violation for {:?}: prev_key={:?}, current_key={:?}, value_type={:?}",
+                        sstable_path,
+                        String::from_utf8_lossy(last_key),
+                        String::from_utf8_lossy(user_key),
+                        value_type
+                    );
+                }
                 if last_key.as_slice() == user_key {
                     continue; // Skip older versions
                 }
@@ -888,7 +925,19 @@ impl DB {
                 entry.value()
             };
 
-            builder.add(user_key, value)?;
+            if let Err(err) = builder.add(user_key, value) {
+                log::error!(
+                    "Flush write to SSTable failed for {:?}: prev_key={:?}, current_key={:?}, value_type={:?}, entry_count={}",
+                    sstable_path,
+                    last_user_key
+                        .as_ref()
+                        .map(|key| String::from_utf8_lossy(key).into_owned()),
+                    String::from_utf8_lossy(user_key),
+                    value_type,
+                    entry_count
+                );
+                return Err(err);
+            }
             entry_count += 1;
 
             last_user_key = Some(user_key.to_vec());
@@ -938,6 +987,39 @@ impl DB {
         Ok(file_number)
     }
 
+    /// Flushes immutable MemTables in FIFO order without removing them first.
+    ///
+    /// Callers must hold `flush_lock` so the queue cannot be processed concurrently.
+    fn flush_immutable_memtables(&self) -> Result<u32> {
+        let mut flushed = 0u32;
+
+        loop {
+            let memtable_to_flush = {
+                let immutable = self.immutable_memtables.read();
+                immutable.first().cloned()
+            };
+
+            let Some(memtable_to_flush) = memtable_to_flush else {
+                break;
+            };
+
+            self.flush_memtable_to_sstable(&memtable_to_flush)?;
+
+            let mut immutable = self.immutable_memtables.write();
+            if let Some(pos) = immutable
+                .iter()
+                .position(|memtable| Arc::ptr_eq(memtable, &memtable_to_flush))
+            {
+                immutable.remove(pos);
+                flushed += 1;
+            } else {
+                log::warn!("Flushed immutable MemTable was already removed from the queue");
+            }
+        }
+
+        Ok(flushed)
+    }
+
     /// Manually triggers a flush of the current MemTable.
     ///
     /// This will freeze the current MemTable and flush all immutable MemTables
@@ -968,20 +1050,10 @@ impl DB {
             }
         }
 
-        // Step 2: Flush all immutable MemTables
-        loop {
-            // Get the oldest immutable MemTable
-            let memtable_to_flush = {
-                let mut immutable = self.immutable_memtables.write();
-                if immutable.is_empty() {
-                    break;
-                }
-                immutable.remove(0) // Remove from front (FIFO)
-            };
+        let _flush_guard = self.flush_lock.lock();
 
-            // Flush it to SSTable
-            self.flush_memtable_to_sstable(&memtable_to_flush)?;
-        }
+        // Step 2: Flush all immutable MemTables
+        self.flush_immutable_memtables()?;
 
         // Step 3: Rotate WAL after successful flush
         self.rotate_wal()?;
@@ -999,20 +1071,8 @@ impl DB {
     /// when the MemTable reaches its size limit. This separation ensures writes are
     /// never blocked by the background flush.
     fn flush_pending(&self) -> Result<()> {
-        let mut flushed = 0u32;
-
-        loop {
-            let memtable_to_flush = {
-                let mut immutable = self.immutable_memtables.write();
-                if immutable.is_empty() {
-                    break;
-                }
-                immutable.remove(0) // FIFO: flush oldest first
-            };
-
-            self.flush_memtable_to_sstable(&memtable_to_flush)?;
-            flushed += 1;
-        }
+        let _flush_guard = self.flush_lock.lock();
+        let flushed = self.flush_immutable_memtables()?;
 
         if flushed > 0 {
             log::info!("Background flush: {} MemTable(s) flushed to SSTable", flushed);

@@ -301,13 +301,18 @@ impl RaftNetworkClientFactory {
 impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
     type Network = RaftNetworkClient;
 
-    async fn new_client(&mut self, target: NodeId, _node: &openraft::BasicNode) -> Self::Network {
-        let target_addr = self
-            .nodes
-            .read()
-            .get(&target)
-            .cloned()
-            .unwrap_or_else(|| format!("http://127.0.0.1:{}", 50000 + target));
+    async fn new_client(&mut self, target: NodeId, node: &openraft::BasicNode) -> Self::Network {
+        let target_addr = if !node.addr.is_empty() {
+            let addr = node.addr.clone();
+            self.nodes.write().insert(target, addr.clone());
+            addr
+        } else {
+            self.nodes
+                .read()
+                .get(&target)
+                .cloned()
+                .unwrap_or_else(|| format!("http://127.0.0.1:{}", 50000 + target))
+        };
 
         RaftNetworkClient::new(self.node_id, target, target_addr)
     }
