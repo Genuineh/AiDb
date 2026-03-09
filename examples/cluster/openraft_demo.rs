@@ -25,21 +25,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db1 = DB::open(temp_dir1.path(), Options::default())?;
     let network_factory1 = RaftNetworkClientFactory::new(1);
     let config1 = RaftNodeConfig { node_id: 1, ..Default::default() };
-    let node1 = Arc::new(OpenRaftNode::new(config1, Arc::new(db1), network_factory1).await?);
+    let node1 = Arc::new(OpenRaftNode::new(config1, db1, network_factory1).await?);
     println!("✓ Node 1 created (will be leader)");
 
     // Node 2 - Follower
     let db2 = DB::open(temp_dir2.path(), Options::default())?;
     let network_factory2 = RaftNetworkClientFactory::new(2);
     let config2 = RaftNodeConfig { node_id: 2, ..Default::default() };
-    let node2 = Arc::new(OpenRaftNode::new(config2, Arc::new(db2), network_factory2).await?);
+    let node2 = Arc::new(OpenRaftNode::new(config2, db2, network_factory2).await?);
     println!("✓ Node 2 created");
 
     // Node 3 - Follower
     let db3 = DB::open(temp_dir3.path(), Options::default())?;
     let network_factory3 = RaftNetworkClientFactory::new(3);
     let config3 = RaftNodeConfig { node_id: 3, ..Default::default() };
-    let node3 = Arc::new(OpenRaftNode::new(config3, Arc::new(db3), network_factory3).await?);
+    let node3 = Arc::new(OpenRaftNode::new(config3, db3, network_factory3).await?);
     println!("✓ Node 3 created\n");
 
     // Start RPC servers for each node

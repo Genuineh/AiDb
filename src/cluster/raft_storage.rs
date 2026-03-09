@@ -1122,7 +1122,7 @@ mod tests {
     fn create_test_storage() -> (OpenRaftStorage, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let storage = OpenRaftStorage::new(Arc::new(db)).unwrap();
+        let storage = OpenRaftStorage::new(db).unwrap();
         (storage, temp_dir)
     }
 

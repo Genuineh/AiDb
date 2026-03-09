@@ -85,7 +85,7 @@ impl MetaRaftNode {
         // Create storage for MetaRaft (Group 0)
         let db_dir = data_dir.join("db");
         let options = Options::default();
-        let db = Arc::new(DB::open(&db_dir, options)?);
+        let db = DB::open(&db_dir, options)?;
         let storage = OpenRaftStorage::with_meta_state(db, meta_state.clone())?;
 
         // Use Adaptor to split storage into log_store and state_machine

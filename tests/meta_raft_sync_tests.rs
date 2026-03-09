@@ -5,9 +5,13 @@
 
 #[cfg(feature = "raft-cluster")]
 use aidb::cluster::{MetaRaftNode, MetaResponse};
+#[cfg(feature = "raft-cluster")]
 use openraft::Config;
+#[cfg(feature = "raft-cluster")]
 use std::time::Duration;
+#[cfg(feature = "raft-cluster")]
 use tempfile::TempDir;
+#[cfg(feature = "raft-cluster")]
 use tokio::time::sleep;
 
 /// Test that create_group actually updates metadata

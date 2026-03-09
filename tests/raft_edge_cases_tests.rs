@@ -15,7 +15,6 @@ mod raft_edge_cases {
     use aidb::cluster::{OpenRaftNode, OpenRaftStorage, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::{Options, DB};
     use rand::Rng;
-    use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     use tokio::time::sleep;
@@ -41,7 +40,7 @@ mod raft_edge_cases {
             max_payload_entries: 100,
             snapshot_logs_since_last: 100,
         };
-        OpenRaftNode::new(config, Arc::new(db), network_factory).await
+        OpenRaftNode::new(config, db, network_factory).await
     }
 
     /// Create a test node with default timeouts
@@ -423,7 +422,7 @@ mod raft_edge_cases {
         // Create storage and verify it can be created and reopened
         {
             let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-            let storage = OpenRaftStorage::new(Arc::new(db)).unwrap();
+            let storage = OpenRaftStorage::new(db).unwrap();
             let (entries, _, _, _) = storage.get_log_stats().unwrap();
             assert_eq!(entries, 0, "Initial storage should be empty");
         }
@@ -431,7 +430,7 @@ mod raft_edge_cases {
         // Reopen storage
         {
             let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-            let storage = OpenRaftStorage::new(Arc::new(db)).unwrap();
+            let storage = OpenRaftStorage::new(db).unwrap();
             // Storage should reopen successfully
             let _ = storage.get_log_stats().unwrap();
         }

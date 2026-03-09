@@ -40,7 +40,7 @@ mod raft_chaos_tests {
             max_payload_entries: 100,
             snapshot_logs_since_last: 100,
         };
-        OpenRaftNode::new(config, Arc::new(db), network_factory).await
+        OpenRaftNode::new(config, db, network_factory).await
     }
 
     // ========================================================================

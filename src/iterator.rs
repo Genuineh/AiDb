@@ -28,7 +28,7 @@ use crate::{Result, DB};
 /// db.put(b"key3", b"value3")?;
 ///
 /// // Create an iterator
-/// let mut iter = db.iter();
+/// let mut iter = db.iter()?;
 ///
 /// // Iterate through all keys
 /// while iter.valid() {
@@ -241,7 +241,7 @@ impl DB {
     /// let db = DB::open("./data", Options::default())?;
     /// let db = Arc::new(db);
     ///
-    /// let mut iter = db.iter();
+    /// let mut iter = db.iter()?;
     /// while iter.valid() {
     ///     println!("{:?} => {:?}", iter.key(), iter.value());
     ///     iter.next();
@@ -249,9 +249,9 @@ impl DB {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn iter(self: &Arc<Self>) -> DBIterator {
+    pub fn iter(self: &Arc<Self>) -> Result<DBIterator> {
         let seq = self.sequence.load(std::sync::atomic::Ordering::SeqCst);
-        DBIterator::new(Arc::clone(self), seq).unwrap()
+        DBIterator::new(Arc::clone(self), seq)
     }
 
     /// Creates an iterator over a range of keys.
@@ -304,7 +304,7 @@ mod tests {
         db.put(b"key3", b"value3").unwrap();
 
         // Test iteration
-        let mut iter = db.iter();
+        let mut iter = db.iter().unwrap();
         let mut count = 0;
         let mut keys = Vec::new();
 
@@ -328,7 +328,7 @@ mod tests {
         db.put(b"c", b"3").unwrap();
         db.put(b"e", b"5").unwrap();
 
-        let mut iter = db.iter();
+        let mut iter = db.iter().unwrap();
 
         // Seek to "c"
         iter.seek(b"c");
@@ -352,7 +352,7 @@ mod tests {
         db.put(b"key2", b"value2").unwrap();
         db.put(b"key3", b"value3").unwrap();
 
-        let mut iter = db.iter();
+        let mut iter = db.iter().unwrap();
         iter.seek_to_last();
 
         assert!(iter.valid());
@@ -379,7 +379,7 @@ mod tests {
         db.delete(b"k").unwrap();
 
         // Iterator with current DB should not see the key
-        let mut current_iter = db.iter();
+        let mut current_iter = db.iter().unwrap();
         let mut found_current = false;
         while current_iter.valid() {
             if current_iter.key() == b"k" {
@@ -439,7 +439,7 @@ mod tests {
         db.delete(b"key2").unwrap();
 
         // Iterator should skip deleted keys
-        let mut iter = db.iter();
+        let mut iter = db.iter().unwrap();
         let mut keys = Vec::new();
 
         while iter.valid() {
@@ -456,7 +456,7 @@ mod tests {
         let db = DB::open(tmp_dir.path(), Options::default()).unwrap();
         let db = Arc::new(db);
 
-        let iter = db.iter();
+        let iter = db.iter().unwrap();
         assert!(!iter.valid());
     }
 }

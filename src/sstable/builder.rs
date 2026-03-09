@@ -230,8 +230,9 @@ impl SSTableBuilder {
         let footer = Footer::new(meta_index_handle, index_handle);
         footer.write_to(&mut self.writer)?;
 
-        // Flush to disk
+        // Flush and sync so readers (e.g. get() or compaction) see full SSTable
         self.writer.flush()?;
+        self.writer.get_ref().sync_all()?;
 
         let total_size = index_offset + index_size + FOOTER_SIZE as u64;
         Ok(total_size)

@@ -102,7 +102,7 @@ fn test_iterator_basic() {
     db.put(b"key2", b"value2").unwrap();
 
     // Iterate and collect entries
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut entries = Vec::new();
     while iter.valid() {
         entries.push((iter.key().to_vec(), iter.value().to_vec()));
@@ -129,7 +129,7 @@ fn test_iterator_range() {
     }
 
     // Count all entries
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut count = 0;
     while iter.valid() {
         count += 1;
@@ -151,7 +151,7 @@ fn test_iterator_with_deletes() {
     // Delete middle key
     db.delete(b"key2").unwrap();
 
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut entries = Vec::new();
     while iter.valid() {
         entries.push(iter.key().to_vec());
@@ -176,7 +176,7 @@ fn test_iterator_after_flush() {
 
     db.put(b"key3", b"value3").unwrap();
 
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut entries = Vec::new();
     while iter.valid() {
         entries.push(iter.key().to_vec());
@@ -411,7 +411,7 @@ fn test_range_scan() {
     }
 
     // Manually filter by checking keys
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut count = 0;
     while iter.valid() {
         count += 1;

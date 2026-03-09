@@ -314,7 +314,7 @@ impl OpenRaftNode {
     /// # let db = DB::open("./data", Options::default())?;
     /// # let network_factory = RaftNetworkClientFactory::new(1);
     /// # let config = RaftNodeConfig { node_id: 1, ..Default::default() };
-    /// let node = OpenRaftNode::new(config, Arc::new(db), network_factory).await?;
+    /// let node = OpenRaftNode::new(config, db, network_factory).await?;
     ///
     /// // Start server in background
     /// let addr = "127.0.0.1:50001".parse()?;
@@ -327,13 +327,18 @@ impl OpenRaftNode {
     pub async fn start_server(&self, addr: std::net::SocketAddr) -> Result<()> {
         use crate::cluster::raft_network::raft_rpc::raft_service_server::RaftServiceServer;
         use crate::cluster::raft_network::RaftServiceImpl;
+        use tokio::net::TcpListener;
+        use tokio_stream::wrappers::TcpListenerStream;
 
+        let listener = TcpListener::bind(addr)
+            .await
+            .map_err(|e| Error::ClusterError(format!("Failed to bind {}: {}", addr, e)))?;
         let service = RaftServiceImpl::new(self.raft.clone());
         let server = RaftServiceServer::new(service);
 
         tonic::transport::Server::builder()
             .add_service(server)
-            .serve(addr)
+            .serve_with_incoming(TcpListenerStream::new(listener))
             .await
             .map_err(|e| Error::ClusterError(format!("Server error: {}", e)))?;
 
@@ -365,7 +370,7 @@ mod tests {
 
         let config = RaftNodeConfig { node_id: 1, ..Default::default() };
 
-        let node = OpenRaftNode::new(config, Arc::new(db), network_factory).await;
+        let node = OpenRaftNode::new(config, db, network_factory).await;
         assert!(node.is_ok());
     }
 }

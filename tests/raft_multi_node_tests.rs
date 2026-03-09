@@ -16,7 +16,6 @@
 mod multi_node_raft_tests {
     use aidb::cluster::{OpenRaftNode, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::{Options, DB};
-    use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     use tokio::time::sleep;
@@ -39,7 +38,7 @@ mod multi_node_raft_tests {
             max_payload_entries: 100,
             snapshot_logs_since_last: 100,
         };
-        OpenRaftNode::new(config, Arc::new(db), network_factory).await
+        OpenRaftNode::new(config, db, network_factory).await
     }
 
     // ========================================================================

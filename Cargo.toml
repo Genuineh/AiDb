@@ -48,7 +48,7 @@ tonic = { version = "0.11", optional = true }
 prost = { version = "0.12", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
-tokio-stream = { version = "0.1", optional = true }
+tokio-stream = { version = "0.1", features = ["net"], optional = true }
 
 # Raft consensus (optional, for raft-based cluster) - using openraft
 openraft = { version = "0.9", features = ["serde"], optional = true }
@@ -79,7 +79,7 @@ tonic = "0.11"
 prost = "0.12"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 # Benchmarking
 criterion = { version = "0.7", features = ["html_reports"] }

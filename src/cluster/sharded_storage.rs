@@ -98,7 +98,7 @@ impl ShardedRaftStorage {
         // Create DB instance for this group with default options
         let db_dir = group_dir.join("db");
         let options = Options::default();
-        let db = Arc::new(DB::open(&db_dir, options)?);
+        let db = DB::open(&db_dir, options)?;
 
         // Create OpenRaftStorage instance
         let storage = Arc::new(OpenRaftStorage::new(db)?);

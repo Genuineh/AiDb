@@ -13,7 +13,6 @@ mod openraft_tests {
     use aidb::cluster::thin_replication::WriteBatch;
     use aidb::cluster::{OpenRaftNode, OpenRaftStorage, RaftNetworkClientFactory, RaftNodeConfig};
     use aidb::{Options, DB};
-    use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     use tokio::time::sleep;
@@ -37,7 +36,7 @@ mod openraft_tests {
             max_payload_entries: 100,
             snapshot_logs_since_last: 100,
         };
-        OpenRaftNode::new(config, Arc::new(db), network_factory).await
+        OpenRaftNode::new(config, db, network_factory).await
     }
 
     /// Create multiple test nodes - helper for future multi-node tests
@@ -395,7 +394,7 @@ mod openraft_tests {
     async fn test_storage_creation() {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let storage = OpenRaftStorage::new(Arc::new(db));
+        let storage = OpenRaftStorage::new(db);
 
         assert!(storage.is_ok(), "Storage creation should succeed");
     }
@@ -404,7 +403,7 @@ mod openraft_tests {
     async fn test_storage_log_operations() {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-        let storage = OpenRaftStorage::new(Arc::new(db));
+        let storage = OpenRaftStorage::new(db);
 
         // Verify storage was created successfully
         assert!(storage.is_ok(), "Storage creation should succeed");
@@ -458,7 +457,7 @@ mod openraft_tests {
         // First session: create storage and write some data
         {
             let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-            let storage = OpenRaftStorage::new(Arc::new(db)).unwrap();
+            let storage = OpenRaftStorage::new(db).unwrap();
 
             // Verify initial state
             let (total_entries, _, _, _) = storage.get_log_stats().unwrap();
@@ -468,7 +467,7 @@ mod openraft_tests {
         // Second session: verify storage can be reopened
         {
             let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-            let storage = OpenRaftStorage::new(Arc::new(db));
+            let storage = OpenRaftStorage::new(db);
 
             // Storage should be able to reopen without errors
             assert!(storage.is_ok(), "Storage should reopen successfully");

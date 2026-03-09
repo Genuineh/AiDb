@@ -4,8 +4,11 @@
 use aidb::cluster::{
     GroupMeta, MembershipCoordinator, MetaStateMachine, MultiRaftNode, ReplicaAllocator,
 };
-use aidb::config::Options;
+#[cfg(feature = "raft-cluster")]
+use aidb::Options;
+#[cfg(feature = "raft-cluster")]
 use openraft::Config;
+#[cfg(feature = "raft-cluster")]
 use std::collections::HashMap;
 
 #[cfg(feature = "raft-cluster")]

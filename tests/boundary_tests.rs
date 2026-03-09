@@ -20,7 +20,7 @@ fn test_empty_database_operations() {
     assert!(db.flush().is_ok());
 
     // Iterator on empty database
-    let iter = db.iter();
+    let iter = db.iter().unwrap();
     assert!(!iter.valid());
 }
 
@@ -217,7 +217,7 @@ fn test_sequential_keys() {
     }
 
     // Verify iterator returns them in order
-    let mut iter = db.iter();
+    let mut iter = db.iter().unwrap();
     let mut count = 0;
     let mut prev_key: Option<Vec<u8>> = None;
 

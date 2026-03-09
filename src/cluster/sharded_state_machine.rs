@@ -118,9 +118,8 @@ impl ShardedStateMachine {
         let db_path = self.group_db_path(group_id);
         std::fs::create_dir_all(&db_path)?;
 
-        // Open database
+        // Open database (DB::open returns Arc<DB>)
         let db = DB::open(&db_path, self.options.clone())?;
-        let db = Arc::new(db);
 
         // Store in map
         dbs.insert(group_id, Arc::clone(&db));
@@ -373,7 +372,7 @@ impl ShardedStateMachine {
                         match DB::open(&db_path, self.options.clone()) {
                             Ok(db) => {
                                 let mut dbs = self.dbs.write();
-                                dbs.insert(group_id, Arc::new(db));
+                                dbs.insert(group_id, db);
                                 count += 1;
                                 tracing::info!("Loaded existing database for group {}", group_id);
                             }
@@ -449,7 +448,7 @@ impl ShardedStateMachine {
         let mut keys = Vec::new();
 
         // Create an iterator over all keys in the database
-        let mut iter = db.iter();
+        let mut iter = db.iter()?;
 
         // Iterate through all keys using the DBIterator API
         while iter.valid() {
