@@ -3,6 +3,7 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enable tonic-build to use protoc from the system if PROTOC is explicitly set
     // Otherwise fallback to protobuf-src (which compiles from source)
+    #[cfg(not(target_os = "windows"))]
     if std::env::var("PROTOC").is_err() {
         std::env::set_var("PROTOC", protobuf_src::protoc());
     }
