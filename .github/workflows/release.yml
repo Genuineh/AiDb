@@ -86,9 +86,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: zip
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            archive: zip
 
     steps:
       - name: Checkout code
@@ -111,7 +108,9 @@ jobs:
 
       - name: Install Protocol Buffers Compiler (Windows)
         if: runner.os == 'Windows'
-        run: choco install protoc
+        run: |
+          choco install protoc
+          echo "PROTOC=protoc" >> $env:GITHUB_ENV
 
       - name: Install cross-compilation tools
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-gnu'

@@ -1,8 +1,11 @@
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up protobuf compiler using protobuf-src for tonic-build
-    std::env::set_var("PROTOC", protobuf_src::protoc());
+    // Enable tonic-build to use protoc from the system if PROTOC is explicitly set
+    // Otherwise fallback to protobuf-src (which compiles from source)
+    if std::env::var("PROTOC").is_err() {
+        std::env::set_var("PROTOC", protobuf_src::protoc());
+    }
 
     // Emit generated protobuf into src/cluster so it's available at compile time
     // This avoids relying on env!("OUT_DIR") at compile-time which can be fragile
