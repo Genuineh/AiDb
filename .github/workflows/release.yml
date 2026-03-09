@@ -138,23 +138,23 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            strip target/${{ matrix.target }}/release/aidb || true
+            strip target/${{ matrix.target }}/release/aidb-admin || true
           else
-            strip target/${{ matrix.target }}/release/aidb || true
+            strip target/${{ matrix.target }}/release/aidb-admin || true
           fi
 
       - name: Create archive (Unix)
         if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../aidb-${{ needs.create-release.outputs.version }}-${{ matrix.target }}.tar.gz aidb
+          tar czf ../../../aidb-${{ needs.create-release.outputs.version }}-${{ matrix.target }}.tar.gz aidb-admin
           cd ../../..
 
       - name: Create archive (Windows)
         if: matrix.archive == 'zip'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../aidb-${{ needs.create-release.outputs.version }}-${{ matrix.target }}.zip aidb.exe
+          7z a ../../../aidb-${{ needs.create-release.outputs.version }}-${{ matrix.target }}.zip aidb-admin.exe
           cd ../../..
 
       - name: Upload release asset (Unix)
