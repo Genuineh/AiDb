@@ -7,7 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-04-29
+
+### Added
+
+- **RocksDB 风格合并迭代器**：`DBIterator::load_next_valid` 完全重写，收集所有持有相同 user_key 的层（MemTable + SSTable），统一选取最高序列号版本，跳过删除标记，**推进所有相关层**——与 RocksDB `MergingIterator` 语义对齐，彻底修复重复 key 问题。
+- **幽灵 key 消除**：当某一层存在同一 key 的多个条目（如墓碑 + 旧数据），合并迭代器会连续跳过所有同 key 记录，确保已删除的 key 不会因层内残留旧数据而被误返回。
+- **SSTable 墓碑检测**：`SSTableIterator::next_entry` 通过空值判断删除标记（`is_delete = value.is_empty()`），使 SSTable 中的墓碑也能被正确识别并过滤。
+- **等序列号删除优先**：当来自不同 SSTable 的数据条目与墓碑序列号相同（均为 0）时，墓碑优先——删除代表的写入时间更晚。
+- **MetaStateMachine 快照摘要**：为 `MetaStateMachine` 新增 `apply_summary` 支持，用于从快照状态恢复元数据版本，确保重启后集群元数据一致性。
+
+### Changed
+
+- **移除冗余 `get_at_sequence()` 调用**：合并迭代器直接使用各层迭代器返回的 `best_value`，不再为每个 key 执行额外 `DB::get_at_sequence()` 点查询；迭代性能提升约 2x，同时避免 MVCC 快照不一致。
+- **移除 `DBIterator::db` 字段**：`db: Arc<DB>` 仅在构造期用于收集各层迭代器，存储期不再需要；移除后减少 Arc 引用计数开销。
+- **`scan_groups_streaming` 组排序**：在多组扫描中对 `list_groups()` 返回值排序，确保游标（`group_idx:base64(last_key)`）在不同调用间稳定定位。
+- **`next()` 简化为单次 `load_next_valid()` 调用**：此前在 `next()` 中手动推进最小层，与 `load_next_valid` 内部逻辑重复，现统一由 `load_next_valid` 处理推进与校验。
+- **Raft 存储层增强**：`OpenRaftStorage` 与 `ShardedRaftStorage` 新增批量写入路由键、状态机值读取、slot 内键扫描等辅助方法，提升集群模式下的存储操作效率。
+- **MetaRaft 节点管理**：`MetaRaftNode` 新增节点状态更新、成员地址解析等能力，为上层 AiKv 的 `CLUSTER METARAFT SETSTATUS` 与故障转移提供基础。
+
 ### Fixed
+
+- **合并迭代器重复 key**（原行为）：只推进最小层，其他持有相同 key 的层可能残留，导致同一 key 被多次输出。
+- **幽灵 key**：旧代码在 SSTable 条目序列号均为 0 时无法分辨数据与墓碑，且 MemTable 中墓碑后的旧数据条目会被误认为新 key。
+- **`get_at_sequence()` 快照不一致**：点查询可能返回与迭代器当前序列号状态不一致的快照视图，改为直接使用层迭代器值后此问题消失。
+- **Raft 元数据安全性**：`flush()` / `flush_db()` 不再触发 `clear_all_data()`，避免在 FLUSH 操作中意外清除 Raft 日志（`raft:log:N`）、投票状态（`raft:vote`）与成员配置（`raft:membership`），确保集群在 FLUSHDB/FLUSHALL 后仍能正常选主与提交。
+
+## [0.7.2] - 2026-04-14
+
+### Added
+
+- `MetaRaftNode::get_member_address`：从 OpenRaft 成员配置中解析对等节点 gRPC 地址（与 `CLUSTER METARAFT ADDLEARNER` 登记的地址一致）。
+- `MetaStateMachine::get_config_version`：轻量读取 `config_version`，供路由缓存与元数据新鲜度比对。
+- `OpenRaftStorage::get_state_machine_value`：从状态机 key 空间（`sm:` 前缀）读取值，与 `apply_batch_internal` 写入路径一致。
+- **`OpenRaftStorage::scan_state_machine_keys_in_slot`**：在单组 DB 上迭代 `sm:` 前缀键，按 `Router::key_to_slot`（含 hash tag）过滤 slot；与线上 Multi-Raft 每组合约一致，**不依赖**可选的 `MultiRaftNode::init_state_machine` / 顶层 `ShardedStateMachine`。
+- **`MultiRaftNode::scan_local_group_slot_keys_sync`**：对本地已加载的数据组同步调用上述扫描，返回某 slot 下的逻辑 key 列表，供上层实现 Redis **`CLUSTER GETKEYSINSLOT`** / **`COUNTKEYSINSLOT`** 等与 `redis-cli --cluster reshard` 兼容的能力。
+- `MetaRaftNode::update_node_status` 与 `MetaRequest::UpdateNodeStatus`：由 MetaRaft 提议更新节点 `Online` / `Offline` / `Joining` / `Leaving`，供上层（如 AiKv `CLUSTER METARAFT SETSTATUS`）与故障转移协同。
+- **数据组选民对齐**：`MultiRaftNode::raft_voter_goal_for_group`（内部）——以 `GroupMeta.replicas` 为候选，排除 `ClusterMeta.nodes` 中标记为 `Offline` 的节点，得到目标 voter 集合。
+- **可观测性（MetaRaft / Multi-Raft）**：新增诊断事件 `metaraft_sm_applied`、`sync_data_groups_from_meta_start`、`sync_data_groups_from_meta_done`、`multi_raft_create_group_from_meta`，用于对齐元数据变更、数据组加载与故障窗口。
+- **`OpenRaftStorage::db`**：新增公开方法，暴露底层 `Arc<DB>` 引用，供上层（如 AiKv 备份路径）直接访问单组数据库实例。
+- **`ShardedRaftStorage::backup_all_groups`**：新增方法，遍历所有已加载 Raft 分片的底层 DB，对每个调用 `BackupManager::create_backup`，返回 `(GroupId, BackupId)` 列表；用于支持 AiKv `SAVE`/`BGSAVE` 命令在集群模式下的文件级备份。
+
+### Changed
+
+- `RaftNetworkClient` / `RaftNetworkClientFactory`：为每条 Multi-Raft 组维护 `group_id`；新增 `with_group_id` 以共享节点地址表、按组构造网络工厂；所有 Vote / AppendEntries / InstallSnapshot protobuf 均携带正确 `group_id`（`multi_raft_network` 同步调整）。
+- `MultiRaftNode::create_raft_group`：Raft `initialize` 仅包含当前节点（单 voter）；副本通过 reconcile 流程逐步加入，避免 `ADDSLOTSRANGE` 早于 `REPLICATE` 时形成「永远无法加入副本」的静态成员集。
+- `MultiRaftNode`：`ensure_data_groups_for_current_meta` 与 `ensure_data_groups_async` / `sync_data_groups_from_meta` 等行为调整，避免在异步上下文中嵌套 `block_on`；加载已有组时使用按组的网络工厂。
+- `Router::key_to_slot`：按 Redis Cluster 规则解析 **hash tag**（`{...}` 子串参与 CRC16），与 `CLUSTER KEYSLOT` / MOVED 一致。
+- `ShardedRaftStorage`（加载持久化 Raft 组失败）与 `DB::drop`（flush / WAL sync 失败）：`eprintln!` 改为 `log::warn!` / `log::error!`，便于与集群与容器化部署下的统一日志采集一致。
+- **`MultiRaftNode::reconcile_data_group_membership`（重要）**：在本节点为数据组 Raft Leader 时，先对 `ClusterMeta` 中缺失的副本执行 `add_learner`；当所有**存活**（非 Offline）副本均已出现在 Raft 成员中后，调用 **`change_membership(desired_voters, retain=true)`**，将目标副本集提升为 **voters**。`retain=true` 使旧配置中的节点可保留为 learner，便于平滑 joint 过渡。单次调用超时由环境变量 **`AIKV_DATA_GROUP_MEMBERSHIP_TIMEOUT_MS`** 控制（默认 **5000** ms，由 AiKv 等进程传入同一环境即可）。
+- `OpenRaftStorage::apply_to_state_machine`：新增批量应用摘要日志 `raft_storage_apply_entries_summary`，区分 MetaRaft 与数据 Raft（按 op 数/载荷大小判定 heavy），降低常规流量日志噪声并保留异常窗口证据。
+
+### Fixed
+
+- **集群 AiDb 指标聚合来源修复**：新增 `ShardedRaftStorage::aggregate_aidb_storage_stats`，并通过 `MultiRaftNode::aggregate_aidb_storage_stats` 聚合本节点所有已加载数据组的 `DB`（MemTable/WAL/BlockCache）统计；避免误依赖可选的 `ShardedStateMachine` 路径导致 `INFO memory` 中 `aidb_*` 在集群模式长期为 `0`。
+- **Multi-Raft gRPC 路由**：此前 RPC 中 `group_id` 恒为 `0`，数据组请求在对端被路由到 MetaRaft，导致数据 Raft 无法正确选主或提交（如 `ForwardToLeader`，`leader_id: None`）。
+- **Failover 后读空**：副本侧数据 Raft 若从未被加入成员，则状态机未应用写入；单节点初始化 + Leader 侧 `add_learner` 修复复制与提升后可读性。
+- **数据 Raft 组「谁来做 initialize」**：`load_groups_from_meta` 改为经 `create_raft_group_with_leader` 与 `maybe_initialize_raft`，以 `GroupMeta.leader`（元数据指定 Leader）决定唯一执行 `raft.initialize` 的节点；不再仅用 `replicas` 中最小 `node_id`。避免副本的哈希 `node_id` 小于主节点时，副本误创建单 voter 组并自任 Leader，进而与 slot 路由、`ForwardToLeader` / 客户端 `MOVED` 行为矛盾。
+- **「Redis 一主多从」但数据 Raft 仍不可写**：仅 `add_learner` 时副本仅为 learner，不参与选主；单主宕机后可能出现无 leader、双 voter 缺一无法多数派、或 TRYAGAIN。通过 **`change_membership` 将各存活副本提升为 voter**，使例如 **三副本分片在挂 1 台时仍满足 2/3 多数派**，与 Redis Cluster 故障转移语义一致。
+- **`build_snapshot` 元数据与状态机不一致**：旧实现从 `raft:snapshot_meta` 反序列化快照元数据，当该键不存在或过时时返回 `last_log_id: None` 的空默认值，导致 OpenRaft 无法感知已应用进度、日志无法正确截断。改为从 `raft:last_applied`（状态机最后应用的 LogId）和 `raft:membership`（当前成员配置）直接构造 `SnapshotMeta`，并持久化回 `raft:snapshot_meta`；读取路径使用优雅降级（键缺失时回退 `None` / `Default`），确保快照元数据始终与状态机实际状态一致。
+
+## [0.7.1] - 2026-03-26
+
+### Added
+
+- 添加 `total_key_count` 全局计数器，实现 O(1) 的 DBSIZE 操作
+- 添加 `key_exists()` 方法，检查 key 是否存在于 MemTable 或 SSTable
+- 添加 `key_exists_in_memtables()` 快速辅助方法，只检查 MemTable 层
+- 添加 `dbsize()` 方法返回准确 key 计数
+- 添加 `reset_key_count()` 方法用于 FLUSHDB 时重置计数器
+- 添加 `clear_all_data()` 方法，用于 FLUSHDB 时清除所有 SSTable 和 WAL 文件
+- MemTable: 添加 `key_map` 和 `unique_key_count` 来追踪唯一 key
+
+### Changed
+
+- `put()` 和 `delete()` 操作现在会更新全局 key 计数器
+- `key_exists()` 会跳过 `__exp__:` 前缀的内部过期元数据 key
+- WAL 轮转现在在 `flush_pending()` 中执行，MemTable flush 到 SSTable 后自动回收磁盘空间
+- MemTable 的 `key_map` 现在存储 `(sequence, ValueType)` 元组，正确区分 value 和 tombstone
+
+### Fixed
+
+- 修复 MemTable flush 时重复计数问题：使用 HashMap 追踪每个 user_key 的最新版本
+- WAL: 修复后台 flush 后 WAL 未轮转问题，导致 WAL 文件无限增长
+- Performance: 新增 `estimated_dbsize()` 和 `estimated_memtable_entries()` 方法，实现 O(1) 复杂度 key 数量估算
+- Performance: 移除热路径（put/delete）上的所有 `log::info!()` 调用，避免日志 I/O 拖慢性能
+- Bug Fix: 修复 MemTable 的 `put()` 和 `delete()` 在 key_map 计数时的竞态条件，正确处理 put-after-delete 和重复 delete 场景
+- 修复 `put()` 中 `total_key_count` 增量逻辑，使用 `fetch_update` + `saturating_add` 替代简单 `fetch_add`，确保原子性并防止溢出
+- 修复 `delete()` 中 `total_key_count` 使用 `saturating_sub` 替代 `fetch_sub`，防止计数器变成负数（DBSIZE 显示负值）
+
+## [0.7.0] - 2026-03-01
+
+### Added
+
+- 初始集成 AiKv 存储引擎
+- 后台 flush 线程，MemTable 自动刷写到 SSTable
+- Block cache 和内存指标导出
+
+### Fixed
+
+- MemTable: 新增 `keys_at_sequence(max_seq)`，修复 `DBIterator` 使用快照感知 key 收集
 
 - MemTable: Added `keys_at_sequence(max_seq)` and fixed `DBIterator` to use snapshot-aware key collection to avoid listing tombstoned keys in iterators and snapshot views.
 - Tombstone / Delete semantics: Ensure MemTable and SSTable preserve tombstone markers (empty `Vec`) and `DB::get()` maps tombstones to `None` for the public API; fix search order to check newest SSTables first to avoid returning stale values. Added comprehensive concurrent delete+flush tests.
@@ -387,7 +486,10 @@ AiDb 的首个功能完整版本！这个版本包含了一个完整的、生产
 
 ---
 
-[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Genuineh/aidb/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/Genuineh/aidb/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/Genuineh/aidb/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/Genuineh/aidb/compare/v0.7.0...v0.7.1
 [0.6.1]: https://github.com/Genuineh/aidb/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Genuineh/aidb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Genuineh/aidb/compare/v0.3.0...v0.5.0

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse};
+use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse, SlotMigration};
 use super::raft_storage::NodeId;
 use super::replica_allocator::ReplicaAllocator;
 use super::sharded_storage::GroupId;
@@ -97,6 +97,11 @@ impl MetaStateMachine {
     /// Get current cluster metadata (read-only access)
     pub fn get_cluster_meta(&self) -> ClusterMeta {
         (**self.meta.read()).clone()
+    }
+
+    /// Cheap read of [`ClusterMeta::config_version`] (for router cache vs SM staleness checks).
+    pub fn get_config_version(&self) -> u64 {
+        self.meta.read().config_version
     }
 
     /// Handle adding a node with automatic replica rebalancing
@@ -282,9 +287,23 @@ impl MetaStateMachine {
     ///
     /// This is the core method that processes all metadata changes.
     pub fn apply_meta_request(&self, request: MetaRequest) -> Result<MetaResponse> {
+        let request_type: &'static str = match &request {
+            MetaRequest::AddNode { .. } => "AddNode",
+            MetaRequest::RemoveNode { .. } => "RemoveNode",
+            MetaRequest::CreateGroup { .. } => "CreateGroup",
+            MetaRequest::UpdateSlots { .. } => "UpdateSlots",
+            MetaRequest::UpdateGroupMembers { .. } => "UpdateGroupMembers",
+            MetaRequest::StartMigration { .. } => "StartMigration",
+            MetaRequest::CompleteMigration { .. } => "CompleteMigration",
+            MetaRequest::SetSlotMigrationState { .. } => "SetSlotMigrationState",
+            MetaRequest::ClearSlotMigration { .. } => "ClearSlotMigration",
+            MetaRequest::UpdateGroupLeader { .. } => "UpdateGroupLeader",
+            MetaRequest::UpdateNodeStatus { .. } => "UpdateNodeStatus",
+        };
+
         let mut meta = self.meta.write();
 
-        match request {
+        let response = match request {
             MetaRequest::AddNode { node_id, addr } => {
                 use super::meta_types::NodeInfo;
                 let node_info = NodeInfo::new(node_id, addr);
@@ -417,6 +436,56 @@ impl MetaStateMachine {
                 }
             }
 
+            MetaRequest::SetSlotMigrationState { slot, state } => {
+                if slot >= 16384 {
+                    return Ok(MetaResponse::Error(format!("Invalid slot: {}", slot)));
+                }
+
+                use super::meta_types::SlotMigrationState;
+                match state {
+                    SlotMigrationState::Migrating { from_group, to_group }
+                    | SlotMigrationState::Importing { from_group, to_group } => {
+                        if !meta.groups.contains_key(&from_group) {
+                            return Ok(MetaResponse::Error(format!(
+                                "Source group {} does not exist",
+                                from_group
+                            )));
+                        }
+                        if !meta.groups.contains_key(&to_group) {
+                            return Ok(MetaResponse::Error(format!(
+                                "Target group {} does not exist",
+                                to_group
+                            )));
+                        }
+                    }
+                    SlotMigrationState::Idle | SlotMigrationState::Complete => {}
+                }
+
+                if let Some(m) = meta
+                    .migrations
+                    .iter_mut()
+                    .find(|m| m.slot == slot && !m.is_complete())
+                {
+                    m.state = state;
+                } else {
+                    let mut m = SlotMigration::new(slot, 0, 0);
+                    m.state = state;
+                    meta.migrations.push(m);
+                }
+
+                meta.config_version += 1;
+                Ok(MetaResponse::Ok)
+            }
+
+            MetaRequest::ClearSlotMigration { slot } => {
+                let before = meta.migrations.len();
+                meta.migrations.retain(|m| m.slot != slot);
+                if meta.migrations.len() != before {
+                    meta.config_version += 1;
+                }
+                Ok(MetaResponse::Ok)
+            }
+
             MetaRequest::UpdateGroupLeader { group_id, leader } => {
                 if let Some(group) = meta.groups.get_mut(&group_id) {
                     group.set_leader(leader);
@@ -426,7 +495,35 @@ impl MetaStateMachine {
                     Ok(MetaResponse::Error(format!("Group {} not found", group_id)))
                 }
             }
+            MetaRequest::UpdateNodeStatus { node_id, status } => {
+                if let Some(node) = meta.nodes.get_mut(&node_id) {
+                    if node.status != status {
+                        node.status = status;
+                        meta.config_version += 1;
+                    }
+                    Ok(MetaResponse::Ok)
+                } else {
+                    Ok(MetaResponse::Error(format!("Node {} not found", node_id)))
+                }
+            }
+        };
+
+        if matches!(&response, Ok(MetaResponse::Ok)) {
+            let m = &**meta;
+            let migrations_active = m.migrations.iter().filter(|x| !x.is_complete()).count();
+            tracing::info!(
+                diag_event = "metaraft_sm_applied",
+                request_type,
+                config_version = m.config_version,
+                node_count = m.nodes.len(),
+                group_count = m.groups.len(),
+                migrations_total = m.migrations.len(),
+                migrations_active,
+                "MetaRaft state machine applied request"
+            );
         }
+
+        response
     }
 }
 

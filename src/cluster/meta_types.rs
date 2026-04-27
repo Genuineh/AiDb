@@ -109,6 +109,11 @@ impl ClusterMeta {
         }
         self.config_version += 1;
     }
+
+    /// Get active migration record for a slot.
+    pub fn active_migration(&self, slot: u16) -> Option<&SlotMigration> {
+        self.migrations.iter().find(|m| m.slot == slot && !m.is_complete())
+    }
 }
 
 /// Metadata for a Raft group
@@ -355,12 +360,34 @@ pub enum MetaRequest {
         slot: u16,
     },
 
+    /// Set migration state for a slot (used by CLUSTER SETSLOT)
+    SetSlotMigrationState {
+        /// Slot to update
+        slot: u16,
+        /// New migration state
+        state: SlotMigrationState,
+    },
+
+    /// Clear migration metadata for a slot (used by CLUSTER SETSLOT STABLE)
+    ClearSlotMigration {
+        /// Slot to clear
+        slot: u16,
+    },
+
     /// Update group leader
     UpdateGroupLeader {
         /// Group ID
         group_id: u64,
         /// New leader node ID
         leader: NodeId,
+    },
+
+    /// Update node status (Online/Offline/Joining/Leaving)
+    UpdateNodeStatus {
+        /// Node ID
+        node_id: NodeId,
+        /// New status
+        status: NodeStatus,
     },
 }
 

@@ -20,7 +20,9 @@ mod internal_key;
 pub use internal_key::{InternalKey, ValueType};
 
 use crossbeam_skiplist::SkipMap;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::sync::Arc;
 
 /// Default size limit for MemTable (4MB)
@@ -34,6 +36,7 @@ pub const DEFAULT_MEMTABLE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 /// - Sequence numbers provide MVCC semantics
 /// - Delete operations are represented as tombstones
 /// - Size is tracked to trigger flushes when full
+/// - Key count is tracked for accurate DBSIZE without full scan
 ///
 /// # Example
 ///
@@ -53,6 +56,14 @@ pub struct MemTable {
 
     /// The starting sequence number for this MemTable
     start_sequence: u64,
+
+    /// Count of unique visible keys (user_key -> (latest sequence, latest value_type))
+    /// Used for O(1) DBSIZE without full scan
+    /// ValueType is tracked to distinguish between actual values and tombstones
+    key_map: Mutex<HashMap<Vec<u8>, (u64, ValueType)>>,
+
+    /// Total unique visible keys count
+    unique_key_count: AtomicUsize,
 }
 
 impl MemTable {
@@ -70,7 +81,13 @@ impl MemTable {
     /// let memtable = MemTable::new(100);
     /// ```
     pub fn new(start_sequence: u64) -> Self {
-        Self { data: Arc::new(SkipMap::new()), size: AtomicUsize::new(0), start_sequence }
+        Self {
+            data: Arc::new(SkipMap::new()),
+            size: AtomicUsize::new(0),
+            start_sequence,
+            key_map: Mutex::new(HashMap::new()),
+            unique_key_count: AtomicUsize::new(0),
+        }
     }
 
     /// Inserts a key-value pair into the MemTable.
@@ -95,6 +112,30 @@ impl MemTable {
 
         // Calculate the size of this entry
         let entry_size = internal_key.user_key().len() + value_vec.len() + 16; // 16 bytes overhead
+
+        // Track unique key count
+        {
+            let mut key_map = self.key_map.lock().unwrap();
+            let key_vec = key.to_vec();
+            let old_entry = key_map.get(&key_vec).cloned();
+
+            match old_entry {
+                None => {
+                    // New key - increment count
+                    self.unique_key_count.fetch_add(1, Ordering::SeqCst);
+                }
+                Some((_old_seq, old_value_type)) => {
+                    // Key exists - only increment if old entry was a tombstone (deletion)
+                    // This handles the case: put -> delete -> put (the second put should increment)
+                    if old_value_type == ValueType::Deletion {
+                        self.unique_key_count.fetch_add(1, Ordering::SeqCst);
+                    }
+                    // If old entry was also a Value, we don't increment (updating existing key)
+                }
+            }
+            // Store the new sequence and value type
+            key_map.insert(key_vec, (sequence, ValueType::Value));
+        }
 
         self.data.insert(internal_key, value_vec);
         self.size.fetch_add(entry_size, Ordering::Relaxed);
@@ -179,6 +220,22 @@ impl MemTable {
         // Tombstone has no value
         let entry_size = internal_key.user_key().len() + 16; // 16 bytes overhead
 
+        // Track unique key count - only decrement if old entry was a Value (not a tombstone)
+        {
+            let mut key_map = self.key_map.lock().unwrap();
+            let key_vec = key.to_vec();
+            if let Some((old_seq, old_value_type)) = key_map.get(&key_vec).cloned() {
+                // Only decrement if the old entry was a visible value (not a tombstone)
+                // and if this delete has a higher sequence (meaning it actually makes it invisible)
+                if old_value_type == ValueType::Value && old_seq < sequence {
+                    self.unique_key_count.fetch_sub(1, Ordering::SeqCst);
+                }
+                // If old entry was a tombstone, we don't decrement (key was already invisible)
+            }
+            // Store the new tombstone with its sequence
+            key_map.insert(key_vec, (sequence, ValueType::Deletion));
+        }
+
         self.data.insert(internal_key, Vec::new());
         self.size.fetch_add(entry_size, Ordering::Relaxed);
     }
@@ -198,6 +255,43 @@ impl MemTable {
     /// ```
     pub fn approximate_size(&self) -> usize {
         self.size.load(Ordering::Relaxed)
+    }
+
+    /// Returns the approximate number of unique keys in the MemTable.
+    ///
+    /// This counts user keys that have at least one Value (non-tombstone) entry
+    /// visible at the latest sequence. The count is maintained incrementally
+    /// during put/delete operations for O(1) lookup.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aidb::memtable::MemTable;
+    ///
+    /// let memtable = MemTable::new(1);
+    /// memtable.put(b"key1", b"value1", 1);
+    /// memtable.put(b"key2", b"value2", 2);
+    /// assert_eq!(memtable.approximate_unique_key_count(), 2);
+    ///
+    /// // Update key1
+    /// memtable.put(b"key1", b"value1_updated", 3);
+    /// assert_eq!(memtable.approximate_unique_key_count(), 2); // Still 2
+    ///
+    /// // Delete key1
+    /// memtable.delete(b"key1", 4);
+    /// assert_eq!(memtable.approximate_unique_key_count(), 1); // Now 1
+    /// ```
+    pub fn approximate_unique_key_count(&self) -> usize {
+        self.unique_key_count.load(Ordering::SeqCst)
+    }
+
+    /// Returns `true` if the key exists in the MemTable's key_map.
+    ///
+    /// Unlike `get`, this returns `true` even if the key is marked as deleted (tombstone).
+    /// This is useful for checking if a key has ever been written, regardless of visibility.
+    pub fn key_map_contains(&self, key: &[u8]) -> bool {
+        let key_map = self.key_map.lock().unwrap();
+        key_map.contains_key(key)
     }
 
     /// Returns the number of entries in the MemTable.
@@ -313,23 +407,54 @@ impl MemTable {
     }
 }
 
+/// Type alias for a full-range skiplist range iterator.
+type MemTableRangeIter = crossbeam_skiplist::map::Range<
+    'static,
+    InternalKey,
+    std::ops::RangeFrom<InternalKey>,
+    InternalKey,
+    Vec<u8>,
+>;
+
 /// Iterator over MemTable entries in sorted order.
+///
+/// Uses a `Range` internally to support efficient seeking (RocksDB-style positioning).
+/// The initial range covers all entries; `seek(target)` narrows to a prefix.
 pub struct MemTableIterator {
-    _data: Arc<SkipMap<InternalKey, Vec<u8>>>,
-    iter: crossbeam_skiplist::map::Iter<'static, InternalKey, Vec<u8>>,
+    data: Arc<SkipMap<InternalKey, Vec<u8>>>,
+    range: MemTableRangeIter,
 }
 
 impl MemTableIterator {
     fn new(data: Arc<SkipMap<InternalKey, Vec<u8>>>) -> Self {
+        // Start from the smallest possible InternalKey to cover all entries
+        let lower = InternalKey::new(vec![], u64::MAX, ValueType::Value);
         // SAFETY: We're using Arc to keep the SkipMap alive for the lifetime of the iterator
-        let iter = unsafe {
+        let range = unsafe {
             std::mem::transmute::<
-                crossbeam_skiplist::map::Iter<'_, InternalKey, Vec<u8>>,
-                crossbeam_skiplist::map::Iter<'static, InternalKey, Vec<u8>>,
-            >(data.iter())
+                crossbeam_skiplist::map::Range<'_, InternalKey, std::ops::RangeFrom<InternalKey>, InternalKey, Vec<u8>>,
+                MemTableRangeIter,
+            >(data.range(lower..))
         };
 
-        Self { _data: data, iter }
+        Self { data, range }
+    }
+
+    /// Seek to the first entry whose user_key >= target.
+    ///
+    /// Creates a new Range starting from the target key with u64::MAX sequence
+    /// and Value type (the smallest InternalKey for that user_key, since higher
+    /// sequences come first in the descending order).
+    pub fn seek(&mut self, target: &[u8]) {
+        let lower = InternalKey::new(target.to_vec(), u64::MAX, ValueType::Value);
+        // SAFETY: The Arc keeps SkipMap alive for the lifetime of the range.
+        let range = unsafe {
+            std::mem::transmute::<
+                crossbeam_skiplist::map::Range<'_, InternalKey, std::ops::RangeFrom<InternalKey>, InternalKey, Vec<u8>>,
+                MemTableRangeIter,
+            >(self.data.range(lower..))
+        };
+        self.range = range;
     }
 
     /// Returns the current entry without advancing the iterator.
@@ -344,7 +469,7 @@ impl Iterator for MemTableIterator {
     type Item = MemTableEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
+        self.range
             .next()
             .map(|entry| MemTableEntry { key: entry.key().clone(), value: entry.value().clone() })
     }

@@ -43,15 +43,22 @@ pub struct RaftNetworkClient {
     client: Option<RaftServiceClient<tonic::transport::Channel>>,
     /// RPC request timeout
     request_timeout: Duration,
+    /// Raft group ID (0 = MetaRaft, >0 = data group)
+    group_id: u64,
 }
 
 #[cfg(feature = "raft-cluster")]
 impl RaftNetworkClient {
     /// Create a new network client
-    pub fn new(_node_id: NodeId, _target: NodeId, target_addr: String) -> Self {
+    pub fn new(_node_id: NodeId, _target: NodeId, target_addr: String, group_id: u64) -> Self {
         let timeout_ms: u64 =
             env::var("RAFT_RPC_TIMEOUT_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
-        Self { target_addr, client: None, request_timeout: Duration::from_millis(timeout_ms) }
+        Self {
+            target_addr,
+            client: None,
+            request_timeout: Duration::from_millis(timeout_ms),
+            group_id,
+        }
     }
 
     /// Get or create the gRPC client connection
@@ -79,6 +86,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         RPCError<NodeId, openraft::BasicNode, RaftError<NodeId>>,
     > {
         let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         // Convert request to protobuf
@@ -99,7 +107,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         }
 
         let request = raft_rpc::AppendEntriesRequest {
-            group_id: 0, // Default group for single-Raft mode
+            group_id,
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,
@@ -158,6 +166,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         >,
     > {
         let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         // Convert metadata to protobuf
@@ -173,7 +182,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
 
         // In openraft 0.9, snapshots are sent in chunks
         let request = raft_rpc::InstallSnapshotRequest {
-            group_id: 0, // Default group for single-Raft mode
+            group_id,
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,
@@ -219,10 +228,11 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         RPCError<NodeId, openraft::BasicNode, RaftError<NodeId>>,
     > {
         let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
         let client = self.get_client().await.map_err(RPCError::Network)?;
 
         let request = raft_rpc::VoteRequest {
-            group_id: 0, // Default group for single-Raft mode
+            group_id,
             vote_term: rpc.vote.leader_id.term,
             vote_node_id: rpc.vote.leader_id.node_id,
             vote_committed: rpc.vote.committed,
@@ -269,15 +279,23 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
 pub struct RaftNetworkClientFactory {
     /// Current node ID
     node_id: NodeId,
-    /// Map of node IDs to addresses
+    /// Raft group ID (0 = MetaRaft, >0 = data group)
+    group_id: u64,
+    /// Map of node IDs to addresses (shared across all group-specific factories)
     nodes: Arc<RwLock<HashMap<NodeId, String>>>,
 }
 
 #[cfg(feature = "raft-cluster")]
 impl RaftNetworkClientFactory {
-    /// Create a new network factory
+    /// Create a new network factory for MetaRaft (group_id = 0)
     pub fn new(node_id: NodeId) -> Self {
-        Self { node_id, nodes: Arc::new(RwLock::new(HashMap::new())) }
+        Self { node_id, group_id: 0, nodes: Arc::new(RwLock::new(HashMap::new())) }
+    }
+
+    /// Create a copy of this factory for a specific data Raft group,
+    /// sharing the same node address map.
+    pub fn with_group_id(&self, group_id: u64) -> Self {
+        Self { node_id: self.node_id, group_id, nodes: Arc::clone(&self.nodes) }
     }
 
     /// Add a node address
@@ -314,7 +332,7 @@ impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
                 .unwrap_or_else(|| format!("http://127.0.0.1:{}", 50000 + target))
         };
 
-        RaftNetworkClient::new(self.node_id, target, target_addr)
+        RaftNetworkClient::new(self.node_id, target, target_addr, self.group_id)
     }
 }
 

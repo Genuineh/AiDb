@@ -12,13 +12,14 @@ use std::sync::Arc;
 use openraft::{storage::Adaptor, BasicNode, Config, Raft};
 
 use super::meta_state_machine::MetaStateMachine;
-use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse};
+use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse, NodeStatus, SlotMigrationState};
 use super::raft_network::RaftNetworkClientFactory;
-use super::raft_storage::{NodeId, OpenRaftStorage, Request, TypeConfig};
+use super::raft_storage::{NodeId, OpenRaftStorage, Request, Response, TypeConfig};
 use super::sharded_storage::GroupId;
 use crate::config::Options;
 use crate::error::{Error, Result};
 use crate::DB;
+use tracing::{info, warn};
 
 /// MetaRaft Node for managing cluster metadata
 ///
@@ -219,6 +220,22 @@ impl MetaRaftNode {
         self.propose_meta_change(request).await
     }
 
+    /// Set migration state for a slot.
+    pub async fn set_slot_migration_state(
+        &self,
+        slot: u16,
+        state: SlotMigrationState,
+    ) -> Result<MetaResponse> {
+        let request = MetaRequest::SetSlotMigrationState { slot, state };
+        self.propose_meta_change(request).await
+    }
+
+    /// Clear migration metadata for a slot.
+    pub async fn clear_slot_migration(&self, slot: u16) -> Result<MetaResponse> {
+        let request = MetaRequest::ClearSlotMigration { slot };
+        self.propose_meta_change(request).await
+    }
+
     /// Update group leader
     pub async fn update_group_leader(
         &self,
@@ -229,6 +246,16 @@ impl MetaRaftNode {
         self.propose_meta_change(request).await
     }
 
+    /// Update node status in cluster metadata.
+    pub async fn update_node_status(
+        &self,
+        node_id: NodeId,
+        status: NodeStatus,
+    ) -> Result<MetaResponse> {
+        let request = MetaRequest::UpdateNodeStatus { node_id, status };
+        self.propose_meta_change(request).await
+    }
+
     /// Get current cluster metadata
     ///
     /// This reads from the local state machine without going through Raft.
@@ -236,22 +263,89 @@ impl MetaRaftNode {
         self.meta_state.get_cluster_meta()
     }
 
+    /// See [`MetaStateMachine::get_config_version`].
+    pub fn get_config_version(&self) -> u64 {
+        self.meta_state.get_config_version()
+    }
+
     /// Propose a metadata change through Raft consensus
     ///
     /// This serializes the MetaRequest and proposes it as a Raft log entry.
     async fn propose_meta_change(&self, request: MetaRequest) -> Result<MetaResponse> {
+        let t0 = std::time::Instant::now();
+        info!(
+            diag_event = "metaraft_propose_attempt",
+            requester_node_id = self.node_id,
+            request_type = %match &request {
+                MetaRequest::AddNode { .. } => "AddNode",
+                MetaRequest::RemoveNode { .. } => "RemoveNode",
+                MetaRequest::CreateGroup { .. } => "CreateGroup",
+                MetaRequest::UpdateSlots { .. } => "UpdateSlots",
+                MetaRequest::UpdateGroupMembers { .. } => "UpdateGroupMembers",
+                MetaRequest::StartMigration { .. } => "StartMigration",
+                MetaRequest::CompleteMigration { .. } => "CompleteMigration",
+                MetaRequest::SetSlotMigrationState { .. } => "SetSlotMigrationState",
+                MetaRequest::ClearSlotMigration { .. } => "ClearSlotMigration",
+                MetaRequest::UpdateGroupLeader { .. } => "UpdateGroupLeader",
+                MetaRequest::UpdateNodeStatus { .. } => "UpdateNodeStatus",
+            },
+            "MetaRaft propose attempt"
+        );
         // Create a Request::Meta directly
         let meta_request = Request::Meta(request);
 
         // Propose through Raft
-        let _response = self
+        let cw = self
             .raft
             .client_write(meta_request)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to propose change: {:?}", e)))?;
+            .map_err(|e| {
+                let emsg = format!("{:?}", e);
+                if emsg.contains("ForwardToLeader") {
+                    warn!(
+                        diag_event = "metaraft_propose_forward_to_leader",
+                        requester_node_id = self.node_id,
+                        duration_ms = t0.elapsed().as_millis() as u64,
+                        error = %emsg,
+                        "MetaRaft propose returned ForwardToLeader"
+                    );
+                } else {
+                    warn!(
+                        diag_event = "metaraft_propose_failed",
+                        requester_node_id = self.node_id,
+                        duration_ms = t0.elapsed().as_millis() as u64,
+                        error = %emsg,
+                        "MetaRaft propose failed"
+                    );
+                }
+                Error::Internal(format!("Failed to propose change: {:?}", e))
+            })?;
 
-        // For now, return Ok - in a full implementation, we'd decode the response
-        Ok(MetaResponse::Ok)
+        match cw.data {
+            Response::Ok => {
+                info!(
+                    diag_event = "metaraft_propose_success",
+                    requester_node_id = self.node_id,
+                    duration_ms = t0.elapsed().as_millis() as u64,
+                    "MetaRaft propose applied"
+                );
+                Ok(MetaResponse::Ok)
+            }
+            Response::Error(msg) => {
+                warn!(
+                    diag_event = "metaraft_apply_rejected",
+                    requester_node_id = self.node_id,
+                    duration_ms = t0.elapsed().as_millis() as u64,
+                    error = %msg,
+                    "MetaRaft state machine rejected metadata change"
+                );
+                Err(Error::Internal(msg))
+            }
+            Response::Value(v) => Err(Error::Internal(format!(
+                "Unexpected MetaRaft client_write payload: {:?}",
+                v
+            ))),
+        }
     }
 
     /// Check if this node is the leader
@@ -263,6 +357,20 @@ impl MetaRaftNode {
     pub async fn get_leader(&self) -> Option<NodeId> {
         let metrics = self.raft.metrics().borrow().clone();
         metrics.current_leader
+    }
+
+    /// Look up a peer's gRPC address from the replicated MetaRaft membership.
+    ///
+    /// OpenRaft replicates `BasicNode { addr }` to every voter/learner, so even
+    /// nodes that never received the `ADDLEARNER` command directly will know the
+    /// correct address after log-replay.
+    pub fn get_member_address(&self, node_id: NodeId) -> Option<String> {
+        let metrics = self.raft.metrics().borrow().clone();
+        metrics
+            .membership_config
+            .membership()
+            .get_node(&node_id)
+            .map(|n| n.addr.clone())
     }
 
     /// Get node ID

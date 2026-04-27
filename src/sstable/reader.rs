@@ -10,6 +10,7 @@ use crate::sstable::footer::{BlockHandle, Footer};
 use crate::sstable::index::IndexBlock;
 use crate::sstable::{CompressionType, FOOTER_SIZE};
 use bytes::Bytes;
+use std::sync::OnceLock;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 #[cfg(unix)]
@@ -58,6 +59,9 @@ pub struct SSTableReader {
     file_size: u64,
     file_path: std::path::PathBuf,
     block_cache: Option<Arc<BlockCache>>,
+    /// Cached index entries for iterator reuse (RocksDB-style optimization)
+    /// Using Arc so multiple iterators can share the same index entries cheaply
+    index_entries: OnceLock<Arc<Vec<(Vec<u8>, BlockHandle)>>>,
 }
 
 impl SSTableReader {
@@ -150,6 +154,7 @@ impl SSTableReader {
             file_size,
             file_path: path.to_path_buf(),
             block_cache,
+            index_entries: OnceLock::new(),
         })
     }
 
@@ -480,16 +485,39 @@ impl SSTableReader {
         Ok(keys)
     }
 
-    /// Create an iterator over all key-value pairs
+/// Create an iterator over all key-value pairs
     pub fn iter(&self) -> SSTableIterator {
         SSTableIterator::new(self)
+    }
+
+    /// Get or initialize cached index entries (RocksDB-style optimization)
+    ///
+    /// Returns an Arc-wrapped Vec so multiple iterators can share the same data
+    /// without cloning. The index is lazily loaded on first access.
+    pub(crate) fn get_index_entries(&self) -> Arc<Vec<(Vec<u8>, BlockHandle)>> {
+        self.index_entries.get_or_init(|| {
+            let mut entries = Vec::new();
+            let mut index_iter = self.index_block.iter();
+            index_iter.seek_to_first();
+            while index_iter.advance() {
+                if let Ok(entry) = index_iter.entry() {
+                    entries.push((entry.key, entry.handle));
+                }
+            }
+            Arc::new(entries)
+        }).clone()
     }
 }
 
 /// Iterator over all entries in an SSTable
 pub struct SSTableIterator {
     file: Arc<File>,
-    index_iter_entries: Vec<(Vec<u8>, BlockHandle)>,
+    /// Shared index entries (Arc so cheap to clone for each iterator)
+    index_iter_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
+    /// Block cache for data block caching (RocksDB-style optimization)
+    block_cache: Option<Arc<BlockCache>>,
+    /// File number for cache key generation
+    file_number: u64,
     current_block_index: usize,
     current_block: Option<Block>,
     current_block_iter: Option<crate::sstable::block::BlockIterator>,
@@ -497,20 +525,16 @@ pub struct SSTableIterator {
 
 impl SSTableIterator {
     fn new(reader: &SSTableReader) -> Self {
-        // Collect all index entries upfront
-        let mut entries = Vec::new();
-        let mut index_iter = reader.index_block.iter();
-        index_iter.seek_to_first();
-
-        while index_iter.advance() {
-            if let Ok(entry) = index_iter.entry() {
-                entries.push((entry.key, entry.handle));
-            }
-        }
+        // Use cached index entries via Arc (RocksDB-style optimization)
+        // This avoids re-reading and re-parsing the index block on every iterator creation
+        // Arc makes cloning cheap - all iterators share the same index data
+        let index_iter_entries = reader.get_index_entries();
 
         Self {
             file: Arc::clone(&reader.file),
-            index_iter_entries: entries,
+            index_iter_entries,
+            block_cache: reader.block_cache.clone(),
+            file_number: reader.file_number,
             current_block_index: 0,
             current_block: None,
             current_block_iter: None,
@@ -524,16 +548,99 @@ impl SSTableIterator {
         Ok(())
     }
 
-    /// Load the current data block
-    fn load_current_block(&mut self) -> Result<()> {
-        if self.current_block_index >= self.index_iter_entries.len() {
+    /// Seek to first entry with key >= target using binary search on index.
+    ///
+    /// This provides O(log n) positioning instead of linear scan.
+    /// Uses the pre-collected index_iter_entries which is sorted by key.
+    pub fn seek_to_target(&mut self, target: &[u8]) -> Result<()> {
+        if self.index_iter_entries.is_empty() {
+            self.current_block_index = 0;
             self.current_block = None;
             self.current_block_iter = None;
             return Ok(());
         }
 
-        let (_, handle) = &self.index_iter_entries[self.current_block_index];
-        let block_data = SSTableReader::read_block_with_handle(&self.file, handle)?;
+        // Binary search to find the block containing target key
+        // index_iter_entries is sorted by key (ascending)
+        let idx = match self.index_iter_entries.binary_search_by(|e| {
+            e.0.as_slice().cmp(target)
+        }) {
+            Ok(found) => found,                    // Exact match at found
+            Err(insert_pos) => insert_pos.saturating_sub(1), // Last block with key < target
+        };
+
+        self.current_block_index = idx;
+        self.load_current_block()?;
+
+        // Now we need to find the first entry >= target within the block.
+        // The block iterator is at its first entry after load_current_block.
+        // We loop until we find a key >= target, or exhaust all blocks.
+        while self.valid() {
+            if self.key() >= target {
+                // Found target position - iterator is correctly positioned.
+                return Ok(());
+            }
+            // Advance within current block; if exhausted, load next block.
+            if !self.advance_to_next_in_block_or_next_block()? {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Advance within current block, or move to next block if current block exhausted.
+    /// Returns false if we've exhausted all blocks.
+    fn advance_to_next_in_block_or_next_block(&mut self) -> Result<bool> {
+        if let Some(ref mut iter) = self.current_block_iter {
+            if iter.advance() {
+                return Ok(true);  // Advanced within current block
+            }
+        }
+
+        // Move to next block
+        if self.current_block_index + 1 < self.index_iter_entries.len() {
+            self.current_block_index += 1;
+            self.load_current_block()?;
+            return Ok(self.valid());
+        }
+
+        // No more blocks
+        self.current_block_index = self.index_iter_entries.len();
+        self.current_block = None;
+        self.current_block_iter = None;
+        Ok(false)
+    }
+
+    /// Load the current data block (RocksDB-style with block cache)
+///
+/// First checks the block cache, then loads from disk if not cached.
+/// This is the key optimization for iterative scans over the same SSTable.
+fn load_current_block(&mut self) -> Result<()> {
+    if self.current_block_index >= self.index_iter_entries.len() {
+        self.current_block = None;
+        self.current_block_iter = None;
+        return Ok(());
+    }
+
+    let (_, handle) = &self.index_iter_entries[self.current_block_index];
+
+    // Try block cache first (RocksDB-style optimization)
+    let block_data = if let Some(ref cache) = self.block_cache {
+        let cache_key = CacheKey::new(self.file_number, handle.offset);
+        if let Some(cached_data) = cache.get(&cache_key) {
+            cached_data
+        } else {
+            // Cache miss - load from disk and insert into cache
+            let data = SSTableReader::read_block_with_handle(&self.file, handle)?;
+            cache.insert(cache_key, data.clone());
+            data
+        }
+    } else {
+        // No cache - load directly from disk
+        SSTableReader::read_block_with_handle(&self.file, handle)?
+    };
+
         let block = Block::new(block_data)?;
 
         let mut iter = block.iter();

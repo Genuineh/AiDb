@@ -19,6 +19,14 @@
 //! - **Phase 4**: MetaRaft integration and cleanup ✅
 //! - **Phase 5**: Testing and documentation ✅
 //!
+//! # Production note
+//!
+//! The data move path in this module operates on local `ShardedStateMachine`
+//! instances. It is ideal for single-process multi-group tests and demos.
+//! For multi-process production clusters, use Redis protocol orchestration
+//! (`CLUSTER GETKEYSINSLOT` + `MIGRATE` + `CLUSTER SETSLOT`) for cross-node
+//! data transfer.
+//!
 //! # Example
 //!
 //! ```no_run

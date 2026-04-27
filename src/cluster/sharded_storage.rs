@@ -188,10 +188,66 @@ impl ShardedRaftStorage {
         groups.keys().copied().collect()
     }
 
+    /// Sum MemTable / WAL / block-cache stats across every local Raft group's [`DB`].
+    ///
+    /// This matches the storage layout used by AiKv cluster mode (`OpenRaftStorage` per group).
+    pub fn aggregate_aidb_storage_stats(&self) -> (u64, u64, u64, u64) {
+        let groups = self.groups.read();
+        let mut total_memtable = 0u64;
+        let mut total_wal = 0u64;
+        let mut total_block_cache = 0u64;
+        let mut total_block_cache_cap = 0u64;
+        for storage in groups.values() {
+            let db = storage.db();
+            total_memtable += db.total_memtable_size();
+            total_wal += db.wal_size();
+            total_block_cache += db.block_cache_size();
+            total_block_cache_cap += db.block_cache_capacity();
+        }
+        (
+            total_memtable,
+            total_wal,
+            total_block_cache,
+            total_block_cache_cap,
+        )
+    }
+
     /// Get the number of active groups
     pub fn group_count(&self) -> usize {
         let groups = self.groups.read();
         groups.len()
+    }
+
+    /// Sum dbsize() across all local Raft groups for DBSIZE command.
+    pub fn aggregate_dbsize(&self) -> usize {
+        let groups = self.groups.read();
+        let mut total = 0usize;
+        for storage in groups.values() {
+            total += storage.db().dbsize();
+        }
+        total
+    }
+
+    /// Reset key count to zero on all groups.
+    ///
+    /// This is used after flush operations to ensure accurate key counting.
+    pub fn reset_all_key_counts(&self) {
+        let groups = self.groups.read();
+        for storage in groups.values() {
+            storage.db().reset_key_count();
+        }
+    }
+
+    /// Clear all SSTable data in all groups.
+    ///
+    /// This should be called when flushing the database to ensure all SSTable data
+    /// is deleted and not just the keys in the state machine.
+    pub fn clear_all_data(&self) -> Result<()> {
+        let groups = self.groups.read();
+        for storage in groups.values() {
+            storage.clear_all_data()?;
+        }
+        Ok(())
     }
 
     /// Check if a group exists
@@ -232,7 +288,11 @@ impl ShardedRaftStorage {
                                     loaded_count += 1;
                                 }
                                 Err(e) => {
-                                    eprintln!("Warning: Failed to load group {}: {}", group_id, e);
+                                    log::warn!(
+                                        "event=raft_load_group_failed group_id={} error={}",
+                                        group_id,
+                                        e
+                                    );
                                 }
                             }
                         }
@@ -299,6 +359,27 @@ impl ShardedRaftStorage {
     /// Get node ID
     pub fn node_id(&self) -> NodeId {
         self.node_id
+    }
+
+    /// Backup all group databases to the given directory.
+    ///
+    /// For each active group, flushes its underlying DB and copies SSTable + WAL
+    /// files using `BackupManager`. Returns the backup IDs for each group.
+    pub fn backup_all_groups(&self, backup_base_dir: &Path) -> Result<Vec<(GroupId, String)>> {
+        use crate::backup::{BackupManager, LocalFileStorage};
+
+        let groups = self.groups.read();
+        let mut results = Vec::with_capacity(groups.len());
+
+        for (&group_id, storage) in groups.iter() {
+            let group_backup_dir = backup_base_dir.join(format!("group_{}", group_id));
+            let file_storage = LocalFileStorage::new(&group_backup_dir);
+            let manager = BackupManager::new(file_storage);
+            let backup_id = manager.create_backup(storage.db())?;
+            results.push((group_id, backup_id));
+        }
+
+        Ok(results)
     }
 }
 

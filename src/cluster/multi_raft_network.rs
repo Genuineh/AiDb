@@ -32,7 +32,7 @@ pub struct MultiRaftNetworkClient {
 impl MultiRaftNetworkClient {
     /// Create a new Multi-Raft network client
     pub fn new(group_id: GroupId, node_id: NodeId, target: NodeId, target_addr: String) -> Self {
-        Self { inner: RaftNetworkClient::new(node_id, target, target_addr), group_id }
+        Self { inner: RaftNetworkClient::new(node_id, target, target_addr, group_id), group_id }
     }
 
     /// Get the group ID
@@ -114,7 +114,7 @@ impl MultiRaftNetworkFactory {
     /// In a full Multi-Raft implementation, this would return a group-aware client.
     pub fn create_client(
         &self,
-        _group_id: GroupId,
+        group_id: GroupId,
         target: NodeId,
     ) -> Result<RaftNetworkClient, AiDbError> {
         let addresses = self.node_addresses.read();
@@ -123,7 +123,7 @@ impl MultiRaftNetworkFactory {
             .ok_or_else(|| AiDbError::Internal(format!("Node {} address not found", target)))?
             .clone();
 
-        Ok(RaftNetworkClient::new(self.node_id, target, target_addr))
+        Ok(RaftNetworkClient::new(self.node_id, target, target_addr, group_id))
     }
 }
 
@@ -139,7 +139,7 @@ impl RaftNetworkFactory<TypeConfig> for MultiRaftNetworkFactory {
             .cloned()
             .unwrap_or_else(|| format!("127.0.0.1:{}", 50051 + target));
 
-        RaftNetworkClient::new(self.node_id, target, target_addr)
+        RaftNetworkClient::new(self.node_id, target, target_addr, 0)
     }
 }
 

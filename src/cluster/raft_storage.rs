@@ -129,7 +129,221 @@ struct StorageState {
     snapshot_meta: Option<SnapshotMeta<NodeId, BasicNode>>,
 }
 
+/// Streaming iterator over state machine keys.
+///
+/// Yields logical keys (without `sm:` prefix) on-demand from the DB iterator.
+/// Streaming iterator over state-machine keys with optional limit.
+///
+/// RocksDB-style design: wraps the full `DBIterator`, filters for `sm:` prefix,
+/// and supports `seek(target)` for efficient cursor-based resumption.
+/// Optional `limit` caps how many entries are yielded; when `remaining` reaches
+/// 0 the iterator stops. `exhausted` tells the caller whether the underlying
+/// DB iterator has run out of matching keys.
+pub struct StateMachineKeyIter {
+    db_iter: crate::iterator::DBIterator,
+    prefix: Vec<u8>,
+    remaining: Option<usize>, // None = unlimited, Some(n) = stop after n sm: keys
+    pub exhausted: bool,
+}
+
+impl StateMachineKeyIter {
+    /// Create an unlimited iterator starting from the first `sm:` key.
+    pub fn new(db_iter: crate::iterator::DBIterator, prefix: Vec<u8>) -> Self {
+        Self { db_iter, prefix, remaining: None, exhausted: false }
+    }
+
+    /// Create a limited iterator that yields at most `limit` sm:-prefixed keys.
+    pub fn new_limited(db_iter: crate::iterator::DBIterator, prefix: Vec<u8>, limit: usize) -> Self {
+        Self { db_iter, prefix, remaining: Some(limit), exhausted: false }
+    }
+
+    /// Seek the underlying DB iterator to `sm:{target}` and reload the cursor.
+    /// If `target` is empty or `b""`, seeks to `sm:` (start of prefix range).
+    pub fn seek(&mut self, target: &[u8]) -> crate::Result<()> {
+        let mut full_target = self.prefix.clone();
+        full_target.extend_from_slice(target);
+        self.db_iter.seek(&full_target)
+    }
+
+    /// Seek to the first key strictly after `sm:{target}`.
+    /// Used for cursor-based resumption to skip the last-returned key.
+    pub fn seek_after(&mut self, target: &[u8]) -> crate::Result<()> {
+        let mut full_target = self.prefix.clone();
+        full_target.extend_from_slice(target);
+        // Append a 0x00 byte so we skip the exact match and land on the next key.
+        full_target.push(0);
+        self.db_iter.seek(&full_target)
+    }
+
+    /// Returns true if the iterator has a valid current entry.
+    pub fn valid(&self) -> bool {
+        if let Some(rem) = self.remaining {
+            if rem == 0 {
+                return false;
+            }
+        }
+        self.db_iter.valid()
+    }
+
+    /// Returns the current logical key (without `sm:` prefix).
+    pub fn key(&self) -> Option<Vec<u8>> {
+        if !self.db_iter.valid() {
+            return None;
+        }
+        let key = self.db_iter.key().to_vec();
+        let prefix_len = self.prefix.len();
+        if key.len() > prefix_len && key[..prefix_len] == self.prefix.as_slice()[..prefix_len] {
+            Some(key[prefix_len..].to_vec())
+        } else {
+            None
+        }
+    }
+}
+
+impl Iterator for StateMachineKeyIter {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ref mut rem) = self.remaining {
+            if *rem == 0 {
+                return None;
+            }
+        }
+
+        while self.db_iter.valid() {
+            let key = self.db_iter.key().to_vec();
+            let prefix_len = self.prefix.len();
+            let is_prefixed = key.len() > prefix_len
+                && key[..prefix_len] == self.prefix.as_slice()[..prefix_len];
+
+            if is_prefixed {
+                self.db_iter.next();
+                if let Some(ref mut rem) = self.remaining {
+                    *rem = rem.saturating_sub(1);
+                }
+                return Some(key[prefix_len..].to_vec());
+            }
+
+            // Key no longer has the expected prefix.
+            // Since we seek to the prefix range, the first non-prefixed key means
+            // we've left the prefix range; signal exhaustion.
+            if key.as_slice() > self.prefix.as_slice() {
+                self.exhausted = true;
+                return None;
+            }
+
+            self.db_iter.next();
+        }
+
+        self.exhausted = true;
+        None
+    }
+}
+
 impl OpenRaftStorage {
+    /// Get a reference to the underlying AiDb database instance.
+    pub fn db(&self) -> &Arc<DB> {
+        &self.db
+    }
+
+    /// Read a key from the replicated state-machine keyspace (`sm:` prefix in DB).
+    ///
+    /// This must match how [`OpenRaftStorage::apply_batch_internal`] writes user data.
+    pub fn get_state_machine_value(&self, logical_key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let sm_key = format!("sm:{}", String::from_utf8_lossy(logical_key));
+        tracing::debug!("get_state_machine_value: logical_key={}, sm_key={}", String::from_utf8_lossy(logical_key), sm_key);
+        self.db.get(sm_key.as_bytes())
+    }
+
+    /// List user keys in this group's DB whose Redis-cluster slot is `slot` (for `GETKEYSINSLOT`).
+    ///
+    /// Only keys under the replicated SM prefix `sm:` are scanned (same namespace as
+    /// [`Self::get_state_machine_value`]).
+    pub fn scan_state_machine_keys_in_slot(&self, slot: u16) -> Result<Vec<Vec<u8>>> {
+        use super::router::Router;
+
+        const PREFIX: &[u8] = b"sm:";
+        let mut iter = self.db.iter()?;
+        let mut out = Vec::new();
+        while iter.valid() {
+            let k = iter.key();
+            if let Some(logical) = k.strip_prefix(PREFIX) {
+                if Router::key_to_slot(logical) == slot {
+                    out.push(logical.to_vec());
+                }
+            }
+            iter.next();
+        }
+        Ok(out)
+    }
+
+    /// Scan all user keys in this group's DB (for SCAN command in cluster mode).
+    ///
+    /// Only keys under the replicated SM prefix `sm:` are scanned (same namespace as
+    /// [`Self::get_state_machine_value`]).
+    pub fn scan_all_state_machine_keys(&self) -> Result<Vec<Vec<u8>>> {
+        const PREFIX: &[u8] = b"sm:";
+        let mut iter = self.db.iter()?;
+        let mut out = Vec::new();
+        while iter.valid() {
+            let k = iter.key();
+            if let Some(logical) = k.strip_prefix(PREFIX) {
+                out.push(logical.to_vec());
+            }
+            iter.next();
+        }
+        Ok(out)
+    }
+
+    /// Streaming iterator over state machine keys.
+    ///
+    /// Unlike `scan_all_state_machine_keys` which loads all keys into memory,
+    /// this yields keys on-demand for efficient scanning of large datasets.
+    /// The iterator immediately seeks to the `sm:` prefix (RocksDB-style positioning).
+    pub fn scan_state_machine_keys_streaming(&self) -> Result<StateMachineKeyIter> {
+        let mut iter = StateMachineKeyIter::new(
+            self.db.iter()?,
+            b"sm:".to_vec(),
+        );
+        iter.seek(b"")?; // Position at first sm: key
+        Ok(iter)
+    }
+
+    /// Streaming scan with a hard limit — yields at most `limit` sm:-prefixed keys.
+    ///
+    /// The returned `StateMachineKeyIter` wraps a full (unlimited) `DBIterator` so
+    /// there is no artificial raw-entry cap — the iterator seeks directly to the
+    /// `sm:` prefix. For cursor-based resumption, use `.seek_after(last_key)` on the
+    /// iterator before consuming.
+    pub fn scan_state_machine_keys_streaming_limited(
+        &self,
+        limit: usize,
+    ) -> Result<StateMachineKeyIter> {
+        let mut iter = StateMachineKeyIter::new_limited(
+            self.db.iter()?,
+            b"sm:".to_vec(),
+            limit,
+        );
+        iter.seek(b"")?; // Position at first sm: key
+        Ok(iter)
+    }
+
+    /// Scan keys with a limit and early termination.
+    ///
+    /// Stops early when `limit` keys have been found, avoiding unnecessary scanning.
+    pub fn scan_keys_with_limit(&self, limit: usize) -> Result<Vec<Vec<u8>>> {
+        let mut iter = self.scan_state_machine_keys_streaming()?;
+        let mut result = Vec::with_capacity(limit);
+
+        while let Some(key) = iter.next() {
+            if result.len() >= limit {
+                break;
+            }
+            result.push(key);
+        }
+        Ok(result)
+    }
+
     /// Create a new OpenRaft storage
     pub fn new(db: Arc<DB>) -> Result<Self> {
         let storage = Self {
@@ -142,6 +356,13 @@ impl OpenRaftStorage {
         storage.load_state()?;
 
         Ok(storage)
+    }
+
+    /// Clear all data in the underlying DB (SSTables, MemTables, WAL).
+    ///
+    /// This should be called when flushing the database to ensure all data is also cleared.
+    pub fn clear_all_data(&self) -> Result<()> {
+        self.db.clear_all_data()
     }
 
     /// Create a new OpenRaft storage with MetaStateMachine (for MetaRaft group)
@@ -396,11 +617,13 @@ impl OpenRaftStorage {
                 WriteOp::Put { key, value, .. } => {
                     // Add "sm:" prefix for state machine data
                     let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
+                    tracing::debug!("apply_batch Put: sm_key={}, value_len={}", sm_key, value.len());
                     db_batch.put(sm_key.as_bytes(), value);
                 }
                 WriteOp::Delete { key, .. } => {
                     // Add "sm:" prefix for state machine data
                     let sm_key = format!("sm:{}", String::from_utf8_lossy(key));
+                    tracing::debug!("apply_batch Delete: sm_key={}", sm_key);
                     db_batch.delete(sm_key.as_bytes());
                 }
             }
@@ -784,33 +1007,38 @@ impl RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
     async fn build_snapshot(
         &mut self,
     ) -> std::result::Result<Snapshot<TypeConfig>, StorageError<NodeId>> {
-        // Create a snapshot of the current database state
         let snapshot_data = Vec::new();
-
-        // In a real implementation, you would iterate through all state machine keys
-        // and serialize them into the snapshot
         let cursor = Cursor::new(snapshot_data);
 
-        // Get current snapshot metadata from storage
-        let storage_state = self.db.get(b"raft:snapshot_meta").map_err(|e| StorageError::IO {
-            source: StorageIOError::read(openraft::AnyError::error(e.to_string())),
-        })?;
+        let last_applied: Option<LogId<NodeId>> =
+            self.db.get(b"raft:last_applied").ok().flatten().and_then(|data| {
+                bincode::deserialize(&data).ok()
+            });
 
-        let meta: SnapshotMeta<NodeId, BasicNode> = if let Some(data) = storage_state {
-            bincode::deserialize(&data).map_err(|e| StorageError::IO {
-                source: StorageIOError::read(openraft::AnyError::error(format!(
-                    "Failed to deserialize snapshot_meta: {}",
-                    e
-                ))),
-            })?
-        } else {
-            // Return a default empty snapshot
-            SnapshotMeta {
-                last_log_id: None,
-                last_membership: Default::default(),
-                snapshot_id: String::new(),
-            }
+        let membership: openraft::StoredMembership<NodeId, BasicNode> =
+            self.db.get(b"raft:membership").ok().flatten().and_then(|data| {
+                bincode::deserialize(&data).ok()
+            }).unwrap_or_default();
+
+        let snapshot_id = format!(
+            "snap-{}",
+            last_applied.map(|id| id.index).unwrap_or(0)
+        );
+
+        let meta = SnapshotMeta {
+            last_log_id: last_applied,
+            last_membership: membership,
+            snapshot_id: snapshot_id.clone(),
         };
+
+        let meta_data = bincode::serialize(&meta).map_err(|e| StorageError::IO {
+            source: StorageIOError::write(openraft::AnyError::error(format!(
+                "Failed to serialize snapshot meta: {}", e
+            ))),
+        })?;
+        self.db.put(b"raft:snapshot_meta", &meta_data).map_err(|e| StorageError::IO {
+            source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
+        })?;
 
         Ok(Snapshot { meta, snapshot: Box::new(cursor) })
     }
@@ -973,6 +1201,10 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         entries: &[Entry<TypeConfig>],
     ) -> std::result::Result<Vec<Response>, StorageError<NodeId>> {
         let mut responses = Vec::new();
+        let mut diag_meta_applies: u32 = 0;
+        let mut diag_data_batches: u32 = 0;
+        let mut diag_data_ops: u64 = 0;
+        let mut diag_data_payload_bytes: u64 = 0;
 
         for entry in entries {
             // Compute the response for this entry (handle Normal payloads and Membership entries specially)
@@ -983,7 +1215,19 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                             // Handle metadata request if we have a meta state machine
                             if let Some(ref meta_state) = self.meta_state {
                                 match meta_state.apply_meta_request(meta_request.clone()) {
-                                    Ok(_meta_response) => Response::Ok,
+                                    Ok(super::meta_types::MetaResponse::Ok) => {
+                                        diag_meta_applies = diag_meta_applies.saturating_add(1);
+                                        Response::Ok
+                                    }
+                                    Ok(super::meta_types::MetaResponse::Error(msg)) => {
+                                        Response::Error(msg)
+                                    }
+                                    Ok(super::meta_types::MetaResponse::ClusterMeta(_)) => {
+                                        Response::Error(
+                                            "Unexpected MetaResponse::ClusterMeta from apply"
+                                                .to_string(),
+                                        )
+                                    }
                                     Err(e) => Response::Error(format!("Meta apply failed: {}", e)),
                                 }
                             } else {
@@ -996,6 +1240,21 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
                         _ => {
                             // Convert request to WriteBatch (thin replication)
                             let batch = request.clone().to_batch();
+                            diag_data_batches = diag_data_batches.saturating_add(1);
+                            let n = batch.len() as u64;
+                            diag_data_ops = diag_data_ops.saturating_add(n);
+                            use crate::cluster::thin_replication::WriteOp;
+                            let approx: u64 = batch
+                                .iter()
+                                .map(|op| match op {
+                                    WriteOp::Put { key, value, .. } => {
+                                        (key.len() + value.len()) as u64
+                                    }
+                                    WriteOp::Delete { key, .. } => key.len() as u64,
+                                })
+                                .sum();
+                            diag_data_payload_bytes =
+                                diag_data_payload_bytes.saturating_add(approx);
 
                             // Apply batch to local DB
                             match self.apply_batch_internal(&batch) {
@@ -1040,6 +1299,51 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
             self.db.put(b"raft:last_applied", &data).map_err(|e| StorageError::IO {
                 source: StorageIOError::write(openraft::AnyError::error(e.to_string())),
             })?;
+        }
+
+        // MetaRaft：单条已在 `metaraft_sm_applied` 记录；此处仅汇总「单 tick 多 entry」。
+        // 数据 Raft（thin replication）：大批次用 info，小批次用 debug，避免正常 QPS 刷屏。
+        if !entries.is_empty() {
+            let last_idx = entries.last().map(|e| e.log_id.index);
+            if self.meta_state.is_some() {
+                if diag_meta_applies > 0 && entries.len() > 1 {
+                    tracing::info!(
+                        diag_event = "raft_storage_apply_entries_summary",
+                        is_meta_raft = true,
+                        entry_count = entries.len(),
+                        meta_apply_count = diag_meta_applies,
+                        last_log_index = ?last_idx,
+                        "MetaRaft applied multiple entries in one batch"
+                    );
+                }
+            } else if diag_data_batches > 0 {
+                let heavy = diag_data_ops >= 10
+                    || diag_data_payload_bytes >= 65_536
+                    || entries.len() >= 5;
+                if heavy {
+                    tracing::info!(
+                        diag_event = "raft_storage_apply_entries_summary",
+                        is_meta_raft = false,
+                        entry_count = entries.len(),
+                        data_batch_count = diag_data_batches,
+                        data_op_count = diag_data_ops,
+                        data_payload_bytes_approx = diag_data_payload_bytes,
+                        last_log_index = ?last_idx,
+                        "data Raft applied log batch (heavy)"
+                    );
+                } else {
+                    tracing::debug!(
+                        diag_event = "raft_storage_apply_entries_summary",
+                        is_meta_raft = false,
+                        entry_count = entries.len(),
+                        data_batch_count = diag_data_batches,
+                        data_op_count = diag_data_ops,
+                        data_payload_bytes_approx = diag_data_payload_bytes,
+                        last_log_index = ?last_idx,
+                        "data Raft applied log batch"
+                    );
+                }
+            }
         }
 
         Ok(responses)

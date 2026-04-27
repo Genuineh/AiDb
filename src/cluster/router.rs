@@ -6,7 +6,8 @@
 //!
 //! # Routing Logic
 //!
-//! 1. Compute slot from key: `slot = crc16(key) % 16384`
+//! 1. Compute slot from key (Redis Cluster rules): apply [hash tags](https://redis.io/docs/reference/cluster-spec/#hash-tags)
+//!    — only the substring inside `{...}` is hashed (if present); then `slot = crc16 % 16384`.
 //! 2. Look up group from slot: `group_id = meta.slots[slot]`
 //! 3. Get group replicas: `replicas = meta.groups[group_id].replicas`
 //!
@@ -40,6 +41,20 @@ const CRC16_XMODEM: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
 
 /// Number of slots in the cluster (Redis Cluster compatible)
 pub const SLOT_COUNT: usize = 16384;
+
+/// Redis Cluster hash tag: only the substring between the first `{` and the next `}` is used for
+/// the CRC16 slot (when that substring is non-empty). Matches Redis `HASH_SLOT` behavior used by
+/// AiKv `CLUSTER KEYSLOT` / MOVED checks.
+fn extract_hash_tag(key: &[u8]) -> &[u8] {
+    if let Some(start) = key.iter().position(|&b| b == b'{') {
+        if let Some(end) = key[start + 1..].iter().position(|&b| b == b'}') {
+            if end > 0 {
+                return &key[start + 1..start + 1 + end];
+            }
+        }
+    }
+    key
+}
 
 /// Router for mapping keys to Raft groups
 ///
@@ -94,8 +109,7 @@ impl Router {
 
     /// Compute the slot number for a key
     ///
-    /// Uses CRC-16/XMODEM hash (compatible with Redis Cluster) and takes
-    /// modulo 16384 to get the slot number.
+    /// Uses Redis Cluster rules (hash tags + CRC-16/XMODEM) and modulo 16384.
     ///
     /// # Arguments
     ///
@@ -114,7 +128,8 @@ impl Router {
     /// assert!(slot < 16384);
     /// ```
     pub fn key_to_slot(key: &[u8]) -> u16 {
-        let hash = CRC16_XMODEM.checksum(key);
+        let hash_part = extract_hash_tag(key);
+        let hash = CRC16_XMODEM.checksum(hash_part);
         hash % SLOT_COUNT as u16
     }
 
@@ -237,13 +252,33 @@ impl Router {
     ///
     /// Returns an error if MetaRaft client is not configured or fetch fails
     pub fn refresh_metadata(&self) -> Result<bool> {
+        self.pull_meta_if_behind_sm()
+    }
+
+    /// Refresh router cache when local MetaRaft SM has advanced (e.g. slot updates proposed on
+    /// another node). O(1) when `config_version` is already in sync.
+    pub fn sync_cache_from_meta_if_stale(&self) -> Result<()> {
+        let _ = self.pull_meta_if_behind_sm()?;
+        Ok(())
+    }
+
+    /// Copy SM metadata into the router if `config_version` differs from the cache.
+    fn pull_meta_if_behind_sm(&self) -> Result<bool> {
         let meta_client = self
             .meta_client
             .as_ref()
             .ok_or_else(|| Error::Internal("MetaRaft client not configured".to_string()))?;
 
+        let live_v = meta_client.get_config_version();
+        if live_v == self.get_version() {
+            return Ok(false);
+        }
+
         let new_meta = meta_client.get_cluster_meta();
-        Ok(self.update_metadata(new_meta))
+        let mut cache = self.meta_cache.write();
+        *cache = new_meta;
+        self.cached_version.store(cache.config_version, Ordering::Release);
+        Ok(true)
     }
 
     /// Watch MetaRaft for metadata changes and automatically update cache
@@ -358,6 +393,17 @@ mod tests {
         // Note: Can't guarantee different slots due to hash collisions,
         // but we can check it's in range
         assert!(slot3 < SLOT_COUNT as u16);
+    }
+
+    #[test]
+    fn test_key_to_slot_hash_tag_redis_cluster() {
+        // Same hashtag => same slot (cf. CLUSTER KEYSLOT / MOVED)
+        let a = Router::key_to_slot(b"{cluster_test}:key1");
+        let b = Router::key_to_slot(b"{cluster_test}:key2");
+        assert_eq!(a, b);
+        // Distinct from hashing the full key without tag semantics
+        let raw = Router::key_to_slot(b"cluster_test:key1");
+        assert_ne!(a, raw);
     }
 
     #[test]

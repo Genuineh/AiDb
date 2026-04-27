@@ -319,6 +319,29 @@ impl ShardedStateMachine {
         dbs.keys().copied().collect()
     }
 
+    /// Sum MemTable, WAL, and block-cache usage across every local group [`DB`].
+    ///
+    /// Used by AiKv `INFO memory` (`aidb_*` fields) and aidb-exporter in cluster mode.
+    pub fn aggregate_storage_stats(&self) -> (u64, u64, u64, u64) {
+        let dbs = self.dbs.read();
+        let mut total_memtable = 0u64;
+        let mut total_wal = 0u64;
+        let mut total_block_cache = 0u64;
+        let mut total_block_cache_cap = 0u64;
+        for db in dbs.values() {
+            total_memtable += db.total_memtable_size();
+            total_wal += db.wal_size();
+            total_block_cache += db.block_cache_size();
+            total_block_cache_cap += db.block_cache_capacity();
+        }
+        (
+            total_memtable,
+            total_wal,
+            total_block_cache,
+            total_block_cache_cap,
+        )
+    }
+
     /// Get the number of active groups
     ///
     /// # Returns
@@ -460,6 +483,26 @@ impl ShardedStateMachine {
                 keys.push(key.to_vec());
             }
 
+            iter.next();
+        }
+
+        Ok(keys)
+    }
+
+    /// Scan all keys in a specific group (for SCAN command in cluster mode).
+    ///
+    /// Unlike [`Self::scan_slot_keys_sync`], this returns ALL keys in the group
+    /// without slot filtering.
+    pub fn scan_all_group_keys_sync(&self, group_id: GroupId) -> Result<Vec<Vec<u8>>> {
+        let db = self.get_or_create_db(group_id)?;
+        let mut keys = Vec::new();
+
+        // Create an iterator over all keys in the database
+        let mut iter = db.iter()?;
+
+        // Iterate through all keys
+        while iter.valid() {
+            keys.push(iter.key().to_vec());
             iter.next();
         }
 

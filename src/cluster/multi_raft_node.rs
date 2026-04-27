@@ -4,15 +4,20 @@
 //! simultaneously, enabling horizontal scaling and data sharding.
 
 use parking_lot::RwLock;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 #[cfg(feature = "raft-cluster")]
-use openraft::{storage::Adaptor, BasicNode, Config, Raft};
+use openraft::{
+    error::{InitializeError, RaftError},
+    storage::Adaptor,
+    BasicNode, Config, Raft,
+};
 
 use super::meta_raft_node::MetaRaftNode;
-use super::meta_types::ClusterMeta;
+use super::meta_types::{ClusterMeta, GroupMeta, NodeStatus};
 use super::raft_network::RaftNetworkClientFactory;
 use super::raft_storage::{NodeId, Request, TypeConfig};
 use super::router::Router;
@@ -20,6 +25,7 @@ use super::sharded_state_machine::ShardedStateMachine;
 use super::sharded_storage::{GroupId, ShardedRaftStorage};
 use crate::config::Options;
 use crate::error::{Error, Result};
+use tokio::sync::Mutex as AsyncGroupInitMutex;
 
 /// Multi-Raft Node managing multiple independent Raft groups
 ///
@@ -46,6 +52,13 @@ pub struct MultiRaftNode {
     /// Active Raft groups (group_id -> Raft instance)
     groups: Arc<RwLock<HashMap<GroupId, Arc<Raft<TypeConfig>>>>>,
 
+    /// Ensures only one task runs `Raft::new` for a local data group at a time.
+    ///
+    /// Without this, [`Self::load_groups_from_meta`] (user command) and the background
+    /// metadata watcher can both pass [`Self::has_group`] before either inserts into
+    /// [`Self::groups`], constructing two Raft cores on the same on-disk storage.
+    group_init_lock: Arc<AsyncGroupInitMutex<()>>,
+
     /// Sharded storage managing per-group storage
     storage: Arc<ShardedRaftStorage>,
 
@@ -63,6 +76,23 @@ pub struct MultiRaftNode {
 
     /// Default Raft configuration
     raft_config: Config,
+
+    /// Last MetaRaft metadata version applied by [`MultiRaftNode::sync_data_groups_from_meta`].
+    ///
+    /// Slot/group changes are usually proposed on the bootstrap node; other nodes replicate MetaRaft
+    /// but would otherwise never create local data-group storage. Data-plane entrypoints bump this
+    /// via [`MultiRaftNode::ensure_data_groups_for_current_meta`].
+    groups_synced_for_config_version: Arc<AtomicU64>,
+}
+
+/// Result of a streaming scan operation on a single group.
+pub struct GroupScanResult {
+    /// The keys found in this scan batch
+    pub keys: Vec<Vec<u8>>,
+    /// Whether this group has been fully exhausted (no more keys)
+    pub exhausted: bool,
+    /// Last key seen (for cursor resume)
+    pub last_key: Option<Vec<u8>>,
 }
 
 impl MultiRaftNode {
@@ -105,12 +135,14 @@ impl MultiRaftNode {
             node_id,
             meta_raft: None,
             groups: Arc::new(RwLock::new(HashMap::new())),
+            group_init_lock: Arc::new(AsyncGroupInitMutex::new(())),
             storage,
             network_factory,
             router: None,
             state_machine: None,
             data_dir,
             raft_config: config,
+            groups_synced_for_config_version: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -169,14 +201,22 @@ impl MultiRaftNode {
             }
         }
 
+        let _init_guard = self.group_init_lock.lock().await;
+        {
+            let groups = self.groups.read();
+            if let Some(group) = groups.get(&group_id) {
+                return Ok(Arc::clone(group));
+            }
+        }
+
         // Create storage for this group
         let group_storage = self.storage.create_group(group_id)?;
 
         // Use Adaptor to split storage
         let (log_store, state_machine) = Adaptor::new((*group_storage).clone());
 
-        // Create network factory (clone for this group)
-        let network = RaftNetworkClientFactory::new(self.node_id);
+        // Create a group-specific network factory so RPCs carry the correct group_id.
+        let network = self.network_factory.as_ref().with_group_id(group_id);
 
         // Validate config
         let config = self
@@ -192,22 +232,10 @@ impl MultiRaftNode {
 
         let raft = Arc::new(raft);
 
-        // Initialize if this node is in the replica list
-        if replicas.contains(&self.node_id) {
-            let mut members = BTreeMap::new();
-            for replica in &replicas {
-                // Use default address - in production, these should be configured
-                let addr = format!("127.0.0.1:{}", 50051 + replica);
-                members.insert(*replica, BasicNode { addr });
-            }
-
-            // Only initialize if we're the first node (node_id is minimum)
-            if self.node_id == *replicas.iter().min().unwrap_or(&self.node_id) {
-                raft.initialize(members)
-                    .await
-                    .map_err(|e| Error::Internal(format!("Failed to initialize group: {:?}", e)))?;
-            }
-        }
+        Self::maybe_initialize_raft(&raft, self.node_id, &replicas, None, || {
+            self.peer_raft_grpc_addr(self.node_id)
+        })
+        .await?;
 
         // Store in groups map
         {
@@ -216,6 +244,101 @@ impl MultiRaftNode {
         }
 
         Ok(raft)
+    }
+
+    /// Like [`Self::create_raft_group`] but honours `designated_leader` from
+    /// [`ClusterMeta`] so that only the meta-designated leader initialises the
+    /// Raft group, avoiding split-brain when a replica's hash-based node-id
+    /// happens to be smaller than the master's.
+    async fn create_raft_group_with_leader(
+        &self,
+        group_id: GroupId,
+        replicas: Vec<NodeId>,
+        designated_leader: Option<NodeId>,
+    ) -> Result<Arc<Raft<TypeConfig>>> {
+        {
+            let groups = self.groups.read();
+            if let Some(group) = groups.get(&group_id) {
+                return Ok(Arc::clone(group));
+            }
+        }
+
+        let _init_guard = self.group_init_lock.lock().await;
+        {
+            let groups = self.groups.read();
+            if let Some(group) = groups.get(&group_id) {
+                return Ok(Arc::clone(group));
+            }
+        }
+
+        let group_storage = self.storage.create_group(group_id)?;
+        let (log_store, state_machine) = Adaptor::new((*group_storage).clone());
+        let network = self.network_factory.as_ref().with_group_id(group_id);
+        let config = self
+            .raft_config
+            .clone()
+            .validate()
+            .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
+        let raft = Raft::new(self.node_id, Arc::new(config), network, log_store, state_machine)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
+        let raft = Arc::new(raft);
+
+        Self::maybe_initialize_raft(&raft, self.node_id, &replicas, designated_leader, || {
+            self.peer_raft_grpc_addr(self.node_id)
+        })
+        .await?;
+
+        {
+            let mut groups = self.groups.write();
+            groups.insert(group_id, Arc::clone(&raft));
+        }
+
+        Ok(raft)
+    }
+
+    /// Conditionally initialise a Raft instance as a single-voter group.
+    ///
+    /// When `designated_leader` is `Some`, only that node initialises.
+    /// Otherwise fall back to the smallest node-id in `replicas`.
+    async fn maybe_initialize_raft<F>(
+        raft: &Raft<TypeConfig>,
+        self_node_id: NodeId,
+        replicas: &[NodeId],
+        designated_leader: Option<NodeId>,
+        self_addr_fn: F,
+    ) -> Result<()>
+    where
+        F: FnOnce() -> Result<String>,
+    {
+        if !replicas.contains(&self_node_id) {
+            return Ok(());
+        }
+        let should_init = match designated_leader {
+            Some(leader) => self_node_id == leader,
+            None => self_node_id == *replicas.iter().min().unwrap_or(&self_node_id),
+        };
+        if should_init {
+            // Storage may already hold a vote/log (restart, leftover volume, or concurrent
+            // `create_raft_group_*`); OpenRaft rejects a second `initialize` with NotAllowed.
+            if raft
+                .is_initialized()
+                .await
+                .map_err(|e| Error::Internal(format!("Raft is_initialized failed: {:?}", e)))?
+            {
+                return Ok(());
+            }
+            let self_addr = self_addr_fn()?;
+            let members = BTreeMap::from([(self_node_id, BasicNode { addr: self_addr })]);
+            raft.initialize(members).await.or_else(|e| match e {
+                RaftError::APIError(InitializeError::NotAllowed(_)) => Ok(()),
+                other => Err(Error::Internal(format!(
+                    "Failed to initialize group: {:?}",
+                    other
+                ))),
+            })?;
+        }
+        Ok(())
     }
 
     /// Get an existing Raft group
@@ -302,6 +425,79 @@ impl MultiRaftNode {
         self.network_factory.add_node(node_id, addr);
     }
 
+    /// Resolve a peer's Raft gRPC URL for OpenRaft membership (`initialize` / replication).
+    ///
+    /// Uses the shared [`RaftNetworkClientFactory`] (e.g. `CLUSTER METARAFT ADDLEARNER`),
+    /// then falls back to [`ClusterMeta::nodes`] from MetaRaft (e.g. `CLUSTER MEET` Redis `host:port`).
+    fn peer_raft_grpc_addr(&self, peer: NodeId) -> Result<String> {
+        // 1. Directly registered addresses (ADDLEARNER on this node)
+        if let Some((_, mut a)) = self
+            .network_factory
+            .list_nodes()
+            .into_iter()
+            .find(|(id, _)| *id == peer)
+        {
+            if !a.starts_with("http://") && !a.starts_with("https://") {
+                a = format!("http://{}", a);
+            }
+            return Ok(a);
+        }
+
+        // 2. MetaRaft replicated membership (correct Docker hostnames from ADDLEARNER,
+        //    available on ALL members after log replication — not just the bootstrap node)
+        if let Some(meta_raft) = self.meta_raft.as_ref() {
+            if let Some(mut a) = meta_raft.get_member_address(peer) {
+                if !a.starts_with("http://") && !a.starts_with("https://") {
+                    a = format!("http://{}", a);
+                }
+                return Ok(a);
+            }
+        }
+
+        // 3. Infer from CLUSTER MEET Redis addresses (may be wrong in Docker)
+        if let Some(meta_raft) = self.meta_raft.as_ref() {
+            let meta = meta_raft.get_cluster_meta();
+            if let Some(node) = meta.nodes.get(&peer) {
+                return Ok(Self::infer_raft_grpc_url(&node.addr));
+            }
+        }
+
+        // 4. Unit tests without MetaRaft
+        if self.meta_raft.is_none() {
+            let port = 50051u64.saturating_add(peer);
+            if port <= u16::MAX as u64 {
+                return Ok(format!("http://127.0.0.1:{}", port));
+            }
+        }
+
+        Err(Error::Internal(format!(
+            "No cluster address for node {}; register via CLUSTER MEET / METARAFT ADDLEARNER",
+            peer
+        )))
+    }
+
+    /// `CLUSTER MEET` stores Redis `host:data_port`; bridge to inter-node Raft listener
+    /// (`50051 + data_port - 6379` for the default layout). Values that already look like
+    /// gRPC URLs are passed through.
+    fn infer_raft_grpc_url(addr: &str) -> String {
+        let addr = addr.trim();
+        if addr.starts_with("http://") || addr.starts_with("https://") {
+            return addr.to_string();
+        }
+        if let Some((host, port_s)) = addr.rsplit_once(':') {
+            if let Ok(port) = port_s.parse::<u16>() {
+                if (50_050..=50_200).contains(&port) {
+                    return format!("http://{}:{}", host, port);
+                }
+                if port >= 6379 {
+                    let raft = 50051u32 + u32::from(port.saturating_sub(6379));
+                    return format!("http://{}:{}", host, raft);
+                }
+            }
+        }
+        format!("http://{}", addr)
+    }
+
     /// Load existing groups from disk
     ///
     /// This scans the storage directory and creates Raft instances for all
@@ -314,31 +510,36 @@ impl MultiRaftNode {
         let group_ids: Vec<GroupId> = self.storage.list_groups();
 
         for group_id in group_ids {
-            if !self.has_group(group_id) {
-                let group_storage = self
-                    .storage
-                    .get_group(group_id)
-                    .ok_or_else(|| Error::Internal(format!("Group {} not found", group_id)))?;
-
-                // Use Adaptor to split storage
-                let (log_store, state_machine) = Adaptor::new((*group_storage).clone());
-
-                let network = RaftNetworkClientFactory::new(self.node_id);
-
-                let config = self
-                    .raft_config
-                    .clone()
-                    .validate()
-                    .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
-
-                let raft =
-                    Raft::new(self.node_id, Arc::new(config), network, log_store, state_machine)
-                        .await
-                        .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
-
-                let mut groups = self.groups.write();
-                groups.insert(group_id, Arc::new(raft));
+            if self.has_group(group_id) {
+                continue;
             }
+            let _init_guard = self.group_init_lock.lock().await;
+            if self.has_group(group_id) {
+                continue;
+            }
+
+            let group_storage = self
+                .storage
+                .get_group(group_id)
+                .ok_or_else(|| Error::Internal(format!("Group {} not found", group_id)))?;
+
+            // Use Adaptor to split storage
+            let (log_store, state_machine) = Adaptor::new((*group_storage).clone());
+
+            let network = self.network_factory.as_ref().with_group_id(group_id);
+
+            let config = self
+                .raft_config
+                .clone()
+                .validate()
+                .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
+
+            let raft = Raft::new(self.node_id, Arc::new(config), network, log_store, state_machine)
+                .await
+                .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
+
+            let mut groups = self.groups.write();
+            groups.insert(group_id, Arc::new(raft));
         }
 
         Ok(loaded)
@@ -496,11 +697,243 @@ impl MultiRaftNode {
             if group_meta.is_replica(self.node_id) {
                 // Create the group if it doesn't exist
                 if !self.has_group(*group_id) {
-                    self.create_raft_group(*group_id, group_meta.replicas.clone()).await?;
+                    tracing::info!(
+                        diag_event = "multi_raft_create_group_from_meta",
+                        node_id = self.node_id,
+                        group_id = *group_id,
+                        replica_count = group_meta.replicas.len(),
+                        meta_group_count = meta.groups.len(),
+                        "creating local data Raft group from cluster metadata"
+                    );
+                    self.create_raft_group_with_leader(
+                        *group_id,
+                        group_meta.replicas.clone(),
+                        group_meta.leader,
+                    )
+                    .await?;
                 }
             }
         }
 
+        Ok(())
+    }
+
+    /// Ensure local Raft data groups exist for every group in cluster metadata that includes
+    /// this node in `replicas`. Call after MetaRaft topology changes (ADDSLOTS, REPLICATE, etc.)
+    /// or on startup once MetaRaft is available.
+    pub async fn sync_data_groups_from_meta(&self) -> Result<()> {
+        let t0 = std::time::Instant::now();
+        let meta_raft = self
+            .meta_raft
+            .as_ref()
+            .ok_or_else(|| Error::Internal("MetaRaft not initialized".to_string()))?;
+        let cv_before = meta_raft.get_config_version();
+        let meta = meta_raft.get_cluster_meta();
+        let local_groups_before = self.list_groups().len();
+        tracing::info!(
+            diag_event = "sync_data_groups_from_meta_start",
+            node_id = self.node_id,
+            meta_config_version = cv_before,
+            meta_group_count = meta.groups.len(),
+            local_data_group_count = local_groups_before,
+            "sync_data_groups_from_meta start"
+        );
+        self.load_groups_from_meta(&meta).await?;
+        self.reconcile_data_group_membership(&meta).await;
+        let cv_after = meta_raft.get_config_version();
+        self.groups_synced_for_config_version
+            .store(cv_after, Ordering::Release);
+        tracing::info!(
+            diag_event = "sync_data_groups_from_meta_done",
+            node_id = self.node_id,
+            duration_ms = t0.elapsed().as_millis() as u64,
+            meta_config_version = cv_after,
+            local_data_group_count = self.list_groups().len(),
+            "sync_data_groups_from_meta done"
+        );
+        Ok(())
+    }
+
+    /// Voter set we want for a data group: every replica in [`GroupMeta::replicas`] that is not
+    /// [`NodeStatus::Offline`] in [`ClusterMeta::nodes`].
+    ///
+    /// Without promoting all live replicas to voters, only the initial leader may be a voter; after
+    /// it fails, remaining nodes stay learners and cannot elect a Raft leader — Redis failover alone
+    /// is not enough.
+    fn raft_voter_goal_for_group(meta: &ClusterMeta, group_meta: &GroupMeta) -> BTreeSet<NodeId> {
+        group_meta
+            .replicas
+            .iter()
+            .copied()
+            .filter(|id| {
+                meta.nodes
+                    .get(id)
+                    .map(|n| n.status != NodeStatus::Offline)
+                    .unwrap_or(true)
+            })
+            .collect()
+    }
+
+    /// For each data Raft group where this node is the leader, add any replicas
+    /// from [`ClusterMeta`] that are missing from the Raft membership as learners.
+    /// Learners receive full log replication so their state machines stay up-to-date,
+    /// enabling reads after a failover even without a Raft leader election.
+    ///
+    /// Then, if every **live** (non-Offline) meta replica is already known to Raft, call
+    /// [`Raft::change_membership`] so all of them become **voters**. That gives a 3-node shard
+    /// a 2-of-3 quorum after one node is lost.
+    async fn reconcile_data_group_membership(&self, meta: &ClusterMeta) {
+        for (group_id, group_meta) in &meta.groups {
+            let raft = match self.get_raft_group(*group_id) {
+                Some(r) => r,
+                None => continue,
+            };
+            let metrics = raft.metrics().borrow().clone();
+            if metrics.current_leader != Some(self.node_id) {
+                continue;
+            }
+            for replica_id in &group_meta.replicas {
+                if *replica_id == self.node_id {
+                    continue;
+                }
+                let already_known = metrics
+                    .membership_config
+                    .membership()
+                    .get_node(replica_id)
+                    .is_some();
+                if already_known {
+                    continue;
+                }
+                let addr = match self.peer_raft_grpc_addr(*replica_id) {
+                    Ok(a) => a,
+                    Err(_) => continue,
+                };
+                if let Err(e) =
+                    raft.add_learner(*replica_id, BasicNode { addr }, false).await
+                {
+                    tracing::warn!(
+                        "reconcile: add learner {} to group {} failed: {}",
+                        replica_id,
+                        group_id,
+                        e
+                    );
+                }
+            }
+
+            let latest_metrics = raft.metrics().borrow().clone();
+            let membership = latest_metrics.membership_config.membership();
+            let current_voters: BTreeSet<NodeId> = membership.voter_ids().collect();
+            let known_nodes: BTreeSet<NodeId> = membership.nodes().map(|(id, _)| *id).collect();
+            let desired_voters: BTreeSet<NodeId> = Self::raft_voter_goal_for_group(meta, group_meta);
+
+            if desired_voters.is_empty() && !group_meta.replicas.is_empty() {
+                tracing::warn!(
+                    group_id = *group_id,
+                    leader_id = self.node_id,
+                    meta_replicas = ?group_meta.replicas,
+                    "All group replicas are Offline in ClusterMeta; skip change_membership"
+                );
+                continue;
+            }
+
+            let ready_for_membership_change = !desired_voters.is_empty()
+                && current_voters != desired_voters
+                && desired_voters.is_subset(&known_nodes);
+            if ready_for_membership_change {
+                let change_timeout_ms = std::env::var("AIKV_DATA_GROUP_MEMBERSHIP_TIMEOUT_MS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(5000);
+                tracing::info!(
+                    group_id = *group_id,
+                    leader_id = self.node_id,
+                    current_voters = ?current_voters,
+                    desired_voters = ?desired_voters,
+                    "Reconciling data-group voters to live ClusterMeta replicas (retain old nodes as learners)"
+                );
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(change_timeout_ms),
+                    raft.change_membership(desired_voters.clone(), true),
+                )
+                .await
+                {
+                    Err(_) => {
+                        tracing::warn!(
+                            group_id = *group_id,
+                            leader_id = self.node_id,
+                            timeout_ms = change_timeout_ms,
+                            "Timed out change_membership for data group"
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            group_id = *group_id,
+                            leader_id = self.node_id,
+                            error = ?e,
+                            "change_membership failed for data group"
+                        );
+                    }
+                    Ok(Ok(_)) => {
+                        tracing::info!(
+                            group_id = *group_id,
+                            leader_id = self.node_id,
+                            voters = ?desired_voters,
+                            "Data-group voter membership reconciled"
+                        );
+                    }
+                }
+            } else if !desired_voters.is_empty() && current_voters != desired_voters {
+                tracing::debug!(
+                    group_id = *group_id,
+                    leader_id = self.node_id,
+                    current_voters = ?current_voters,
+                    desired_voters = ?desired_voters,
+                    known_nodes = ?known_nodes,
+                    "Defer change_membership until all desired replicas are Raft learners"
+                );
+            }
+        }
+    }
+
+    /// Async version: creates full Raft instances for any missing groups.
+    /// Use from `async fn` paths (`put`, `delete`, `write_batch_for_route_key`).
+    pub async fn ensure_data_groups_async(&self) -> Result<()> {
+        let Some(meta_raft) = self.meta_raft.as_ref() else {
+            return Ok(());
+        };
+        let live_v = meta_raft.get_config_version();
+        if live_v == self.groups_synced_for_config_version.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.sync_data_groups_from_meta().await
+    }
+
+    /// Synchronous, **non-blocking** equivalent of [`Self::sync_data_groups_from_meta`].
+    ///
+    /// Safe to call from inside a tokio `block_on` (e.g. `ClusterRaftEngine::set_value`).
+    /// Only creates **storage** for missing groups (pure sync); the full Raft instance will be
+    /// created by the background watcher or next `sync_data_groups_from_meta` call.
+    pub fn ensure_data_groups_for_current_meta(&self) -> Result<()> {
+        let Some(meta_raft) = self.meta_raft.as_ref() else {
+            return Ok(());
+        };
+        let live_v = meta_raft.get_config_version();
+        if live_v == self.groups_synced_for_config_version.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let meta = meta_raft.get_cluster_meta();
+        for (group_id, group_meta) in &meta.groups {
+            if group_meta.is_replica(self.node_id) && !self.storage.has_group(*group_id) {
+                self.storage.create_group(*group_id)?;
+            }
+        }
+        // IMPORTANT:
+        // This sync path only ensures local storage exists. It does NOT create in-memory
+        // Raft instances (`self.groups`) for missing groups.
+        //
+        // Therefore we must NOT advance `groups_synced_for_config_version` here, otherwise
+        // async write paths may skip `sync_data_groups_from_meta()` and then fail with:
+        // "No local storage for Raft group ...".
         Ok(())
     }
 
@@ -545,6 +978,8 @@ impl MultiRaftNode {
             .as_ref()
             .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
 
+        self.ensure_data_groups_async().await?;
+        router.sync_cache_from_meta_if_stale()?;
         let group_id = router.route(&key)?;
         let raft = self
             .get_raft_group(group_id)
@@ -560,6 +995,9 @@ impl MultiRaftNode {
 
     /// Get a value with automatic routing
     ///
+    /// Reads from the same on-disk state as Raft apply (`OpenRaftStorage`), not the optional
+    /// `ShardedStateMachine` cache (which is a separate path).
+    ///
     /// # Arguments
     ///
     /// * `key` - Key to retrieve
@@ -568,12 +1006,239 @@ impl MultiRaftNode {
     ///
     /// The value if found, `None` otherwise
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let state_machine = self
-            .state_machine
+        let router = self
+            .router
             .as_ref()
-            .ok_or_else(|| Error::Internal("State machine not initialized".to_string()))?;
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
 
-        state_machine.get_routed(key)
+        self.ensure_data_groups_for_current_meta()?;
+        router.sync_cache_from_meta_if_stale()?;
+        let group_id = router.route(key)?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+
+        group_storage.get_state_machine_value(key)
+    }
+
+    /// Read a key from the Raft group that **owns `slot`**, without deriving slot from `key` bytes.
+    ///
+    /// Expiration sidecar keys are stored under a `__exp__:` prefix; [`Self::get`] would route them
+    /// by CRC16 of the full key and hit the wrong shard. Callers must pass the **data key's** slot.
+    pub fn get_in_slot(&self, slot: u16, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let router = self
+            .router
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
+
+        self.ensure_data_groups_for_current_meta()?;
+        router.sync_cache_from_meta_if_stale()?;
+        let group_id = router.slot_to_group(slot)?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+
+        group_storage.get_state_machine_value(key)
+    }
+
+    /// Read a raw state-machine key from a specific local Raft group, without slot routing.
+    ///
+    /// While a slot is `IMPORTING` on this node, [`Self::get`] still routes by `meta.slots`
+    /// (current owner). Callers that must observe the target group's data (e.g. RESTORE
+    /// `BUSYKEY` checks) use this to read only the local group that is receiving the slot.
+    pub fn get_from_local_group(&self, group_id: GroupId, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.ensure_data_groups_for_current_meta()?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+        group_storage.get_state_machine_value(key)
+    }
+
+    /// Scan this node's local Raft group DB for `sm:` keys that hash to `slot` (Redis `GETKEYSINSLOT`).
+    pub fn scan_local_group_slot_keys_sync(&self, group_id: GroupId, slot: u16) -> Result<Vec<Vec<u8>>> {
+        self.ensure_data_groups_for_current_meta()?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+        group_storage.scan_state_machine_keys_in_slot(slot)
+    }
+
+    /// Scan all keys in this node's local Raft group DB (for SCAN command in cluster mode).
+    ///
+    /// Unlike [`Self::scan_local_group_slot_keys_sync`], this returns ALL keys in the group
+    /// without slot filtering.
+    pub fn scan_local_group_all_keys_sync(&self, group_id: GroupId) -> Result<Vec<Vec<u8>>> {
+        self.ensure_data_groups_for_current_meta()?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+        group_storage.scan_all_state_machine_keys()
+    }
+
+    /// Scan a single group with streaming and early termination.
+    ///
+    /// Returns up to `limit` keys and whether the group is exhausted.
+    /// Uses seek-based positioning (RocksDB-style) for efficient cursor resumption.
+    ///
+    /// If `start_key` is provided, seeks to the first key strictly after it,
+    /// enabling correct cursor-based resumption without scanning from the beginning.
+    pub async fn scan_group_streaming(
+        &self,
+        group_id: GroupId,
+        limit: usize,
+        start_key: Option<&[u8]>,
+    ) -> Result<GroupScanResult> {
+        self.ensure_data_groups_for_current_meta()?;
+        let group_storage = self.storage.get_group(group_id).ok_or_else(|| {
+            Error::NotFound(format!("No local storage for Raft group {}", group_id))
+        })?;
+
+        let mut iter = group_storage.scan_state_machine_keys_streaming_limited(limit)?;
+
+        // If resuming from a cursor, seek after the last-returned key
+        if let Some(start) = start_key {
+            iter.seek_after(start)?;
+        }
+
+        let mut keys = Vec::new();
+        let mut last_key = None;
+
+        for key in iter {
+            keys.push(key.clone());
+            last_key = Some(key);
+            if keys.len() >= limit {
+                break;
+            }
+        }
+
+        // exhausted if we got fewer keys than requested (DB ran out)
+        let exhausted = keys.len() < limit;
+
+        Ok(GroupScanResult {
+            keys,
+            exhausted,
+            last_key,
+        })
+    }
+
+    /// Cross-group streaming scan with cursor support.
+    ///
+    /// cursor format: "group_idx:last_key_base64" or empty for start
+    /// Returns: (next_cursor, keys)
+    pub async fn scan_groups_streaming(
+        &self,
+        cursor: Option<&str>,
+        count: usize,
+    ) -> Result<(String, Vec<Vec<u8>>)> {
+        let mut groups = self.list_groups();
+        // Sort for deterministic ordering — the cursor encodes a group index,
+        // so the order must be stable across calls.
+        groups.sort();
+        let (start_group_idx, resume_key) = Self::parse_scan_cursor(cursor);
+
+        if count == 0 || start_group_idx >= groups.len() {
+            return Ok((String::new(), Vec::new()));
+        }
+
+        let mut result_keys = Vec::new();
+        let mut pending_cursor: Option<String> = None;
+
+        for (group_idx, group_id) in groups.iter().enumerate() {
+            if group_idx < start_group_idx {
+                continue;
+            }
+
+            let remaining = count - result_keys.len();
+            let resume = if group_idx == start_group_idx { resume_key.as_deref() } else { None };
+            let group_result = self.scan_group_streaming(*group_id, remaining, resume).await?;
+
+            result_keys.extend(group_result.keys.clone());
+
+            if result_keys.len() >= count {
+                if !group_result.exhausted {
+                    // Continue from the same group, resume at last returned key.
+                    if let Some(last_key) = group_result.last_key {
+                        pending_cursor = Some(format!("{}:{}", group_idx, base64::encode(last_key)));
+                    } else {
+                        pending_cursor = Some(format!("{}:", group_idx));
+                    }
+                } else {
+                    // Current group exhausted; continue from next group.
+                    let next_group = group_idx + 1;
+                    if next_group < groups.len() {
+                        pending_cursor = Some(format!("{}:", next_group));
+                    }
+                }
+                break;
+            }
+        }
+
+        let next_cursor = if result_keys.len() < count {
+            String::new()
+        } else {
+            pending_cursor.unwrap_or_default()
+        };
+
+        Ok((next_cursor, result_keys))
+    }
+
+    /// Parse scan cursor: (group_idx, resume_key)
+    fn parse_scan_cursor(cursor: Option<&str>) -> (usize, Option<Vec<u8>>) {
+        match cursor {
+            None => (0, None),
+            Some("") => (0, None),
+            Some(c) => {
+                let parts: Vec<&str> = c.splitn(2, ':').collect();
+                let group_idx = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let resume_key = parts.get(1).and_then(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        base64::decode(s).ok()
+                    }
+                });
+                (group_idx, resume_key)
+            }
+        }
+    }
+    pub async fn write_batch_for_route_key(
+        &self,
+        route_key: &[u8],
+        batch: crate::cluster::thin_replication::WriteBatch,
+    ) -> Result<()> {
+        let router = self
+            .router
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
+
+        self.ensure_data_groups_async().await?;
+        router.sync_cache_from_meta_if_stale()?;
+        let group_id = router.route(route_key)?;
+        let raft = if let Some(r) = self.get_raft_group(group_id) {
+            r
+        } else {
+            // Some startup/order races can route to a group before local in-memory
+            // raft instances are fully materialized. Force a sync and retry once.
+            log::warn!(
+                "diag_event=db_write_batch_resync_retry group_id={} detail=local_raft_missing_before_sync",
+                group_id
+            );
+            self.sync_data_groups_from_meta().await?;
+            self.get_raft_group(group_id).ok_or_else(|| {
+                log::error!(
+                    "diag_event=db_write_batch_no_group_after_sync group_id={} detail=still_no_local_raft",
+                    group_id
+                );
+                Error::NotFound(format!("No local storage for Raft group {}", group_id))
+            })?
+        };
+
+        let request = Request::WriteBatch(batch);
+        raft.client_write(request)
+            .await
+            .map_err(|e| Error::Internal(format!("Raft write batch failed: {:?}", e)))?;
+
+        Ok(())
     }
 
     /// Delete a key with automatic routing
@@ -591,6 +1256,8 @@ impl MultiRaftNode {
             .as_ref()
             .ok_or_else(|| Error::Internal("Router not initialized".to_string()))?;
 
+        self.ensure_data_groups_async().await?;
+        router.sync_cache_from_meta_if_stale()?;
         let group_id = router.route(key)?;
         let raft = self
             .get_raft_group(group_id)
@@ -612,6 +1279,34 @@ impl MultiRaftNode {
     /// Get the state machine instance
     pub fn state_machine(&self) -> Option<&Arc<ShardedStateMachine>> {
         self.state_machine.as_ref()
+    }
+
+    /// Aggregate AiDb MemTable / WAL / block-cache stats for all local Raft group databases.
+    ///
+    /// Uses [`ShardedRaftStorage`] (the same DBs AiKv cluster writes to), not the optional
+    /// [`ShardedStateMachine`] helper from [`Self::init_state_machine`].
+    pub fn aggregate_aidb_storage_stats(&self) -> (u64, u64, u64, u64) {
+        self.storage.aggregate_aidb_storage_stats()
+    }
+
+    /// Aggregate dbsize() across all local Raft groups for DBSIZE command.
+    pub fn aggregate_dbsize(&self) -> usize {
+        self.storage.aggregate_dbsize()
+    }
+
+    /// Reset key count to zero on all local Raft groups.
+    ///
+    /// This is used after flush operations to ensure accurate key counting.
+    pub fn reset_all_key_counts(&self) {
+        self.storage.reset_all_key_counts();
+    }
+
+    /// Clear all SSTable data in all groups.
+    ///
+    /// This should be called when flushing the database to ensure all SSTable data
+    /// is deleted and not just the keys in the state machine.
+    pub fn clear_all_data(&self) -> Result<()> {
+        self.storage.clear_all_data()
     }
 
     /// Collect and update per-group metrics
@@ -706,7 +1401,11 @@ impl MultiRaftNode {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to cleanup logs for group {}: {}", group_id, e);
+                    log::warn!(
+                        "event=raft_cleanup_logs_failed group_id={} error={}",
+                        group_id,
+                        e
+                    );
                 }
             }
         }
@@ -774,7 +1473,11 @@ impl MultiRaftNode {
             match self.create_group_snapshot(group_id).await {
                 Ok(_) => created += 1,
                 Err(e) => {
-                    eprintln!("Warning: Failed to create snapshot for group {}: {}", group_id, e);
+                    log::warn!(
+                        "event=raft_create_snapshot_failed group_id={} error={}",
+                        group_id,
+                        e
+                    );
                 }
             }
         }

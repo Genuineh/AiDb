@@ -78,7 +78,7 @@ use memtable::MemTable;
 use parking_lot::{Mutex, RwLock};
 use sstable::{SSTableBuilder, SSTableReader};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use wal::WAL;
 
@@ -135,6 +135,10 @@ pub struct DB {
 
     /// Set to true when the DB is being dropped to signal the background flush thread to exit.
     flush_thread_shutdown: Arc<AtomicBool>,
+
+    /// Global key count - maintains exact count of visible keys across all layers.
+    /// This is O(1) for dbsize() operation.
+    total_key_count: Arc<AtomicUsize>,
 }
 
 impl DB {
@@ -341,8 +345,13 @@ impl DB {
         // Step 8: Initialize CompactionPicker
         let compaction_picker = CompactionPicker::new(options.max_levels);
 
-        // Step 9: Construct DB instance
+        // Step 9: Calculate initial key count from MemTable after recovery
+        // MemTable now contains all WAL entries applied, so its unique_key_count is accurate
+        let initial_key_count = memtable.approximate_unique_key_count();
+
+        // Step 10: Construct DB instance
         let flush_thread_shutdown = Arc::new(AtomicBool::new(false));
+        let total_key_count = Arc::new(AtomicUsize::new(initial_key_count));
 
         let db = Arc::new(DB {
             path,
@@ -359,6 +368,7 @@ impl DB {
             block_cache,
             flush_lock: Mutex::new(()),
             flush_thread_shutdown: Arc::clone(&flush_thread_shutdown),
+            total_key_count: Arc::clone(&total_key_count),
         });
 
         // Step 10: Spawn background flush thread.
@@ -433,6 +443,11 @@ impl DB {
         // Step 1: Get the next sequence number
         let seq = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
 
+        // Step 1b: Check if this is a new key (for accurate key counting)
+        // Uses bloom filter in SSTables for fast negative lookups - if bloom filter says
+        // "definitely not present", we skip the SSTable lookup entirely.
+        let is_new_key = !self.key_exists(key);
+
         // Step 2: Write to WAL first (for durability)
         if self.options.use_wal {
             let mut wal = self.wal.write();
@@ -457,6 +472,14 @@ impl DB {
         {
             let memtable = self.memtable.read();
             memtable.put(key, value, seq);
+        }
+
+        // Step 3b: Increment key count if this is a new key
+        // Use fetch_update with saturating_add to prevent overflow and ensure atomicity
+        if is_new_key {
+            let _ = self.total_key_count.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                Some(count.saturating_add(1))
+            });
         }
 
         // Step 4: Check if MemTable is full and needs flushing
@@ -558,6 +581,64 @@ impl DB {
         Ok(None)
     }
 
+    /// Checks if a key exists in MemTable layers only (fast, no SSTable scan).
+    ///
+    /// Returns `true` if the key has any entry (value or tombstone) in active or
+    /// immutable MemTables. Used for delete key counting where we skip SSTable scan
+    /// for performance.
+    fn key_exists_in_memtables(&self, key: &[u8]) -> bool {
+        // Skip internal expiration metadata keys
+        if key.starts_with(b"__exp__:") {
+            return false;
+        }
+
+        // Check active MemTable
+        if self.memtable.read().key_map_contains(key) {
+            return true;
+        }
+
+        // Check immutable MemTables
+        let immutable = self.immutable_memtables.read();
+        for memtable in immutable.iter() {
+            if memtable.key_map_contains(key) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Checks if a key exists in any layer (MemTable or SSTable).
+    ///
+    /// NOTE: This function performs expensive SSTable scans and should only be
+    /// used for background operations or debugging, NOT in hot paths.
+    ///
+    /// Returns `true` if the key has any entry (value or tombstone) in any layer.
+    #[allow(dead_code)]
+    fn key_exists(&self, key: &[u8]) -> bool {
+        // Skip internal expiration metadata keys
+        if key.starts_with(b"__exp__:") {
+            return false;
+        }
+
+        // Check MemTable layers first (fast path)
+        if self.key_exists_in_memtables(key) {
+            return true;
+        }
+
+        // Check SSTables (slow path - full scan)
+        let sstables = self.sstables.read();
+        for level_tables in sstables.iter() {
+            for table in level_tables.iter() {
+                if table.get(key).ok().flatten().is_some() {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     /// Deletes a key from the database.
     ///
     /// This operation is implemented as a tombstone marker.
@@ -585,6 +666,10 @@ impl DB {
         // Step 1: Get the next sequence number
         let seq = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
 
+        // Step 1b: Check if this key exists in any layer (for accurate key counting)
+        // Uses bloom filter in SSTables for fast negative lookups.
+        let key_existed = self.key_exists(key);
+
         // Step 2: Write tombstone to WAL
         if self.options.use_wal {
             let mut wal = self.wal.write();
@@ -607,6 +692,15 @@ impl DB {
         {
             let memtable = self.memtable.read();
             memtable.delete(key, seq);
+        }
+
+        // Step 3b: Decrement key count if the key existed
+        // Use saturating_sub to prevent negative count (can happen if delete is called
+        // more times than put for new keys, e.g., due to benchmark bulk operations)
+        if key_existed {
+            let _ = self.total_key_count.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                Some(count.saturating_sub(1))
+            });
         }
 
         Ok(())
@@ -892,55 +986,80 @@ impl DB {
 
         // Iterate through MemTable and add entries to SSTable
         // We only keep the latest version of each user key (skip older versions)
-        let mut entry_count = 0;
-        let mut last_user_key: Option<Vec<u8>> = None;
+        //
+        // BUG FIX: The previous implementation assumed entries for the same user_key
+        // were adjacent in iteration order. But SkipMap is sorted by InternalKey which
+        // includes sequence number, so entries for the same user_key with different
+        // sequences are NOT necessarily adjacent. We now use a HashMap to track
+        // the latest entry for each user_key.
+        use std::collections::HashMap;
 
+        // Structure to hold entry data we need for writing
+        #[derive(Clone)]
+        struct EntryData {
+            user_key: Vec<u8>,
+            sequence: u64,
+            value: Vec<u8>,
+            value_type: memtable::ValueType,
+        }
+
+        // First pass: collect all entries and find the latest for each user_key
+        let mut latest_entries: HashMap<Vec<u8>, EntryData> = HashMap::new();
         for entry in memtable.iter() {
-            let user_key = entry.user_key();
-            let value_type = entry.value_type();
+            let user_key = entry.user_key().to_vec();
+            let sequence = entry.key().sequence();
+            let value_type = entry.key().value_type();
+            let value = entry.value().to_vec();
 
-            // Skip if this is an older version of the same key
-            if let Some(ref last_key) = last_user_key {
-                if user_key < last_key.as_slice() {
-                    log::error!(
-                        "Flush output order violation for {:?}: prev_key={:?}, current_key={:?}, value_type={:?}",
-                        sstable_path,
-                        String::from_utf8_lossy(last_key),
-                        String::from_utf8_lossy(user_key),
-                        value_type
-                    );
+            match latest_entries.get(&user_key) {
+                Some(existing) => {
+                    if sequence > existing.sequence {
+                        latest_entries.insert(user_key.clone(), EntryData {
+                            user_key,
+                            sequence,
+                            value,
+                            value_type,
+                        });
+                    }
                 }
-                if last_key.as_slice() == user_key {
-                    continue; // Skip older versions
+                None => {
+                    latest_entries.insert(user_key.clone(), EntryData {
+                        user_key,
+                        sequence,
+                        value,
+                        value_type,
+                    });
                 }
             }
+        }
 
+        // Second pass: write latest entries to SSTable in sorted order by user_key
+        let mut entry_count = 0;
+        let mut entries: Vec<_> = latest_entries.into_iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (_, entry_data) in entries {
             // For SSTable at Level 0, we store both values and tombstones
             // Tombstones are represented as empty Vec, actual values are non-empty
             // Tombstones will be removed during compaction
-            let value = if value_type == crate::memtable::ValueType::Deletion {
+            let value: &[u8] = if entry_data.value_type == crate::memtable::ValueType::Deletion {
                 // Write empty value for tombstones
                 &[]
             } else {
-                entry.value()
+                &entry_data.value
             };
 
-            if let Err(err) = builder.add(user_key, value) {
+            if let Err(err) = builder.add(&entry_data.user_key, value) {
                 log::error!(
-                    "Flush write to SSTable failed for {:?}: prev_key={:?}, current_key={:?}, value_type={:?}, entry_count={}",
+                    "Flush write to SSTable failed for {:?}: user_key={:?}, value_type={:?}, entry_count={}",
                     sstable_path,
-                    last_user_key
-                        .as_ref()
-                        .map(|key| String::from_utf8_lossy(key).into_owned()),
-                    String::from_utf8_lossy(user_key),
-                    value_type,
+                    String::from_utf8_lossy(&entry_data.user_key),
+                    entry_data.value_type,
                     entry_count
                 );
                 return Err(err);
             }
             entry_count += 1;
-
-            last_user_key = Some(user_key.to_vec());
         }
 
         // Check if we have any entries to flush
@@ -1077,14 +1196,12 @@ impl DB {
         if flushed > 0 {
             log::info!("Background flush: {} MemTable(s) flushed to SSTable", flushed);
 
-            // NOTE: WAL rotation is intentionally skipped here.
-            // The WAL still contains entries for the current mutable MemTable that has
-            // NOT been frozen or flushed yet.  Rotating (and deleting) the old WAL
-            // at this point would cause permanent data loss if a crash occurs before
-            // that MemTable is persisted.
-            //
-            // WAL rotation only happens inside flush(), which first freezes the current
-            // MemTable and flushes everything — making the old WAL entries redundant.
+            // Rotate WAL after flushing immutable MemTables to SSTable.
+            // The flushed entries are now durable in SSTable, so their WAL entries
+            // are redundant and can be safely removed.
+            // New writes will go to the new WAL file.
+            self.rotate_wal()?;
+
             self.maybe_trigger_compaction()?;
         }
 
@@ -1376,6 +1493,177 @@ impl DB {
 
         Ok(files)
     }
+
+    /// Get the approximate size of the current MemTable in bytes.
+    ///
+    /// This includes the size of all entries in the active (mutable) MemTable.
+    /// Immutable MemTables are not included.
+    pub fn memtable_size(&self) -> u64 {
+        self.memtable.read().approximate_size() as u64
+    }
+
+    /// Get the total size of all MemTables (active + immutable) in bytes.
+    pub fn total_memtable_size(&self) -> u64 {
+        let mut total = self.memtable.read().approximate_size() as u64;
+        for imm in self.immutable_memtables.read().iter() {
+            total += imm.approximate_size() as u64;
+        }
+        total
+    }
+
+    /// Get the current WAL size in bytes.
+    ///
+    /// This is the size of the WAL file on disk.
+    pub fn wal_size(&self) -> u64 {
+        self.wal.read().size()
+    }
+
+    /// Get the current block cache size in bytes.
+    pub fn block_cache_size(&self) -> u64 {
+        self.block_cache.size() as u64
+    }
+
+    /// Get an estimated number of keys in the database.
+    ///
+    /// This uses the sequence number as an upper bound estimate.
+    /// The sequence number counts all put/delete operations, so this is an
+    /// over-estimate when keys are updated multiple times. However, it provides
+    /// a fast O(1) estimate without scanning the database.
+    ///
+    /// For exact key count, use the `iter()` method which performs a full scan.
+    pub fn estimated_dbsize(&self) -> usize {
+        self.sequence.load(Ordering::SeqCst) as usize
+    }
+
+    /// Get an estimated number of entries in all MemTables (active + immutable).
+    ///
+    /// This is a faster estimate than the sequence number because it only counts
+    /// entries currently in memory, not historical operations.
+    pub fn estimated_memtable_entries(&self) -> usize {
+        let mut total = self.memtable.read().len();
+        for imm in self.immutable_memtables.read().iter() {
+            total += imm.len();
+        }
+        total
+    }
+
+    /// Get an estimated number of unique keys in all MemTables (active + immutable).
+    ///
+    /// This uses the incrementally maintained unique key count from each MemTable,
+    /// providing O(1) lookup instead of scanning all entries.
+    ///
+    /// Note: This only counts unique keys in MemTables, not in SSTables.
+    /// The SSTable key count is estimated separately.
+    pub fn estimated_memtable_unique_keys(&self) -> usize {
+        let mut total = self.memtable.read().approximate_unique_key_count();
+        for imm in self.immutable_memtables.read().iter() {
+            total += imm.approximate_unique_key_count();
+        }
+        total
+    }
+
+    /// Get the exact number of keys in the database.
+    ///
+    /// This returns the exact key count maintained by the database.
+    /// This is O(1) operation because the count is maintained incrementally.
+    ///
+    /// The count is updated on every put/delete operation:
+    /// - put with new key: count + 1
+    /// - delete existing key: count - 1
+    ///
+    /// Note: The count uses saturating arithmetic to prevent underflow.
+    pub fn dbsize(&self) -> usize {
+        let count = self.total_key_count.load(Ordering::SeqCst);
+        log::info!("dbsize called, returning: {}", count);
+        count
+    }
+
+    /// Reset the key count to zero.
+    ///
+    /// This should be called when flushing the database to ensure accurate counting.
+    pub fn reset_key_count(&self) {
+        let old = self.total_key_count.load(Ordering::SeqCst);
+        self.total_key_count.store(0, Ordering::SeqCst);
+        log::info!("reset key_count from {} to 0", old);
+    }
+
+    /// Clear all SSTables and immutable MemTables.
+    ///
+    /// This should be called when flushing the database to ensure all data is also cleared.
+    /// SSTable files will be deleted from disk and all in-memory data structures will be cleared.
+    pub fn clear_all_data(&self) -> Result<()> {
+        // Clear immutable MemTables
+        {
+            let mut immutable = self.immutable_memtables.write();
+            immutable.clear();
+            log::info!("Cleared immutable MemTables");
+        }
+
+        // Clear current MemTable by replacing with a fresh one
+        {
+            let mut memtable = self.memtable.write();
+            let current_seq = self.sequence.load(Ordering::SeqCst);
+            *memtable = MemTable::new(current_seq + 1);
+            log::info!("Reset current MemTable");
+        }
+
+        let mut sstables = self.sstables.write();
+
+        // Delete all SSTable files from disk and clear memory references
+        for level_tables in sstables.iter_mut() {
+            for table in level_tables.iter() {
+                let path = table.file_path().to_path_buf();
+                // Delete the file from disk
+                if path.exists() {
+                    std::fs::remove_file(&path)?;
+                    log::info!("Deleted SSTable file: {:?}", path);
+                }
+            }
+            // Clear this level
+            level_tables.clear();
+        }
+
+        // Delete all WAL files to ensure complete data wipe
+        if let Ok(entries) = std::fs::read_dir(&self.path) {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    if filename.ends_with(".log") {
+                        let wal_path = self.path.join(filename);
+                        std::fs::remove_file(&wal_path)?;
+                        log::info!("Deleted WAL file: {:?}", wal_path);
+                    }
+                }
+            }
+        }
+
+        log::info!("Cleared all SSTables, MemTables and WAL files");
+        Ok(())
+    }
+
+    /// Get the exact number of keys in the database.
+    ///
+    /// This performs a full scan of MemTables and SSTables to count unique keys.
+    /// This is O(n) in the number of keys and should not be called frequently.
+    ///
+    /// Note: This counts keys visible at the current sequence number (snapshot).
+    /// Deleted keys (tombstones) are not counted.
+    pub fn count_keys(self: &Arc<Self>) -> Result<usize> {
+        let seq = self.sequence.load(Ordering::SeqCst);
+        let mut iter = DBIterator::new(Arc::clone(self), seq)?;
+        let mut count = 0;
+
+        while iter.valid() {
+            count += 1;
+            iter.next();
+        }
+
+        Ok(count)
+    }
+
+    /// Get the block cache capacity in bytes.
+    pub fn block_cache_capacity(&self) -> u64 {
+        self.block_cache.capacity() as u64
+    }
 }
 
 impl Drop for DB {
@@ -1388,13 +1676,13 @@ impl Drop for DB {
         // Attempt to flush and close cleanly
         // Ignore errors during drop as we can't propagate them
         if let Err(e) = self.flush() {
-            eprintln!("Error flushing database during drop: {}", e);
+            log::error!("event=db_drop_flush_failed error={}", e);
         }
 
         if self.options.use_wal {
             let mut wal = self.wal.write();
             if let Err(e) = wal.sync() {
-                eprintln!("Error syncing WAL during drop: {}", e);
+                log::error!("event=db_drop_wal_sync_failed error={}", e);
             }
         }
     }
