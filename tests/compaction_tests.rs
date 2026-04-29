@@ -324,3 +324,101 @@ fn test_compaction_with_overwrites() {
         assert_eq!(value, Some(b"new".to_vec()));
     }
 }
+
+#[test]
+fn test_compaction_consolidation() {
+    env_logger::try_init().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let options = Options::default().memtable_size(1024);
+
+    let db = Arc::new(DB::open(temp_dir.path(), options).unwrap());
+
+    // Multiple rounds of write + flush to trigger compaction
+    for round in 0..8 {
+        for i in 0..30 {
+            let key = format!("round{}_key{:04}", round, i);
+            let value = format!("val{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        db.flush().unwrap();
+    }
+
+    // Wait for compaction to complete
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // Verify no duplicate keys by counting through iteration
+    let mut iter = db.iter().unwrap();
+    let mut keys = std::collections::BTreeSet::new();
+    while iter.valid() {
+        let key = iter.key().to_vec();
+        assert!(keys.insert(key.clone()), "Duplicate key found: {:?}", String::from_utf8_lossy(&key));
+        iter.next();
+    }
+
+    // Verify all expected keys exist
+    for round in 0..8 {
+        for i in 0..30 {
+            let key = format!("round{}_key{:04}", round, i);
+            let value = db.get(key.as_bytes()).unwrap();
+            assert!(value.is_some(), "Key {} should exist", key);
+        }
+    }
+}
+
+#[test]
+fn test_compaction_all_deleted() {
+    env_logger::try_init().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    // Use a larger memtable so all data fits in one memtable and all
+    // deletes fit in the next, avoiding auto-flush during writes.
+    let options = Options::default().memtable_size(4096);
+
+    let db = DB::open(temp_dir.path(), options).unwrap();
+
+    // Write all data as a single SSTable
+    for batch in 0..5 {
+        for i in 0..20 {
+            let key = format!("key{:04}_{:04}", batch, i);
+            db.put(key.as_bytes(), b"value").unwrap();
+        }
+    }
+    db.flush().unwrap();
+
+    // Delete all keys as a single tombstone SSTable
+    for batch in 0..5 {
+        for i in 0..20 {
+            let key = format!("key{:04}_{:04}", batch, i);
+            db.delete(key.as_bytes()).unwrap();
+        }
+    }
+    db.flush().unwrap();
+
+    // Add 2 fill SSTables with non-overlapping keys to trigger compaction.
+    // Level 0: [fill2, fill1, tombstone, data] (4 files) => compaction fires.
+    for batch in 0..2 {
+        for i in 0..20 {
+            let key = format!("fill{:04}_{:04}", batch, i);
+            db.put(key.as_bytes(), b"fill").unwrap();
+        }
+        db.flush().unwrap();
+    }
+
+    // Write new data to exercise the system after compaction
+    for batch in 5..10 {
+        for i in 0..20 {
+            let key = format!("newkey{:04}_{:04}", batch, i);
+            db.put(key.as_bytes(), b"value").unwrap();
+        }
+        db.flush().unwrap();
+    }
+
+    // Verify deleted keys are gone
+    for batch in 0..5 {
+        for i in 0..20 {
+            let key = format!("key{:04}_{:04}", batch, i);
+            assert_eq!(db.get(key.as_bytes()).unwrap(), None);
+        }
+    }
+}
