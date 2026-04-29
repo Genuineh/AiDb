@@ -193,111 +193,129 @@ impl DB {
         // Step 2: Initialize sequence number
         let mut sequence = 0u64;
 
-        // Step 3: Find and open the latest WAL file
-        let mut wal_number = 1u64;
-        let mut latest_wal_path = path.join(wal::wal_filename(1));
+        // Step 3: Find all WAL files in the directory for recovery
+        let mut wal_numbers: Vec<u64> = Vec::new();
 
-        // Scan for the latest WAL file
         if path.exists() {
             if let Ok(entries) = std::fs::read_dir(&path) {
                 for entry in entries.flatten() {
                     if let Some(filename) = entry.file_name().to_str() {
                         if let Some(num) = wal::parse_wal_filename(filename) {
-                            if num >= wal_number {
-                                wal_number = num;
-                                latest_wal_path = entry.path();
-                            }
+                            wal_numbers.push(num);
                         }
                     }
                 }
             }
         }
 
-        let wal = WAL::open(&latest_wal_path)?;
+        wal_numbers.sort();
 
-        // Step 4: Recover from WAL if it exists and has data
-        let recovered_entries = if latest_wal_path.exists() && wal.size() > 0 {
-            WAL::recover(&latest_wal_path)?
-        } else {
-            Vec::new()
-        };
+        // Step 4: Recover from all WAL files.
+        // WAL files accumulate across rotations — we must recover from ALL of them
+        // in order because the old WAL (with earlier entries) may contain data from
+        // the active MemTable that was never flushed to SSTable.
+        let latest_wal_number = wal_numbers.last().copied().unwrap_or(1);
+        let latest_wal_path = path.join(wal::wal_filename(latest_wal_number));
 
-        // Step 5: Initialize MemTable with recovered data
         let memtable = MemTable::new(sequence + 1);
 
-        for entry in recovered_entries {
-            sequence += 1;
+        for &wal_num in &wal_numbers {
+            let wal_path = path.join(wal::wal_filename(wal_num));
+            if !wal_path.exists() {
+                continue;
+            }
 
-            // Parse WAL entry format
-            if entry.starts_with(b"put:") {
-                // Format: "put:key_len:key:value"
-                let entry = &entry[4..]; // Skip "put:"
-
-                // Read key length
-                if entry.len() < 4 {
-                    log::warn!("Invalid WAL entry: too short");
+            let recovered = match WAL::recover(&wal_path) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    log::warn!("Skipping corrupted WAL {:?}: {}", wal_path, e);
                     continue;
                 }
+            };
 
-                let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
-                let entry = &entry[4..]; // Skip key_len
+            if recovered.is_empty() {
+                continue;
+            }
 
-                if entry.is_empty() || entry[0] != b':' {
-                    log::warn!("Invalid WAL entry: missing separator");
-                    continue;
+            log::info!("Recovering {} entries from WAL {:?}", recovered.len(), wal_path);
+
+            for entry in recovered {
+                sequence += 1;
+
+                // Parse WAL entry format
+                if entry.starts_with(b"put:") {
+                    // Format: "put:key_len:key:value"
+                    let entry = &entry[4..]; // Skip "put:"
+
+                    // Read key length
+                    if entry.len() < 4 {
+                        log::warn!("Invalid WAL entry: too short");
+                        continue;
+                    }
+
+                    let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
+                    let entry = &entry[4..]; // Skip key_len
+
+                    if entry.is_empty() || entry[0] != b':' {
+                        log::warn!("Invalid WAL entry: missing separator");
+                        continue;
+                    }
+
+                    let entry = &entry[1..]; // Skip ':'
+
+                    if entry.len() < key_len + 1 {
+                        log::warn!("Invalid WAL entry: key too short");
+                        continue;
+                    }
+
+                    let key = &entry[..key_len];
+                    let entry = &entry[key_len..];
+
+                    if entry.is_empty() || entry[0] != b':' {
+                        log::warn!("Invalid WAL entry: missing value separator");
+                        continue;
+                    }
+
+                    let value = &entry[1..];
+
+                    // Insert into memtable
+                    memtable.put(key, value, sequence);
+                } else if entry.starts_with(b"del:") {
+                    // Format: "del:key_len:key"
+                    let entry = &entry[4..]; // Skip "del:"
+
+                    if entry.len() < 4 {
+                        log::warn!("Invalid WAL entry: too short");
+                        continue;
+                    }
+
+                    let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
+                    let entry = &entry[4..]; // Skip key_len
+
+                    if entry.is_empty() || entry[0] != b':' {
+                        log::warn!("Invalid WAL entry: missing separator");
+                        continue;
+                    }
+
+                    let entry = &entry[1..]; // Skip ':'
+
+                    if entry.len() < key_len {
+                        log::warn!("Invalid WAL entry: key too short");
+                        continue;
+                    }
+
+                    let key = &entry[..key_len];
+
+                    // Insert tombstone into memtable
+                    memtable.delete(key, sequence);
+                } else {
+                    log::warn!("Unknown WAL entry type");
                 }
-
-                let entry = &entry[1..]; // Skip ':'
-
-                if entry.len() < key_len + 1 {
-                    log::warn!("Invalid WAL entry: key too short");
-                    continue;
-                }
-
-                let key = &entry[..key_len];
-                let entry = &entry[key_len..];
-
-                if entry.is_empty() || entry[0] != b':' {
-                    log::warn!("Invalid WAL entry: missing value separator");
-                    continue;
-                }
-
-                let value = &entry[1..];
-
-                // Insert into memtable
-                memtable.put(key, value, sequence);
-            } else if entry.starts_with(b"del:") {
-                // Format: "del:key_len:key"
-                let entry = &entry[4..]; // Skip "del:"
-
-                if entry.len() < 4 {
-                    log::warn!("Invalid WAL entry: too short");
-                    continue;
-                }
-
-                let key_len = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]) as usize;
-                let entry = &entry[4..]; // Skip key_len
-
-                if entry.is_empty() || entry[0] != b':' {
-                    log::warn!("Invalid WAL entry: missing separator");
-                    continue;
-                }
-
-                let entry = &entry[1..]; // Skip ':'
-
-                if entry.len() < key_len {
-                    log::warn!("Invalid WAL entry: key too short");
-                    continue;
-                }
-
-                let key = &entry[..key_len];
-
-                // Insert tombstone into memtable
-                memtable.delete(key, sequence);
-            } else {
-                log::warn!("Unknown WAL entry type");
             }
         }
+
+        // Open the latest WAL as the active WAL for subsequent writes.
+        let wal = WAL::open(&latest_wal_path)?;
 
         // Step 6: Load existing SSTables
         let mut sstables: Vec<Vec<Arc<SSTableReader>>> = vec![Vec::new(); options.max_levels];
@@ -362,7 +380,7 @@ impl DB {
             sstables: Arc::new(RwLock::new(sstables)),
             sequence: Arc::new(AtomicU64::new(sequence)),
             next_file_number: Arc::new(AtomicU64::new(2)), // Start from 2 (1 is for WAL)
-            wal_file_number: Arc::new(AtomicU64::new(wal_number)),
+            wal_file_number: Arc::new(AtomicU64::new(latest_wal_number)),
             version_set: Arc::new(RwLock::new(version_set)),
             compaction_picker: Arc::new(compaction_picker),
             block_cache,
@@ -1226,15 +1244,14 @@ impl DB {
             std::mem::replace(&mut *wal, new_wal)
         };
 
-        // Close and delete the old WAL file
+        // Close the old WAL (flushes buffered data to disk) but do NOT delete it.
+        // The old WAL is kept for crash recovery since it may contain entries from
+        // the active MemTable that haven't been flushed to SSTable yet. On next
+        // DB::open(), ALL WAL files are scanned and recovered in order.
         let old_path = old_wal.path().to_path_buf();
         drop(old_wal);
 
-        // Remove old WAL file
-        if old_path.exists() {
-            std::fs::remove_file(&old_path)?;
-            log::info!("Removed old WAL file: {:?}", old_path);
-        }
+        log::info!("Old WAL preserved for recovery: {:?}", old_path);
 
         Ok(())
     }
@@ -1398,7 +1415,38 @@ impl DB {
             wal.sync()?;
         }
 
+        // Step 3: Clean up old WAL files. Since flush() above ensured all data is
+        // in SSTables, any pre-rotation WAL files can be safely removed.
+        self.cleanup_old_wals()?;
+
         log::info!("Database closed successfully");
+
+        Ok(())
+    }
+
+    /// Remove old WAL files that are no longer needed.
+    ///
+    /// Only the latest WAL file is kept. All older WAL files are safe to delete
+    /// because their entries have been fully flushed to SSTables.
+    fn cleanup_old_wals(&self) -> Result<()> {
+        let current_wal = self.wal_file_number.load(Ordering::SeqCst);
+
+        if let Ok(entries) = std::fs::read_dir(&self.path) {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    if let Some(num) = wal::parse_wal_filename(filename) {
+                        if num < current_wal {
+                            let path = entry.path();
+                            if let Err(e) = std::fs::remove_file(&path) {
+                                log::warn!("Failed to remove old WAL {:?}: {}", path, e);
+                            } else {
+                                log::info!("Removed old WAL file: {:?}", path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
