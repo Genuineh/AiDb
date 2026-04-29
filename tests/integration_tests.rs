@@ -382,3 +382,150 @@ fn test_e2e_value_edge_cases() {
     db.put(b"null_value", &null_value).unwrap();
     assert_eq!(db.get(b"null_value").unwrap(), Some(null_value));
 }
+
+/// Test seek across memtable + SSTable layers
+#[test]
+fn test_iterator_seek_e2e() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(DB::open(dir.path(), Options::default()).unwrap());
+
+    db.put(b"alpha", b"value_alpha").unwrap();
+    db.put(b"beta", b"value_beta").unwrap();
+    db.put(b"delta", b"value_delta").unwrap();
+    db.put(b"gamma", b"value_gamma").unwrap();
+
+    // Seek to beta
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"beta").unwrap();
+    assert!(iter.valid());
+    assert_eq!(iter.key(), b"beta");
+    assert_eq!(iter.value(), b"value_beta");
+
+    // Seek to non-existent key between beta and delta
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"charlie").unwrap();
+    assert!(iter.valid());
+    assert_eq!(iter.key(), b"delta");
+
+    // Seek past all keys
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"zzz").unwrap();
+    assert!(!iter.valid());
+}
+
+/// Test scan with actual range bounds
+#[test]
+fn test_iterator_range_bounds_e2e() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(DB::open(dir.path(), Options::default()).unwrap());
+
+    for i in 0..10 {
+        let key = format!("key{:02}", i);
+        let value = format!("val{:02}", i);
+        db.put(key.as_bytes(), value.as_bytes()).unwrap();
+    }
+
+    // Scan middle range
+    let mut iter = db.scan(Some(b"key03"), Some(b"key07")).unwrap();
+    let mut count = 0;
+    let mut first_key = None;
+    while iter.valid() {
+        if first_key.is_none() {
+            first_key = Some(iter.key().to_vec());
+        }
+        count += 1;
+        iter.next();
+    }
+    assert_eq!(count, 4);
+    assert_eq!(first_key, Some(b"key03".to_vec()));
+
+    // Scan with no end bound (from key07 onwards)
+    let mut iter = db.scan(Some(b"key07"), None).unwrap();
+    let mut keys = Vec::new();
+    while iter.valid() {
+        keys.push(iter.key().to_vec());
+        iter.next();
+    }
+    assert_eq!(keys.len(), 3);
+    assert_eq!(keys[0], b"key07");
+    assert_eq!(keys[1], b"key08");
+    assert_eq!(keys[2], b"key09");
+}
+
+/// Test scan with empty result range
+#[test]
+fn test_iterator_empty_range_e2e() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(DB::open(dir.path(), Options::default()).unwrap());
+
+    db.put(b"a", b"1").unwrap();
+    db.put(b"b", b"2").unwrap();
+
+    // Range that doesn't overlap
+    let iter = db.scan(Some(b"z"), Some(b"zz")).unwrap();
+    assert!(!iter.valid());
+
+    // Range where start >= end -> empty
+    let iter = db.scan(Some(b"b"), Some(b"a")).unwrap();
+    assert!(!iter.valid());
+}
+
+/// Test tombstone in memtable while data exists in SSTable
+#[test]
+fn test_iterator_tombstone_across_layers() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(DB::open(dir.path(), Options::default()).unwrap());
+
+    // Write data and flush to SSTable
+    db.put(b"key1", b"value1").unwrap();
+    db.put(b"key2", b"value2").unwrap();
+    db.put(b"key3", b"value3").unwrap();
+    db.flush().unwrap();
+
+    // Delete key2 in memtable (without flush)
+    db.delete(b"key2").unwrap();
+
+    // Iterator should skip key2 despite it existing in SSTable
+    let mut iter = db.iter().unwrap();
+    let mut keys = Vec::new();
+    while iter.valid() {
+        keys.push(iter.key().to_vec());
+        iter.next();
+    }
+    assert_eq!(keys, vec![b"key1", b"key3"]);
+}
+
+/// Test seek across memtable and SSTable layers
+#[test]
+fn test_iterator_across_layers_with_seek() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(DB::open(dir.path(), Options::default()).unwrap());
+
+    // Write data and flush to SSTable
+    db.put(b"key1", b"from_sstable").unwrap();
+    db.put(b"key2", b"from_sstable").unwrap();
+    db.put(b"key3", b"from_sstable").unwrap();
+    db.flush().unwrap();
+
+    // Write more data (stays in memtable only)
+    db.put(b"key4", b"from_memtable").unwrap();
+    db.put(b"key5", b"from_memtable").unwrap();
+
+    // Seek to key in SSTable layer
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"key2").unwrap();
+    assert!(iter.valid());
+    assert_eq!(iter.key(), b"key2");
+
+    // Seek to key in memtable layer
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"key4").unwrap();
+    assert!(iter.valid());
+    assert_eq!(iter.key(), b"key4");
+
+    // Seek between layers (SSTable key3 -> memtable key4)
+    let mut iter = db.iter().unwrap();
+    iter.seek(b"key35").unwrap();
+    assert!(iter.valid());
+    assert_eq!(iter.key(), b"key4");
+}
