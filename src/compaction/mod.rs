@@ -228,4 +228,122 @@ mod tests {
         assert_eq!(reader.get(b"e").unwrap(), Some(b"5".to_vec()));
         assert_eq!(reader.get(b"f").unwrap(), Some(b"6".to_vec()));
     }
+
+    #[test]
+    fn test_compaction_removes_duplicates() {
+        let dir = TempDir::new().unwrap();
+
+        let sst1 = create_sstable(dir.path(), 1, &[(b"a", b"1"), (b"b", b"2"), (b"c", b"3")]);
+        let sst2 = create_sstable(dir.path(), 2, &[(b"b", b"20"), (b"c", b"30"), (b"d", b"40")]);
+
+        let job = CompactionJob::new(
+            vec![sst1, sst2],
+            1,
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+        assert_eq!(result.entry_count, 4); // a, b, c, d (no duplicates)
+
+        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
+        assert_eq!(reader.get(b"b").unwrap(), Some(b"2".to_vec()));
+        assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
+        assert_eq!(reader.get(b"d").unwrap(), Some(b"40".to_vec()));
+    }
+
+    #[test]
+    fn test_compaction_removes_tombstones_at_level1() {
+        let dir = TempDir::new().unwrap();
+
+        // "b" and "d" have empty values (tombstones)
+        let sst1 = create_sstable(
+            dir.path(),
+            1,
+            &[(b"a", b"1"), (b"b", b""), (b"c", b"3"), (b"d", b""), (b"e", b"5")],
+        );
+
+        let job = CompactionJob::new(
+            vec![sst1],
+            1, // level 1+ removes tombstones
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+        assert_eq!(result.entry_count, 3); // a, c, e (tombstones removed)
+
+        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
+        assert_eq!(reader.get(b"b").unwrap(), None); // tombstone removed
+        assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
+        assert_eq!(reader.get(b"d").unwrap(), None); // tombstone removed
+        assert_eq!(reader.get(b"e").unwrap(), Some(b"5".to_vec()));
+    }
+
+    #[test]
+    fn test_compaction_preserves_tombstones_at_level0() {
+        let dir = TempDir::new().unwrap();
+
+        let sst1 = create_sstable(
+            dir.path(),
+            1,
+            &[(b"a", b"1"), (b"b", b""), (b"c", b"3")],
+        );
+
+        let job = CompactionJob::new(
+            vec![sst1],
+            0, // level 0 preserves tombstones
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+        assert_eq!(result.entry_count, 3); // all entries kept
+
+        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
+        // At level 0, tombstone is preserved — entry exists with empty value
+        assert_eq!(reader.get(b"b").unwrap(), Some(b"".to_vec()));
+        assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
+    }
+
+    #[test]
+    fn test_compaction_single_input() {
+        let dir = TempDir::new().unwrap();
+
+        let sst1 = create_sstable(dir.path(), 1, &[(b"x", b"10"), (b"y", b"20"), (b"z", b"30")]);
+
+        let job = CompactionJob::new(
+            vec![sst1],
+            1,
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+        assert_eq!(result.entry_count, 3);
+
+        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        assert_eq!(reader.get(b"x").unwrap(), Some(b"10".to_vec()));
+        assert_eq!(reader.get(b"y").unwrap(), Some(b"20".to_vec()));
+        assert_eq!(reader.get(b"z").unwrap(), Some(b"30".to_vec()));
+    }
+
+    #[test]
+    fn test_compaction_all_entries_removed() {
+        let dir = TempDir::new().unwrap();
+
+        // All entries are tombstones
+        let sst1 = create_sstable(dir.path(), 1, &[(b"a", b""), (b"b", b""), (b"c", b"")]);
+
+        let job = CompactionJob::new(
+            vec![sst1],
+            1, // level 1+ removes tombstones
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+        assert_eq!(result.file_number, 0);
+        assert_eq!(result.entry_count, 0);
+        // Output file should not exist
+        assert!(!dir.path().join("000100.sst").exists());
+    }
 }
