@@ -178,11 +178,54 @@ pub const MAX_LEVEL0_FILES: usize = 4;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sstable::SSTableBuilder;
+    use crate::sstable::SSTableReader;
+    use std::path::Path;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn create_sstable(dir: &Path, number: u64, entries: &[(&[u8], &[u8])]) -> Arc<SSTableReader> {
+        let path = dir.join(format!("{:06}.sst", number));
+        let mut builder = SSTableBuilder::new(&path).unwrap();
+        for (k, v) in entries {
+            builder.add(k, v).unwrap();
+        }
+        builder.finish().unwrap();
+        Arc::new(SSTableReader::open(&path).unwrap())
+    }
 
     #[test]
     fn test_target_size_for_level() {
-        assert_eq!(target_size_for_level(1), 10 * 1024 * 1024); // 10 MB
-        assert_eq!(target_size_for_level(2), 100 * 1024 * 1024); // 100 MB
-        assert_eq!(target_size_for_level(3), 1000 * 1024 * 1024); // 1000 MB (10^3 MB)
+        assert_eq!(target_size_for_level(1), 10 * 1024 * 1024);
+        assert_eq!(target_size_for_level(2), 100 * 1024 * 1024);
+        assert_eq!(target_size_for_level(3), 1000 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_compaction_basic_merge() {
+        let dir = TempDir::new().unwrap();
+
+        let sst1 = create_sstable(dir.path(), 1, &[(b"a", b"1"), (b"b", b"2"), (b"c", b"3")]);
+        let sst2 = create_sstable(dir.path(), 2, &[(b"d", b"4"), (b"e", b"5"), (b"f", b"6")]);
+
+        let job = CompactionJob::new(
+            vec![sst1, sst2],
+            1,
+            dir.path().to_path_buf(),
+            4096,
+        );
+        let result = job.run(100).unwrap();
+
+        assert_eq!(result.entry_count, 6);
+        let output_path = dir.path().join("000100.sst");
+        assert!(output_path.exists());
+
+        let reader = SSTableReader::open(&output_path).unwrap();
+        assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
+        assert_eq!(reader.get(b"b").unwrap(), Some(b"2".to_vec()));
+        assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
+        assert_eq!(reader.get(b"d").unwrap(), Some(b"4".to_vec()));
+        assert_eq!(reader.get(b"e").unwrap(), Some(b"5".to_vec()));
+        assert_eq!(reader.get(b"f").unwrap(), Some(b"6".to_vec()));
     }
 }
