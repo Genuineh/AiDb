@@ -589,4 +589,51 @@ mod tests {
         assert_eq!(count, 3);
         assert_eq!(keys, vec![b"key1", b"key2", b"key3"]);
     }
+
+    #[test]
+    fn test_iterator_empty_db() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = DB::open(tmp_dir.path(), Options::default()).unwrap();
+        let db = Arc::new(db);
+
+        let iter = db.iter().unwrap();
+        assert!(!iter.valid());
+    }
+
+    #[test]
+    fn test_iterator_seek_existing() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key1", b"val1").unwrap();
+        db.put(b"key2", b"val2").unwrap();
+        db.put(b"key3", b"val3").unwrap();
+
+        let mut iter = db.iter().unwrap();
+        iter.seek(b"key2").unwrap();
+        assert!(iter.valid());
+        assert_eq!(iter.key(), b"key2");
+        assert_eq!(iter.value(), b"val2");
+    }
+
+    #[test]
+    fn test_iterator_seek_nonexistent() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key1", b"val1").unwrap();
+        db.put(b"key3", b"val3").unwrap();
+        db.put(b"key5", b"val5").unwrap();
+
+        // Seek between key1 and key3 should land on key3
+        let mut iter = db.iter().unwrap();
+        iter.seek(b"key2").unwrap();
+        assert!(iter.valid());
+        assert_eq!(iter.key(), b"key3");
+
+        // Seek past all keys should be invalid
+        let mut iter = db.iter().unwrap();
+        iter.seek(b"zzz").unwrap();
+        assert!(!iter.valid());
+    }
 }
