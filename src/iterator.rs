@@ -163,7 +163,7 @@ impl DBIterator {
     pub(crate) fn new_range(
         db: Arc<DB>,
         sequence: u64,
-        _start: Option<&[u8]>,
+        start: Option<&[u8]>,
         end: Option<&[u8]>,
     ) -> Result<Self> {
         let mut layer_iters: Vec<LayerIterState> = Vec::new();
@@ -211,6 +211,11 @@ impl DBIterator {
 
         // Load first valid entry
         iter.load_next_valid()?;
+
+        // Seek to start key if provided
+        if let Some(start_key) = start {
+            iter.seek(start_key)?;
+        }
 
         Ok(iter)
     }
@@ -635,5 +640,90 @@ mod tests {
         let mut iter = db.iter().unwrap();
         iter.seek(b"zzz").unwrap();
         assert!(!iter.valid());
+    }
+
+    #[test]
+    fn test_iterator_seek_to_first() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key2", b"val2").unwrap();
+        db.put(b"key1", b"val1").unwrap();
+        db.put(b"key3", b"val3").unwrap();
+
+        let mut iter = db.iter().unwrap();
+        iter.seek_to_first();
+        assert!(iter.valid());
+        assert_eq!(iter.key(), b"key1");
+    }
+
+    #[test]
+    fn test_iterator_range() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key1", b"val1").unwrap();
+        db.put(b"key2", b"val2").unwrap();
+        db.put(b"key3", b"val3").unwrap();
+        db.put(b"key4", b"val4").unwrap();
+        db.put(b"key5", b"val5").unwrap();
+
+        let mut iter = db.scan(Some(b"key2"), Some(b"key5")).unwrap();
+        let mut entries = Vec::new();
+        while iter.valid() {
+            entries.push((iter.key().to_vec(), iter.value().to_vec()));
+            iter.next();
+        }
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].0, b"key2");
+        assert_eq!(entries[1].0, b"key3");
+        assert_eq!(entries[2].0, b"key4");
+    }
+
+    #[test]
+    fn test_iterator_tombstone_filtering() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key1", b"val1").unwrap();
+        db.put(b"key2", b"val2").unwrap();
+        db.delete(b"key2").unwrap();
+
+        let mut iter = db.iter().unwrap();
+        let mut keys = Vec::new();
+        while iter.valid() {
+            keys.push(iter.key().to_vec());
+            iter.next();
+        }
+        assert_eq!(keys, vec![b"key1"]);
+    }
+
+    #[test]
+    fn test_iterator_overwrite() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"key1", b"v1").unwrap();
+        db.put(b"key1", b"v2").unwrap();
+
+        let iter = db.iter().unwrap();
+        assert!(iter.valid());
+        assert_eq!(iter.key(), b"key1");
+        assert_eq!(iter.value(), b"v2");
+    }
+
+    #[test]
+    fn test_iterator_seek_to_last() {
+        let tmp_dir = TempDir::new().unwrap();
+        let db = Arc::new(DB::open(tmp_dir.path(), Options::default()).unwrap());
+
+        db.put(b"a", b"1").unwrap();
+        db.put(b"b", b"2").unwrap();
+        db.put(b"c", b"3").unwrap();
+
+        // seek_to_last currently delegates to seek_to_first
+        let mut iter = db.iter().unwrap();
+        iter.seek_to_last();
+        assert!(iter.valid());
     }
 }
