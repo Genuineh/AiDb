@@ -115,6 +115,8 @@ impl MetaRaftNode {
     /// Initialize a new MetaRaft cluster
     ///
     /// This should be called once on the first node to bootstrap the cluster.
+    /// If the Raft cluster is already initialized (e.g. after a restart), this
+    /// is a no-op.
     ///
     /// # Arguments
     ///
@@ -125,6 +127,16 @@ impl MetaRaftNode {
             // Store the address in network factory so openraft can reach peers
             self.network_factory.write().add_node(member_id, addr.clone());
             nodes.insert(member_id, BasicNode { addr });
+        }
+
+        // Skip if already initialized (e.g. after restart) to avoid NotAllowed error
+        if self
+            .raft
+            .is_initialized()
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to check MetaRaft init status: {:?}", e)))?
+        {
+            return Ok(());
         }
 
         self.raft

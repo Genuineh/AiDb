@@ -530,17 +530,363 @@ impl MetaStateMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cluster::meta_types::{NodeStatus, SlotMigrationState};
     use tempfile::TempDir;
 
-    // Note: Tests for MetaStateMachine are temporarily disabled due to stack overflow
-    // issues with the large ClusterMeta struct (16384-element array). These will be
-    // re-enabled in integration tests with proper stack size configuration, or we'll
-    // refactor ClusterMeta to use Vec instead of array.
+    // ── helpers ──────────────────────────────────────────────────────────
+
+    fn create_sm() -> (TempDir, MetaStateMachine) {
+        let dir = TempDir::new().unwrap();
+        let sm = MetaStateMachine::new(dir.path()).unwrap();
+        (dir, sm)
+    }
+
+    // ── handle_add_node ───────────────────────────────────────────────────
 
     #[test]
-    fn test_placeholder() {
-        // Placeholder test to ensure the module compiles
-        let temp_dir = TempDir::new().unwrap();
-        let _sm = MetaStateMachine::new(temp_dir.path()).unwrap();
+    fn test_add_node_ok() {
+        let (_dir, sm) = create_sm();
+        let (resp, changes) = sm.handle_add_node(1, "addr:1".into()).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+        assert!(changes.is_empty()); // no groups yet, so no rebalance
+
+        let meta = sm.get_cluster_meta();
+        assert!(meta.nodes.contains_key(&1));
+        assert_eq!(meta.config_version, 1);
+    }
+
+    #[test]
+    fn test_add_node_duplicate() {
+        let (_dir, sm) = create_sm();
+        sm.handle_add_node(1, "addr:1".into()).unwrap();
+        let (resp, _) = sm.handle_add_node(1, "addr:1".into()).unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── handle_remove_node ────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_node_ok() {
+        let (_dir, sm) = create_sm();
+        sm.handle_add_node(1, "addr:1".into()).unwrap();
+        let (resp, _) = sm.handle_remove_node(1).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert!(!meta.nodes.contains_key(&1));
+    }
+
+    #[test]
+    fn test_remove_node_nonexistent() {
+        let (_dir, sm) = create_sm();
+        let (resp, _) = sm.handle_remove_node(999).unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: AddNode / RemoveNode ──────────────────────────
+
+    #[test]
+    fn test_apply_add_node() {
+        let (_dir, sm) = create_sm();
+        let req = MetaRequest::AddNode { node_id: 10, addr: "addr:10".into() };
+        let resp = sm.apply_meta_request(req).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert_eq!(meta.nodes.len(), 1);
+        assert_eq!(meta.config_version, 1);
+    }
+
+    #[test]
+    fn test_apply_remove_node() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 10, addr: "addr:10".into() }).unwrap();
+        let resp = sm.apply_meta_request(MetaRequest::RemoveNode { node_id: 10 }).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+        assert!(!sm.get_cluster_meta().nodes.contains_key(&10));
+    }
+
+    #[test]
+    fn test_apply_remove_node_not_found() {
+        let (_dir, sm) = create_sm();
+        let resp = sm.apply_meta_request(MetaRequest::RemoveNode { node_id: 999 }).unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: CreateGroup ───────────────────────────────────
+
+    #[test]
+    fn test_apply_create_group() {
+        let (_dir, sm) = create_sm();
+        let resp = sm
+            .apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1, 2, 3] })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert!(meta.groups.contains_key(&1));
+        assert_eq!(meta.config_version, 1);
+    }
+
+    #[test]
+    fn test_apply_create_group_duplicate() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        let resp = sm
+            .apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![2] })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: UpdateSlots ───────────────────────────────────
+
+    #[test]
+    fn test_apply_update_slots() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        let resp =
+            sm.apply_meta_request(MetaRequest::UpdateSlots { start: 0, end: 100, group_id: 1 })
+                .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+    }
+
+    #[test]
+    fn test_apply_update_slots_nonexistent_group() {
+        let (_dir, sm) = create_sm();
+        let resp =
+            sm.apply_meta_request(MetaRequest::UpdateSlots { start: 0, end: 100, group_id: 999 })
+                .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: UpdateGroupMembers ────────────────────────────
+
+    #[test]
+    fn test_apply_update_group_members() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 1, addr: "a:1".into() }).unwrap();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 2, addr: "a:2".into() }).unwrap();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 3, addr: "a:3".into() }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1, 2] })
+            .unwrap();
+
+        let version_before = sm.get_cluster_meta().config_version;
+        let resp = sm
+            .apply_meta_request(MetaRequest::UpdateGroupMembers {
+                group_id: 1,
+                replicas: vec![1, 2, 3],
+            })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert_eq!(meta.groups.get(&1).unwrap().replicas, vec![1, 2, 3]);
+        assert!(meta.config_version > version_before);
+    }
+
+    #[test]
+    fn test_apply_update_group_members_not_found() {
+        let (_dir, sm) = create_sm();
+        let resp = sm
+            .apply_meta_request(MetaRequest::UpdateGroupMembers {
+                group_id: 999,
+                replicas: vec![1],
+            })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: StartMigration / CompleteMigration ────────────
+
+    #[test]
+    fn test_apply_start_and_complete_migration() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 2, replicas: vec![2] }).unwrap();
+
+        let resp = sm
+            .apply_meta_request(MetaRequest::StartMigration { slot: 42, from_group: 1, to_group: 2 })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert_eq!(meta.migrations.len(), 1);
+        assert!(!meta.migrations[0].is_complete());
+
+        let resp = sm
+            .apply_meta_request(MetaRequest::CompleteMigration { slot: 42 })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert!(meta.migrations[0].is_complete());
+    }
+
+    #[test]
+    fn test_apply_start_migration_nonexistent_group() {
+        let (_dir, sm) = create_sm();
+        let resp = sm
+            .apply_meta_request(MetaRequest::StartMigration { slot: 42, from_group: 999, to_group: 1 })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    #[test]
+    fn test_apply_start_migration_duplicate_slot() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 2, replicas: vec![2] }).unwrap();
+        sm.apply_meta_request(MetaRequest::StartMigration { slot: 42, from_group: 1, to_group: 2 })
+            .unwrap();
+        let resp = sm
+            .apply_meta_request(MetaRequest::StartMigration { slot: 42, from_group: 1, to_group: 2 })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    #[test]
+    fn test_apply_complete_migration_not_found() {
+        let (_dir, sm) = create_sm();
+        let resp = sm.apply_meta_request(MetaRequest::CompleteMigration { slot: 999 }).unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: SetSlotMigrationState ─────────────────────────
+
+    #[test]
+    fn test_apply_set_slot_migration_state() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 2, replicas: vec![2] }).unwrap();
+
+        let resp = sm
+            .apply_meta_request(MetaRequest::SetSlotMigrationState {
+                slot: 42,
+                state: SlotMigrationState::Migrating { from_group: 1, to_group: 2 },
+            })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+    }
+
+    #[test]
+    fn test_apply_set_slot_migration_state_invalid_slot() {
+        let (_dir, sm) = create_sm();
+        let resp = sm
+            .apply_meta_request(MetaRequest::SetSlotMigrationState {
+                slot: 50000,
+                state: SlotMigrationState::Idle,
+            })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: ClearSlotMigration ────────────────────────────
+
+    #[test]
+    fn test_apply_clear_slot_migration() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1] }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 2, replicas: vec![2] }).unwrap();
+        sm.apply_meta_request(MetaRequest::StartMigration { slot: 42, from_group: 1, to_group: 2 })
+            .unwrap();
+        assert_eq!(sm.get_cluster_meta().migrations.len(), 1);
+
+        let resp =
+            sm.apply_meta_request(MetaRequest::ClearSlotMigration { slot: 42 }).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+        assert_eq!(sm.get_cluster_meta().migrations.len(), 0);
+    }
+
+    // ── apply_meta_request: UpdateGroupLeader ─────────────────────────────
+
+    #[test]
+    fn test_apply_update_group_leader() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1, 2, 3] })
+            .unwrap();
+
+        let resp = sm
+            .apply_meta_request(MetaRequest::UpdateGroupLeader { group_id: 1, leader: 2 })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+        assert_eq!(sm.get_cluster_meta().groups.get(&1).unwrap().leader, Some(2));
+    }
+
+    #[test]
+    fn test_apply_update_group_leader_not_found() {
+        let (_dir, sm) = create_sm();
+        let resp =
+            sm.apply_meta_request(MetaRequest::UpdateGroupLeader { group_id: 999, leader: 1 })
+                .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── apply_meta_request: UpdateNodeStatus ──────────────────────────────
+
+    #[test]
+    fn test_apply_update_node_status() {
+        let (_dir, sm) = create_sm();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 1, addr: "a:1".into() }).unwrap();
+
+        let resp = sm
+            .apply_meta_request(MetaRequest::UpdateNodeStatus {
+                node_id: 1,
+                status: NodeStatus::Online,
+            })
+            .unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+        assert_eq!(sm.get_cluster_meta().nodes.get(&1).unwrap().status, NodeStatus::Online);
+    }
+
+    #[test]
+    fn test_apply_update_node_status_not_found() {
+        let (_dir, sm) = create_sm();
+        let resp = sm
+            .apply_meta_request(MetaRequest::UpdateNodeStatus {
+                node_id: 999,
+                status: NodeStatus::Online,
+            })
+            .unwrap();
+        assert!(matches!(resp, MetaResponse::Error(_)));
+    }
+
+    // ── handle_add_node with rebalance ────────────────────────────────────
+
+    #[test]
+    fn test_add_node_triggers_rebalance_when_groups_exist() {
+        let (_dir, sm) = create_sm();
+
+        // Add 2 nodes and create a group
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 1, addr: "a:1".into() }).unwrap();
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 2, addr: "a:2".into() }).unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup { group_id: 1, replicas: vec![1, 2] })
+            .unwrap();
+
+        // Add a 3rd node — should trigger rebalance
+        let (resp, _changes) = sm.handle_add_node(3, "a:3".into()).unwrap();
+        assert_eq!(resp, MetaResponse::Ok);
+
+        let meta = sm.get_cluster_meta();
+        assert!(meta.nodes.contains_key(&3));
+        assert!(meta.config_version >= 2);
+    }
+
+    // ── get_cluster_meta / get_config_version ─────────────────────────────
+
+    #[test]
+    fn test_get_config_version() {
+        let (_dir, sm) = create_sm();
+        assert_eq!(sm.get_config_version(), 0);
+
+        sm.apply_meta_request(MetaRequest::AddNode { node_id: 1, addr: "a:1".into() }).unwrap();
+        assert_eq!(sm.get_config_version(), 1);
+    }
+
+    #[test]
+    fn test_get_cluster_meta_isolation() {
+        let (_dir, sm) = create_sm();
+        let _meta = sm.get_cluster_meta();
+        // Mutating the copy does not affect the SM
+        assert_eq!(sm.get_cluster_meta().config_version, 0);
     }
 }

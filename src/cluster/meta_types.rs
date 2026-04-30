@@ -392,7 +392,7 @@ pub enum MetaRequest {
 }
 
 /// Response types for MetaRaft operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MetaResponse {
     /// Operation successful
     Ok,
