@@ -255,6 +255,35 @@ impl SSTableBuilder {
     }
 }
 
+/// Build an SSTable path with level encoding.
+/// Example: /data/000123_L5.sst (file 123, level 5)
+pub fn sstable_path(dir: &std::path::Path, file_number: u64, level: usize) -> std::path::PathBuf {
+    dir.join(format!("{:06}_L{}.sst", file_number, level))
+}
+
+/// Parse level from an SSTable filename.
+/// Returns (file_number, level), or None for unrecognized names.
+/// Handles both:
+///   - New format: 000123_L5.sst
+///   - Legacy:     000123.sst (returns level 0)
+pub fn parse_sstable_filename(filename: &str) -> Option<(u64, usize)> {
+    if let Some(rest) = filename.strip_suffix(".sst") {
+        // New format: NNNNNN_L<N>.sst
+        if let Some(lpos) = rest.rfind("_L") {
+            let num_part = &rest[..lpos];
+            let level_part = &rest[lpos + 2..];
+            if let (Ok(num), Ok(level)) = (num_part.parse::<u64>(), level_part.parse::<usize>()) {
+                return Some((num, level));
+            }
+        }
+        // Legacy format: NNNNNN.sst → level 0
+        if let Ok(num) = rest.parse::<u64>() {
+            return Some((num, 0));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

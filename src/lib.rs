@@ -323,29 +323,30 @@ impl DB {
         // Step 6a: Create block cache (needed before loading SSTables)
         let block_cache = Arc::new(BlockCache::new(options.block_cache_size));
 
-        // Scan directory for SSTable files (*.sst)
+        // Scan directory for SSTable files (*.sst) and assign to correct levels
         if path.exists() {
             if let Ok(entries) = std::fs::read_dir(&path) {
-                let mut sst_files = Vec::new();
+                let mut sst_files: Vec<(u64, usize, std::path::PathBuf)> = Vec::new();
 
                 for entry in entries.flatten() {
                     if let Some(filename) = entry.file_name().to_str() {
-                        if filename.ends_with(".sst") {
-                            sst_files.push(entry.path());
+                        if let Some((num, level)) = crate::sstable::parse_sstable_filename(filename) {
+                            sst_files.push((num, level, entry.path()));
                         }
                     }
                 }
 
-                // Sort SSTable files by file number (newest last)
-                sst_files.sort();
+                sst_files.sort_by_key(|&(num, _, _)| num);
 
-                // Load all SSTables into Level 0
-                for sst_path in sst_files {
+                for (_, level, sst_path) in sst_files {
                     match SSTableReader::open_with_cache(&sst_path, Some(Arc::clone(&block_cache)))
                     {
                         Ok(reader) => {
-                            sstables[0].push(Arc::new(reader));
-                            log::info!("Loaded SSTable: {:?}", sst_path);
+                            if level < sstables.len() {
+                                sstables[level].push(Arc::new(reader));
+                            } else {
+                                sstables[0].push(Arc::new(reader));
+                            }
                         }
                         Err(e) => {
                             log::warn!("Failed to load SSTable {:?}: {}", sst_path, e);
@@ -353,7 +354,11 @@ impl DB {
                     }
                 }
 
-                log::info!("Loaded {} SSTables at Level 0", sstables[0].len());
+                for (i, level_ssts) in sstables.iter().enumerate() {
+                    if !level_ssts.is_empty() {
+                        log::info!("Loaded {} SSTables at Level {}", level_ssts.len(), i);
+                    }
+                }
             }
         }
 
@@ -993,7 +998,7 @@ impl DB {
         let file_number = self.next_file_number.fetch_add(1, Ordering::SeqCst);
 
         // Create SSTable file path
-        let sstable_path = self.path.join(format!("{:06}.sst", file_number));
+        let sstable_path = crate::sstable::sstable_path(&self.path, file_number, 0);
 
         log::info!("Starting flush of MemTable to SSTable: {:?}", sstable_path);
 

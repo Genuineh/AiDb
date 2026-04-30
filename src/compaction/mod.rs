@@ -73,7 +73,7 @@ impl CompactionJob {
         );
 
         // Create output SSTable path
-        let output_path = self.db_path.join(format!("{:06}.sst", file_number));
+        let output_path = crate::sstable::sstable_path(&self.db_path, file_number, self.output_level);
 
         // Create merge iterator
         let mut merge_iter = MergeIterator::new(self.inputs.clone())?;
@@ -217,7 +217,7 @@ mod tests {
         let result = job.run(100).unwrap();
 
         assert_eq!(result.entry_count, 6);
-        let output_path = dir.path().join("000100.sst");
+        let output_path = dir.path().join("000100_L1.sst");
         assert!(output_path.exists());
 
         let reader = SSTableReader::open(&output_path).unwrap();
@@ -245,7 +245,7 @@ mod tests {
         let result = job.run(100).unwrap();
         assert_eq!(result.entry_count, 4); // a, b, c, d (no duplicates)
 
-        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        let reader = SSTableReader::open(&dir.path().join("000100_L1.sst")).unwrap();
         assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
         assert_eq!(reader.get(b"b").unwrap(), Some(b"2".to_vec()));
         assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
@@ -272,7 +272,7 @@ mod tests {
         let result = job.run(100).unwrap();
         assert_eq!(result.entry_count, 3); // a, c, e (tombstones removed)
 
-        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        let reader = SSTableReader::open(&dir.path().join("000100_L1.sst")).unwrap();
         assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
         assert_eq!(reader.get(b"b").unwrap(), None); // tombstone removed
         assert_eq!(reader.get(b"c").unwrap(), Some(b"3".to_vec()));
@@ -299,7 +299,7 @@ mod tests {
         let result = job.run(100).unwrap();
         assert_eq!(result.entry_count, 3); // all entries kept
 
-        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        let reader = SSTableReader::open(&dir.path().join("000100_L0.sst")).unwrap();
         assert_eq!(reader.get(b"a").unwrap(), Some(b"1".to_vec()));
         // At level 0, tombstone is preserved — entry exists with empty value
         assert_eq!(reader.get(b"b").unwrap(), Some(b"".to_vec()));
@@ -321,7 +321,7 @@ mod tests {
         let result = job.run(100).unwrap();
         assert_eq!(result.entry_count, 3);
 
-        let reader = SSTableReader::open(&dir.path().join("000100.sst")).unwrap();
+        let reader = SSTableReader::open(&dir.path().join("000100_L1.sst")).unwrap();
         assert_eq!(reader.get(b"x").unwrap(), Some(b"10".to_vec()));
         assert_eq!(reader.get(b"y").unwrap(), Some(b"20".to_vec()));
         assert_eq!(reader.get(b"z").unwrap(), Some(b"30".to_vec()));
@@ -344,6 +344,6 @@ mod tests {
         assert_eq!(result.file_number, 0);
         assert_eq!(result.entry_count, 0);
         // Output file should not exist
-        assert!(!dir.path().join("000100.sst").exists());
+        assert!(!dir.path().join("000100_L1.sst").exists());
     }
 }

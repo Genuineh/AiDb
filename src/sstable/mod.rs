@@ -37,7 +37,7 @@ pub mod index;
 pub mod reader;
 
 pub use block::{Block, BlockBuilder, BlockIterator};
-pub use builder::SSTableBuilder;
+pub use builder::{SSTableBuilder, sstable_path, parse_sstable_filename};
 pub use footer::{BlockHandle, Footer};
 pub use index::IndexBlock;
 pub use reader::SSTableReader;

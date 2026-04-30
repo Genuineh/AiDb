@@ -89,8 +89,7 @@ impl SSTableReader {
         let file_number = path
             .file_name()
             .and_then(|n| n.to_str())
-            .and_then(|s| s.strip_suffix(".sst"))
-            .and_then(|n| n.parse::<u64>().ok())
+            .and_then(|s| crate::sstable::parse_sstable_filename(s).map(|(num, _)| num))
             .unwrap_or_else(|| {
                 // Fallback: use hash of full path to ensure uniqueness
                 use std::collections::hash_map::DefaultHasher;
@@ -412,12 +411,11 @@ impl SSTableReader {
 
     /// Get the file number from the filename
     ///
-    /// Extracts the file number from filenames like "000001.sst"
+    /// Extracts the file number from filenames like "000001.sst" or "000001_L5.sst"
     /// Returns None if the filename doesn't match the expected pattern
     pub fn file_number(&self) -> Option<u64> {
         let filename = self.file_path.file_name()?.to_str()?;
-        let num_str = filename.strip_suffix(".sst")?;
-        num_str.parse::<u64>().ok()
+        crate::sstable::parse_sstable_filename(filename).map(|(num, _)| num)
     }
 
     /// Get the smallest key in the SSTable
