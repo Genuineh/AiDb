@@ -39,6 +39,9 @@ pub struct ShardedRaftStorage {
 
     /// Node ID for this storage instance
     node_id: NodeId,
+
+    /// Options for creating AiDb instances in each group
+    options: Options,
 }
 
 impl ShardedRaftStorage {
@@ -60,7 +63,31 @@ impl ShardedRaftStorage {
         let base_dir = base_dir.into();
         std::fs::create_dir_all(&base_dir)?;
 
-        Ok(Self { groups: Arc::new(RwLock::new(HashMap::new())), base_dir, node_id })
+        Ok(Self {
+            groups: Arc::new(RwLock::new(HashMap::new())),
+            base_dir,
+            node_id,
+            options: Options::default(),
+        })
+    }
+
+    /// Create with custom database options for AiDb instances in each group
+    ///
+    /// # Arguments
+    ///
+    /// * `base_dir` - Base directory for storing all group data
+    /// * `node_id` - Node ID for this storage instance
+    /// * `options` - Custom AiDb options to use when creating per-group databases
+    pub fn with_options<P: Into<PathBuf>>(base_dir: P, node_id: NodeId, options: Options) -> Result<Self> {
+        let base_dir = base_dir.into();
+        std::fs::create_dir_all(&base_dir)?;
+
+        Ok(Self {
+            groups: Arc::new(RwLock::new(HashMap::new())),
+            base_dir,
+            node_id,
+            options,
+        })
     }
 
     /// Create or open storage for a specific group
@@ -95,10 +122,9 @@ impl ShardedRaftStorage {
         let group_dir = self.group_path(group_id);
         std::fs::create_dir_all(&group_dir)?;
 
-        // Create DB instance for this group with default options
+        // Create DB instance for this group with configured options
         let db_dir = group_dir.join("db");
-        let options = Options::default();
-        let db = DB::open(&db_dir, options)?;
+        let db = DB::open(&db_dir, self.options.clone())?;
 
         // Create OpenRaftStorage instance
         let storage = Arc::new(OpenRaftStorage::new(db)?);

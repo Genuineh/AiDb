@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("1. Creating Multi-Raft node...");
     let temp_dir = tempfile::TempDir::new()?;
     let config = Config::default();
-    let mut node = MultiRaftNode::new(1, temp_dir.path(), config).await?;
+    let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None).await?;
     println!("   ✓ Node created with ID: {}\n", node.node_id());
 
     // Step 2: Initialize MetaRaft

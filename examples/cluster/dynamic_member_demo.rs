@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("8. Creating and starting MultiRaftNode...");
     let node_dir = tempfile::TempDir::new()?;
     let config = Config::default();
-    let mut node = MultiRaftNode::new(1, node_dir.path(), config).await?;
+    let mut node = MultiRaftNode::new(1, node_dir.path(), config, None).await?;
 
     // Initialize MetaRaft
     let meta_config = Config::default();

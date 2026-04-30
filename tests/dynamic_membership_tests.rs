@@ -112,7 +112,7 @@ async fn test_multi_raft_node_start() {
     // Test MultiRaftNode start method
     let temp_dir = tempfile::TempDir::new().unwrap();
     let config = Config::default();
-    let mut node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+    let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
     // Initialize MetaRaft
     let meta_config = Config::default();
@@ -139,7 +139,7 @@ async fn test_load_groups_from_metadata() {
     // Test that groups are properly loaded from metadata
     let temp_dir = tempfile::TempDir::new().unwrap();
     let config = Config::default();
-    let mut node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+    let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
     // Initialize MetaRaft
     let meta_config = Config::default();
@@ -222,7 +222,7 @@ async fn test_membership_coordinator_integration() {
 
     let temp_dir = tempfile::TempDir::new().unwrap();
     let config = Config::default();
-    let mut node = MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap();
+    let mut node = MultiRaftNode::new(1, temp_dir.path(), config.clone(), None).await.unwrap();
 
     // Initialize MetaRaft
     let meta_config = Config::default();

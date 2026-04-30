@@ -112,7 +112,7 @@ impl MultiRaftNode {
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = Config::default();
-    /// let node = MultiRaftNode::new(1, "./data", config).await?;
+    /// let node = MultiRaftNode::new(1, "./data", config, None).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -120,13 +120,18 @@ impl MultiRaftNode {
         node_id: NodeId,
         data_dir: P,
         config: Config,
+        storage_options: Option<Options>,
     ) -> Result<Self> {
         let data_dir = data_dir.into();
         std::fs::create_dir_all(&data_dir)?;
 
-        // Create sharded storage
+        // Create sharded storage (use custom options if provided, e.g. use_wal: false for cluster mode)
         let groups_dir = data_dir.join("groups");
-        let storage = Arc::new(ShardedRaftStorage::new(groups_dir, node_id)?);
+        let storage = if let Some(opts) = storage_options {
+            Arc::new(ShardedRaftStorage::with_options(groups_dir, node_id, opts)?)
+        } else {
+            Arc::new(ShardedRaftStorage::new(groups_dir, node_id)?)
+        };
 
         // Create network factory
         let network_factory = Arc::new(RaftNetworkClientFactory::new(node_id));
@@ -1496,7 +1501,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
         assert_eq!(node.node_id(), 1);
         assert_eq!(node.group_count(), 0);
     }
@@ -1506,7 +1511,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Create a group
         let replicas = vec![1];
@@ -1523,7 +1528,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Create multiple groups
         for i in 1..=10 {
@@ -1543,7 +1548,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Create same group twice
         let group1 = node.create_raft_group(100, vec![1]).await.unwrap();
@@ -1559,7 +1564,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Create and remove a group
         node.create_raft_group(100, vec![1]).await.unwrap();
@@ -1580,7 +1585,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Create groups
         node.create_raft_group(1, vec![1]).await.unwrap();
@@ -1598,7 +1603,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         node.add_node_address(2, "127.0.0.1:50052".to_string());
         node.add_node_address(3, "127.0.0.1:50053".to_string());
@@ -1615,7 +1620,7 @@ mod tests {
         // Create some groups
         {
             let config = Config::default();
-            let node = MultiRaftNode::new(1, &storage_path, config).await.unwrap();
+            let node = MultiRaftNode::new(1, &storage_path, config, None).await.unwrap();
             node.create_raft_group(1, vec![1]).await.unwrap();
             node.create_raft_group(2, vec![1]).await.unwrap();
             node.create_raft_group(3, vec![1]).await.unwrap();
@@ -1623,7 +1628,7 @@ mod tests {
 
         // Create new node instance and load existing groups
         let config = Config::default();
-        let node = MultiRaftNode::new(1, &storage_path, config).await.unwrap();
+        let node = MultiRaftNode::new(1, &storage_path, config, None).await.unwrap();
         let loaded = node.load_existing_groups().await.unwrap();
 
         assert_eq!(loaded, 3);

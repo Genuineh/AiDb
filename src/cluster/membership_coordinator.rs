@@ -194,7 +194,7 @@ mod tests {
     async fn test_membership_coordinator_creation() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let config = Config::default();
-        let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap());
+        let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone(), None).await.unwrap());
 
         let meta_dir = temp_dir.path().join("meta");
         let meta_raft = Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());
@@ -207,7 +207,7 @@ mod tests {
     async fn test_is_group_ready_nonexistent() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let config = Config::default();
-        let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone()).await.unwrap());
+        let node = Arc::new(MultiRaftNode::new(1, temp_dir.path(), config.clone(), None).await.unwrap());
 
         let meta_dir = temp_dir.path().join("meta");
         let meta_raft = Arc::new(MetaRaftNode::new(1, meta_dir, config).await.unwrap());

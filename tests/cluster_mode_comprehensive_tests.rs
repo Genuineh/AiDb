@@ -33,7 +33,7 @@ mod comprehensive_cluster_tests {
         group_id: u64,
     ) -> (MultiRaftNode, TempDir) {
         let config = Config::default();
-        let mut node = MultiRaftNode::new(node_id, temp_dir.path(), config)
+        let mut node = MultiRaftNode::new(node_id, temp_dir.path(), config, None)
             .await
             .expect("Failed to create MultiRaftNode");
 
@@ -231,7 +231,7 @@ mod comprehensive_cluster_tests {
     async fn test_multi_group_data_isolation() {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
-        let mut node = MultiRaftNode::new(1, temp_dir.path(), config)
+        let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None)
             .await
             .expect("Failed to create MultiRaftNode");
 
@@ -333,7 +333,7 @@ mod comprehensive_cluster_tests {
         let path = temp_dir.path().to_path_buf();
         {
             let config = Config::default();
-            let mut node = MultiRaftNode::new(1, &path, config)
+            let mut node = MultiRaftNode::new(1, &path, config, None)
                 .await
                 .expect("Failed to create MultiRaftNode");
 
@@ -377,7 +377,7 @@ mod comprehensive_cluster_tests {
         // Second session: restart and verify data persists
         {
             let config = Config::default();
-            let mut node = MultiRaftNode::new(1, temp_dir.path(), config)
+            let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None)
                 .await
                 .expect("Failed to recreate MultiRaftNode");
 
@@ -651,7 +651,7 @@ mod comprehensive_cluster_tests {
         // Multiple shutdown/restart cycles
         for cycle in 0..3 {
             let config = Config::default();
-            let mut node = MultiRaftNode::new(1, temp_dir.path(), config)
+            let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None)
                 .await
                 .expect("Failed to create MultiRaftNode");
 
@@ -786,7 +786,7 @@ mod comprehensive_cluster_tests {
     async fn test_multi_raft_non_default_node_id() {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
-        let mut node = MultiRaftNode::new(42, temp_dir.path(), config)
+        let mut node = MultiRaftNode::new(42, temp_dir.path(), config, None)
             .await
             .expect("Failed to create MultiRaftNode with node_id 42");
 

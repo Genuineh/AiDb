@@ -177,7 +177,7 @@ mod sharded_routing_tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config::default();
 
-        let mut node = MultiRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+        let mut node = MultiRaftNode::new(1, temp_dir.path(), config, None).await.unwrap();
 
         // Initialize MetaRaft
         let meta_config = Config::default();
