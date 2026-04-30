@@ -376,4 +376,38 @@ mod tests {
         // File should exist but not be a valid SSTable (no footer)
         assert!(temp_file.path().exists());
     }
+
+    #[test]
+    fn test_parse_sstable_filename_new_format() {
+        assert_eq!(parse_sstable_filename("000001_L0.sst"), Some((1, 0)));
+        assert_eq!(parse_sstable_filename("000001_L5.sst"), Some((1, 5)));
+        assert_eq!(parse_sstable_filename("000001_L10.sst"), Some((1, 10)));
+        assert_eq!(parse_sstable_filename("999999_L99.sst"), Some((999999, 99)));
+    }
+
+    #[test]
+    fn test_parse_sstable_filename_legacy_format() {
+        assert_eq!(parse_sstable_filename("000001.sst"), Some((1, 0)));
+        assert_eq!(parse_sstable_filename("999999.sst"), Some((999999, 0)));
+    }
+
+    #[test]
+    fn test_parse_sstable_filename_invalid() {
+        assert_eq!(parse_sstable_filename(""), None);
+        assert_eq!(parse_sstable_filename("not_sst"), None);
+        assert_eq!(parse_sstable_filename("file.txt"), None);
+        assert_eq!(parse_sstable_filename("000001_L.sst"), None);
+        assert_eq!(parse_sstable_filename("000001_L5x.sst"), None);
+        assert_eq!(parse_sstable_filename("abc.sst"), None);
+    }
+
+    #[test]
+    fn test_sstable_path_roundtrip() {
+        for (num, level) in &[(1, 0), (1, 5), (100, 10), (999999, 99)] {
+            use std::path::Path;
+            let path = sstable_path(Path::new("/data"), *num, *level);
+            let filename = path.file_name().unwrap().to_str().unwrap();
+            assert_eq!(parse_sstable_filename(filename), Some((*num, *level)));
+        }
+    }
 }

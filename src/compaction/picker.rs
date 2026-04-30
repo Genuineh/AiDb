@@ -116,7 +116,7 @@ mod tests {
         file_num: u64,
         num_entries: usize,
     ) -> Arc<SSTableReader> {
-        let path = dir.path().join(format!("{:06}.sst", file_num));
+        let path = crate::sstable::sstable_path(dir.path(), file_num, 0);
         let mut builder = SSTableBuilder::new(&path).unwrap();
 
         for i in 0..num_entries {

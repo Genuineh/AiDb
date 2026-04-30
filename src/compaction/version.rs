@@ -241,19 +241,17 @@ impl VersionSet {
 
     /// Load SSTable readers for the current version
     pub fn load_sstables(&self, db_path: &Path) -> Result<Vec<Vec<Arc<SSTableReader>>>> {
-        let mut levels = vec![Vec::new(); self.max_levels];
+        let mut levels = vec![Vec::new(); self.current.levels.len()];
 
         for (level_idx, level) in self.current.levels.iter().enumerate() {
             for file_meta in level {
-                let path = db_path.join(format!("{:06}.sst", file_meta.file_number));
-                if path.exists() {
-                    match SSTableReader::open(&path) {
-                        Ok(reader) => {
-                            levels[level_idx].push(Arc::new(reader));
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to load SSTable {:?}: {}", path, e);
-                        }
+                let path = crate::sstable::sstable_path(db_path, file_meta.file_number, level_idx);
+                match SSTableReader::open(&path) {
+                    Ok(reader) => {
+                        levels[level_idx].push(Arc::new(reader));
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load SSTable {:?}: {}", path, e);
                     }
                 }
             }

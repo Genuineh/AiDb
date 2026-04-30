@@ -185,7 +185,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_sstable(dir: &Path, number: u64, entries: &[(&[u8], &[u8])]) -> Arc<SSTableReader> {
-        let path = dir.join(format!("{:06}.sst", number));
+        let path = crate::sstable::sstable_path(dir, number, 0);
         let mut builder = SSTableBuilder::new(&path).unwrap();
         for (k, v) in entries {
             builder.add(k, v).unwrap();

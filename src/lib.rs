@@ -1389,10 +1389,10 @@ impl DB {
 
         // Now delete physical files AFTER updating in-memory structures
         // This ensures consistency if deletion fails
-        for (file_num, file_path) in input_file_info {
+        for (_file_num, file_path) in input_file_info {
             if file_path.exists() {
                 std::fs::remove_file(&file_path)?;
-                log::info!("Deleted compacted file {:06}.sst: {:?}", file_num, file_path);
+                log::info!("Deleted compacted file: {:?}", file_path);
             }
         }
 
