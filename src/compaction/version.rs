@@ -113,8 +113,6 @@ pub struct VersionSet {
     manifest_path: PathBuf,
     /// Manifest file handle
     manifest_file: Option<File>,
-    /// Maximum number of levels
-    max_levels: usize,
     /// Next file number
     next_file_number: u64,
 }
@@ -129,7 +127,6 @@ impl VersionSet {
             current: Version::new(max_levels),
             manifest_path: manifest_path.clone(),
             manifest_file: None,
-            max_levels,
             next_file_number: 1,
         };
 
