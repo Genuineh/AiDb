@@ -127,7 +127,10 @@ pub struct GroupMeta {
     /// Typically has `replication_factor` nodes (e.g., 3 or 5)
     pub replicas: Vec<NodeId>,
 
-    /// Current leader node ID (if known)
+    /// Current leader node ID — read-through cache populated by background sync
+    /// from openraft Data Raft metrics. Do NOT manually set this from failover commands;
+    /// rely on the background watcher (`sync_data_group_leaders_to_meta`) instead.
+    /// The only legitimate manual set is during single-node group bootstrap.
     pub leader: Option<NodeId>,
 
     /// Group metadata version

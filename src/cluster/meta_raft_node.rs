@@ -248,7 +248,14 @@ impl MetaRaftNode {
         self.propose_meta_change(request).await
     }
 
-    /// Update group leader
+    /// Update the cached group leader in MetaRaft metadata.
+    ///
+    /// This should only be called by:
+    /// - The background leader sync (`sync_data_group_leaders_to_meta`)
+    /// - Single-node group bootstrap (where the leader is deterministic)
+    ///
+    /// Do NOT call from cluster_failover — rely on Data Raft's natural leader election
+    /// and let the background watcher propagate the result to MetaRaft.
     pub async fn update_group_leader(
         &self,
         group_id: GroupId,

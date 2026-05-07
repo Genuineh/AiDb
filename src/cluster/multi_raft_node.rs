@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[cfg(feature = "raft-cluster")]
 use openraft::{
@@ -83,6 +84,10 @@ pub struct MultiRaftNode {
     /// but would otherwise never create local data-group storage. Data-plane entrypoints bump this
     /// via [`MultiRaftNode::ensure_data_groups_for_current_meta`].
     groups_synced_for_config_version: Arc<AtomicU64>,
+
+    /// Debounce state for leader sync: (group_id -> (last_proposed_leader, last_proposal_time))
+    /// prevents thundering-herd proposals when multiple nodes observe the same Data Raft election.
+    leader_sync_debounce: Arc<RwLock<HashMap<GroupId, (Option<NodeId>, Instant)>>>,
 }
 
 /// Result of a streaming scan operation on a single group.
@@ -148,6 +153,7 @@ impl MultiRaftNode {
             data_dir,
             raft_config: config,
             groups_synced_for_config_version: Arc::new(AtomicU64::new(0)),
+            leader_sync_debounce: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -319,20 +325,18 @@ impl MultiRaftNode {
         if !replicas.contains(&self_node_id) {
             return Ok(());
         }
+        if raft
+            .is_initialized()
+            .await
+            .map_err(|e| Error::Internal(format!("Raft is_initialized failed: {:?}", e)))?
+        {
+            return Ok(());
+        }
         let should_init = match designated_leader {
             Some(leader) => self_node_id == leader,
             None => self_node_id == *replicas.iter().min().unwrap_or(&self_node_id),
         };
         if should_init {
-            // Storage may already hold a vote/log (restart, leftover volume, or concurrent
-            // `create_raft_group_*`); OpenRaft rejects a second `initialize` with NotAllowed.
-            if raft
-                .is_initialized()
-                .await
-                .map_err(|e| Error::Internal(format!("Raft is_initialized failed: {:?}", e)))?
-            {
-                return Ok(());
-            }
             let self_addr = self_addr_fn()?;
             let members = BTreeMap::from([(self_node_id, BasicNode { addr: self_addr })]);
             raft.initialize(members).await.or_else(|e| match e {
@@ -396,6 +400,88 @@ impl MultiRaftNode {
         groups.keys().copied().collect()
     }
 
+    /// Sync actual Data Raft leaders back to MetaRaft metadata cache.
+    ///
+    /// For each local Data Raft group, reads `metrics.current_leader` from openraft
+    /// and proposes an update to MetaRaft if it differs from the cached value.
+    ///
+    /// A per-group debounce prevents redundant proposals: the same leader for the
+    /// same group is only proposed once per underlying sync interval (typically 2s).
+    /// `ForwardToLeader` errors are silently skipped — the MetaRaft-leader node's
+    /// own watcher will pick up the change on its next tick.
+    pub async fn sync_data_group_leaders_to_meta(&self) -> Result<()> {
+        let Some(meta_raft) = self.meta_raft() else {
+            return Ok(());
+        };
+        let meta = meta_raft.get_cluster_meta();
+        let now = Instant::now();
+
+        // Minimum interval between proposals for the same (group, leader) pair.
+        // Shorter than the watcher interval (2s) to allow one proposal per cycle.
+        const DEBOUNCE_MS: u64 = 1500;
+
+        for &group_id in &self.list_groups() {
+            let Some(raft) = self.get_raft_group(group_id) else {
+                continue;
+            };
+            let current_leader = raft.metrics().borrow().current_leader;
+
+            // Do not propose None — missing cache is better than wrong cache.
+            let Some(actual_leader) = current_leader else {
+                continue;
+            };
+
+            let cached_leader = meta.groups.get(&group_id).and_then(|g| g.leader);
+            if Some(actual_leader) == cached_leader {
+                continue;
+            }
+
+            // Debounce: skip if we already proposed this exact leader recently.
+            {
+                let debounce = self.leader_sync_debounce.read();
+                if let Some((prev_leader, prev_time)) = debounce.get(&group_id) {
+                    if *prev_leader == Some(actual_leader)
+                        && (now.duration_since(*prev_time).as_millis() as u64)
+                            < DEBOUNCE_MS
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            tracing::info!(
+                group_id = group_id,
+                actual_leader = actual_leader,
+                cached_leader = ?cached_leader,
+                "Syncing Data Raft leader to MetaRaft cache"
+            );
+
+            match meta_raft.update_group_leader(group_id, actual_leader).await {
+                Ok(_) => {
+                    let mut debounce = self.leader_sync_debounce.write();
+                    debounce.insert(group_id, (Some(actual_leader), now));
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("ForwardToLeader") {
+                        // Not the MetaRaft leader — the leader's watcher will sync.
+                        tracing::debug!(
+                            group_id = group_id,
+                            "Leader sync skipped: this node is not MetaRaft leader"
+                        );
+                    } else {
+                        tracing::warn!(
+                            group_id = group_id,
+                            error = %msg,
+                            "Leader sync proposal failed"
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Get the number of active groups
     pub fn group_count(&self) -> usize {
         let groups = self.groups.read();
@@ -434,7 +520,7 @@ impl MultiRaftNode {
     ///
     /// Uses the shared [`RaftNetworkClientFactory`] (e.g. `CLUSTER METARAFT ADDLEARNER`),
     /// then falls back to [`ClusterMeta::nodes`] from MetaRaft (e.g. `CLUSTER MEET` Redis `host:port`).
-    fn peer_raft_grpc_addr(&self, peer: NodeId) -> Result<String> {
+    pub fn peer_raft_grpc_addr(&self, peer: NodeId) -> Result<String> {
         // 1. Directly registered addresses (ADDLEARNER on this node)
         if let Some((_, mut a)) = self
             .network_factory
@@ -714,6 +800,43 @@ impl MultiRaftNode {
                         *group_id,
                         group_meta.replicas.clone(),
                         group_meta.leader,
+                    )
+                    .await?;
+                } else if let Some(raft) = self.get_raft_group(*group_id) {
+                    // Group exists (e.g. loaded from disk by load_existing_groups).
+                    // Check if it is initialized with a valid membership for this node.
+                    let metrics = raft.metrics().borrow().clone();
+                    let is_initialized = metrics.membership_config.membership().voter_ids().next().is_some();
+                    let is_voter = metrics.membership_config.membership().voter_ids().any(|id| id == self.node_id);
+                    let should_be_in_group = group_meta.replicas.contains(&self.node_id);
+
+                    if is_initialized && !is_voter {
+                        // This node is in the group's replica list but is currently a
+                        // learner, not a voter. This is normal during early cluster
+                        // provisioning, or during failover when the leader hasn't yet
+                        // reconciled membership.
+                        //
+                        // DO NOT destroy and re-create the group — that would erase the
+                        // local Raft log. The leader's reconcile_data_group_membership
+                        // (or the failover self-healing path) will promote this node.
+                        tracing::warn!(
+                            diag_event = "multi_raft_learner_not_voter",
+                            node_id = self.node_id,
+                            group_id = *group_id,
+                            has_leader = metrics.current_leader.is_some(),
+                            current_voters = ?metrics.membership_config.membership().voter_ids().collect::<Vec<_>>(),
+                            meta_replicas = ?group_meta.replicas,
+                            "Data Raft group has initialized membership but local node is a learner, not a voter; keeping existing group (leader will reconcile, or failover will self-heal)"
+                        );
+                    }
+                    // Safe no-op for already-initialized groups; initializes uninitialized
+                    // learners (e.g. groups freshly created from disk).
+                    Self::maybe_initialize_raft(
+                        &raft,
+                        self.node_id,
+                        &group_meta.replicas,
+                        group_meta.leader,
+                        || self.peer_raft_grpc_addr(self.node_id),
                     )
                     .await?;
                 }
