@@ -859,16 +859,46 @@ impl MultiRaftNode {
                             "Data Raft group has initialized membership but local node is a learner, not a voter; keeping existing group (leader will reconcile, or failover will self-heal)"
                         );
                     }
-                    // Safe no-op for already-initialized groups; initializes uninitialized
-                    // learners (e.g. groups freshly created from disk).
-                    Self::maybe_initialize_raft(
-                        &raft,
-                        self.node_id,
-                        &group_meta.replicas,
-                        group_meta.leader,
-                        || self.peer_raft_grpc_addr(self.node_id),
-                    )
-                    .await?;
+                    // For already-initialized groups this is a no-op.
+                    // For uninitialized learners (groups freshly created from disk or
+                    // non-leader replicas), initialize with this node as sole voter so
+                    // the Raft instance can accept AppendEntries without panicking.
+                    if !raft.is_initialized().await.unwrap_or(false) {
+                        let should_init = match group_meta.leader {
+                            Some(leader) => self.node_id == leader,
+                            None => self.node_id == *group_meta.replicas.iter().min().unwrap_or(&self.node_id),
+                        };
+                        if should_init {
+                            Self::maybe_initialize_raft(
+                                &raft,
+                                self.node_id,
+                                &group_meta.replicas,
+                                group_meta.leader,
+                                || self.peer_raft_grpc_addr(self.node_id),
+                            )
+                            .await?;
+                        } else {
+                            // Non-leader replica with uninitialized group.
+                            // Initialize as single-voter so the group can accept
+                            // AppendEntries from the leader without panicking.
+                            let self_addr = self.peer_raft_grpc_addr(self.node_id)?;
+                            let members = BTreeMap::from([(self.node_id, BasicNode { addr: self_addr })]);
+                            raft.initialize(members).await.or_else(|e| match e {
+                                RaftError::APIError(InitializeError::NotAllowed(_)) => Ok(()),
+                                other => Err(Error::Internal(format!(
+                                    "Initialize non-leader data group {} failed: {:?}",
+                                    group_id, other
+                                ))),
+                            })?;
+                            tracing::info!(
+                                diag_event = "multi_raft_init_non_leader_group",
+                                node_id = self.node_id,
+                                group_id = *group_id,
+                                leader = ?group_meta.leader,
+                                "Initialized uninitialized data group on non-leader replica during meta sync"
+                            );
+                        }
+                    }
                 }
             }
         }
