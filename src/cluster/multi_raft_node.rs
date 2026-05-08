@@ -364,6 +364,36 @@ impl MultiRaftNode {
         groups.get(&group_id).map(Arc::clone)
     }
 
+    /// Initialize a Data Raft group that was created but never bootstrapped
+    /// (e.g. a replica's group). Called when the group receives its first
+    /// AppendEntries from the leader. Includes both the leader and this node
+    /// as voters so the group can accept AppendEntries without panicking.
+    pub async fn ensure_group_initialized(&self, group_id: GroupId, leader_node_id: NodeId) -> Result<()> {
+        let raft = self.get_raft_group(group_id).ok_or_else(|| {
+            Error::Internal(format!("Data Raft group {} not found", group_id))
+        })?;
+        if raft.is_initialized().await.unwrap_or(false) {
+            return Ok(());
+        }
+        let self_addr = self.peer_raft_grpc_addr(self.node_id)?;
+        let leader_addr = self.peer_raft_grpc_addr(leader_node_id).unwrap_or_else(|_| self_addr.clone());
+        // Include both leader and this node as voters so openraft accepts the
+        // `initialize` call. The leader (with higher term) will win any
+        // election and become the real Data Raft leader.
+        let members = BTreeMap::from([
+            (leader_node_id, BasicNode { addr: leader_addr }),
+            (self.node_id, BasicNode { addr: self_addr }),
+        ]);
+        raft.initialize(members).await.or_else(|e| match e {
+            RaftError::APIError(InitializeError::NotAllowed(_)) => Ok(()),
+            other => Err(Error::Internal(format!(
+                "ensure_group_initialized failed for group {}: {:?}",
+                group_id, other
+            ))),
+        })?;
+        Ok(())
+    }
+
     /// Remove a Raft group
     ///
     /// This stops the Raft group and removes it from active groups.
