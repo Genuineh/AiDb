@@ -1,148 +1,135 @@
 # 贡献指南
 
-感谢你对AiDb项目感兴趣！
-
-## 如何贡献
-
-### 报告Bug
-
-如果发现bug，请创建Issue并包含：
-- 清晰的问题描述
-- 复现步骤
-- 预期行为 vs 实际行为
-- 环境信息（OS、Rust版本等）
-- 相关日志和错误信息
-
-### 提出新功能
-
-创建Issue说明：
-- 功能的用途和价值
-- 预期的API设计
-- 可能的实现方案
-
-### 提交代码
-
-1. **Fork项目**
-   ```bash
-   # 在GitHub上Fork
-   git clone https://github.com/your-username/aidb.git
-   cd aidb
-   ```
-
-2. **创建分支**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-3. **开发**
-   - 遵循[开发指南](docs/DEVELOPMENT.md)
-   - 编写测试
-   - 更新文档
-
-4. **测试**
-   ```bash
-   # 运行所有测试
-   cargo test
-   
-   # 代码检查
-   cargo clippy --all-targets --all-features -- -D warnings
-   
-   # 格式化
-   cargo fmt
-   
-   # 确保能编译
-   cargo build --all-features
-   ```
-
-5. **提交**
-   ```bash
-   git add .
-   git commit -m "feat: add your feature"
-   ```
-
-6. **推送并创建PR**
-   ```bash
-   git push origin feature/your-feature-name
-   # 在GitHub上创建Pull Request
-   ```
-
-7. **CI/CD 检查**
-   - PR创建后，GitHub Actions会自动运行CI测试
-   - 确保所有检查通过（测试、lint、格式化）
-   - 查看[CI/CD文档](docs/CICD.md)了解详情
-
-## 代码规范
-
-### Commit Message
-
-遵循[Conventional Commits](https://www.conventionalcommits.org/)：
+## 仓库结构
 
 ```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
+src/
+├── lib.rs           # 公共 API 入口 (< 30 个 pub fn)
+├── error.rs         # 错误类型枚举 (thiserror)
+├── config.rs        # Options 配置
+├── engine/          # LSM-Tree 核心 (pub(crate))
+│   ├── wal/         # Write-Ahead Log
+│   ├── memtable/    # 内存索引
+│   ├── sstable/     # 磁盘格式
+│   ├── compaction/  # Leveled Compaction
+│   ├── filter/      # Bloom Filter
+│   └── cache/       # Block Cache
+├── cluster/         # 分布式集群 (feature-gated)
+├── backup/          # 备份与恢复
+└── snapshot.rs      # MVCC 快照
 ```
 
-类型：
-- `feat`: 新功能
-- `fix`: Bug修复
-- `docs`: 文档更新
-- `style`: 代码格式
-- `refactor`: 重构
-- `test`: 测试
-- `chore`: 构建/工具
+## 工具链与 Git hooks
 
-示例：
-```
-feat(wal): implement write-ahead log
+仓库根目录 [`rust-toolchain.toml`](rust-toolchain.toml) 固定 **stable** 并含 `clippy` / `rustfmt`, 与 GitHub Actions 一致. 首次进入目录执行 `rustup show` 确认已自动切换.
 
-- Add WAL writer
-- Add WAL reader  
-- Add recovery mechanism
+推送前安装 pre-commit (与 CI 同套检查):
 
-Closes #123
+```bash
+./install-hooks.sh
 ```
 
-### 代码风格
+## 构建与测试
 
-- 运行 `cargo fmt` 格式化
-- 运行 `cargo clippy` 检查
-- 为公共API添加文档注释
-- 添加测试
+```bash
+cargo build
+cargo test                          # 全部测试 (可重复执行)
+export RUSTFLAGS='-D warnings'      # 与 CI 相同
+cargo clippy --all-targets
+cargo fmt --check
+cargo test --test regression        # 回归测试 (已修 bug 不复现)
+cargo llvm-cov --html               # 覆盖率报告 (目标 ≥ 80%)
 
-### PR要求
+# 集群 (cluster feature; 集成测单线程)
+cargo build --features cluster
+cargo test --features cluster --test raft -- --test-threads=1
+RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster -- -D warnings
+python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/raft-acceptance.json
 
-- [ ] 所有测试通过 (`cargo test`)
-- [ ] Clippy无警告 (`cargo clippy -- -D warnings`)
-- [ ] 代码已格式化 (`cargo fmt`)
-- [ ] 文档已更新
-- [ ] 添加了测试
-- [ ] CI检查全部通过
-- [ ] 更新了 CHANGELOG.md (如适用)
+# 可观测性 (monitoring feature)
+cargo build --features monitoring
 
-## 开发流程
+# 示例
+cargo run --example basic
+cargo run --example backup
+```
 
-1. 查看[TODO.md](TODO.md)选择任务
-2. 阅读[DEVELOPMENT.md](docs/DEVELOPMENT.md)
-3. 实现功能并测试
-4. 提交PR
-5. 代码审查
-6. 合并
+## 开发与验证
 
-## 获取帮助
+1. **TDD**: 先写测试 (RED) → 实现 (GREEN) → 重构 (IMPROVE)
+2. **覆盖率**: 保持 80%+
+3. **提交格式**: `type: description` — feat, fix, refactor, test, docs, chore, perf
+4. **PR**: CI 必须通过
 
-- 查看[文档](docs/)
-- 创建[Discussion](https://github.com/yourusername/aidb/discussions)
-- 提[Issue](https://github.com/yourusername/aidb/issues)
+每个模块实现后按以下步骤验证:
 
-## 行为准则
+| 步骤 | 命令 | 验证标准 |
+|:----:|------|---------|
+| 1 功能测试 | `cargo test <模块名>` | 全部通过 |
+| 2 覆盖率 | `cargo llvm-cov --html --summary-only` | ≥ 80% |
+| 3 回归检查 | `cargo test --test regression` | 已修 bug 不复现 |
+| 4 代码质量 | `RUSTFLAGS='-D warnings' cargo clippy --all-targets` + `cargo fmt --check` | 零警告 |
+| 5 验收报告 | `python3 WiQunTools/scripts/acceptance.py <映射文件>` | 全部通过 |
 
-- 尊重他人
-- 建设性反馈
-- 专注技术讨论
+验收映射文件位于 `WiQunTools/scripts/` 目录, 命名 `{模块}-acceptance.json`.
+所有验证命令可重复运行.
 
----
+## 验收系统
 
-再次感谢你的贡献！
+验收脚本 `WiQunTools/scripts/acceptance.py` 读取 JSON 映射文件, 逐功能核对测试结果.
+
+```bash
+# WAL 模块验收
+python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/wal-acceptance.json
+
+# MemTable 模块验收
+python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/memtable-acceptance.json
+# tracing 可观测性测试需串行:
+cargo test --test memtable -- --test-threads=1
+
+# Bloom Filter / Block Cache (Phase7)
+python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/bloom-acceptance.json
+python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/cache-acceptance.json
+
+# Phase 12 Raft (AiDb cluster feature)
+python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/raft-acceptance.json
+```
+
+映射文件支持两种类型:
+- `features`: 功能 + 测试名列表, 自动跑 `cargo test` 核对
+- `checks`: 任意命令检查, 逐条执行看退出码
+
+## 共享测试基础设施
+
+`tests/common/` 目录存放跨模块共享的测试工具, 各模块通过 `tests/{模块}.rs` 入口引用:
+
+| 文件 | 用途 | 用法 |
+|------|------|------|
+| `dataflow.rs` | `capture_spans` / `EventCatcher` | 模块级可观测性因果链 (模式 A/C, 见 doc comment) |
+| `observability.rs` | `EventCatcher` → 捕获 events | 配合 dataflow 做 event 时序断言 |
+
+**测试目录** (分层编号见 [`tests/README.md`](tests/README.md)):
+
+```
+tests/
+├── {wal,memtable,filter,cache,sstable,db,compaction}.rs
+├── pipeline.rs + pipeline/
+├── engine.rs + engine/
+├── proptest.rs + proptest/
+├── regression.rs + regression/
+├── modules/{mod}/
+└── common/
+```
+
+详见 [`tests/README.md`](tests/README.md).
+
+## 回归测试规范
+
+`tests/regression.rs` 入口 + `tests/regression/` 存放已修 bug 复现:
+
+| 规则 | 说明 |
+|------|------|
+| 命名 | `test_issue_<编号>_<描述>` |
+| 注释 | 写明 bug 现象和修复方式 |
+| 每次修复 | 必须在同一 PR 中添加复现测试 |
+| 运行 | `cargo test --test regression` (可重复执行) |

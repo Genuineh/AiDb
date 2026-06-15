@@ -1,0 +1,11 @@
+//! WAL 模块验收测试
+//!
+//! 子模块:
+//!   function — 功能测试 (编解码/写入/读取/恢复/清理)
+//!   dataflow — 数据流向测试 (event 顺序)
+
+mod common;
+#[path = "modules/wal/dataflow.rs"]
+pub mod dataflow;
+#[path = "modules/wal/function.rs"]
+pub mod function;

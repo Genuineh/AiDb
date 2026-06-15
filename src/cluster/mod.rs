@@ -1,127 +1,45 @@
-//! Cluster module for distributed AiDb
-//!
-//! This module provides Multi-Raft based distributed clustering including:
-//! - OpenRaft consensus for strong consistency
-//! - Sharded storage with automatic slot-based routing
-//! - Dynamic membership changes (add/remove nodes)
-//! - Slot migration for cluster rebalancing
-//! - gRPC-based inter-node communication
+//! AiDb 分布式集群 (Phase 12: 单 Raft Group; Phase 13: MetaRaft).
 
-#[cfg(feature = "cluster")]
-pub mod rpc;
-
-#[cfg(feature = "raft-cluster")]
-pub mod raft_storage;
-
-#[cfg(feature = "raft-cluster")]
-pub mod raft_network;
-
-#[cfg(feature = "raft-cluster")]
-pub mod raft_node_new;
-
-#[cfg(feature = "raft-cluster")]
-pub mod thin_replication;
-
-#[cfg(feature = "raft-cluster")]
-pub mod meta_types;
-
-#[cfg(feature = "raft-cluster")]
-pub mod meta_state_machine;
-
-#[cfg(feature = "raft-cluster")]
-pub mod meta_raft_node;
-
-#[cfg(feature = "raft-cluster")]
-pub mod sharded_storage;
-
-#[cfg(feature = "raft-cluster")]
-pub mod multi_raft_network;
-
-#[cfg(feature = "raft-cluster")]
-pub mod multi_raft_node;
-
-#[cfg(feature = "raft-cluster")]
-pub mod router;
-
-#[cfg(feature = "raft-cluster")]
-pub mod sharded_state_machine;
-
-#[cfg(feature = "raft-cluster")]
-pub mod replica_allocator;
-
-#[cfg(feature = "raft-cluster")]
+pub mod leader_watcher;
+pub mod lifecycle_manager;
+#[cfg(feature = "monitoring")]
+pub mod metrics;
 pub mod membership_coordinator;
-
-#[cfg(feature = "raft-cluster")]
+pub mod meta_raft_node;
+pub mod meta_state_machine;
+pub mod meta_types;
+pub mod multi_raft_node;
+pub mod network;
+pub mod node;
+pub mod replica_allocator;
+pub mod router;
+pub mod sharded_storage;
 pub mod slot_migration;
+pub mod storage;
+pub mod types;
 
-// TODO: Phase 3 - Rewrite for openraft
-// #[cfg(feature = "raft-cluster")]
-// pub mod raft_transport;
-
-// TODO: Phase 4 - Rewrite for openraft
-// #[cfg(feature = "raft-cluster")]
-// pub mod raft_node;
-
-// #[cfg(feature = "raft-cluster")]
-// pub mod raft_peer;
-
-#[cfg(feature = "raft-cluster")]
-pub use raft_storage::{NodeId, OpenRaftStorage, Request, Response, TypeConfig};
-
-#[cfg(feature = "raft-cluster")]
-pub use raft_network::{RaftNetworkClient, RaftNetworkClientFactory, RaftServiceImpl};
-
-#[cfg(feature = "raft-cluster")]
-pub use raft_node_new::{OpenRaftNode, RaftNodeConfig};
-
-#[cfg(feature = "raft-cluster")]
-pub use thin_replication::{WriteBatch as ThinWriteBatch, WriteOp as ThinWriteOp};
-
-#[cfg(feature = "raft-cluster")]
-pub use meta_types::{
-    ClusterMeta, GroupMeta, MetaRequest, MetaResponse, NodeInfo as MetaNodeInfo, NodeStatus,
-    SlotMigration, SlotMigrationState,
-};
-
-#[cfg(feature = "raft-cluster")]
-pub use meta_state_machine::MetaStateMachine;
-
-#[cfg(feature = "raft-cluster")]
-pub use meta_raft_node::MetaRaftNode;
-
-#[cfg(feature = "raft-cluster")]
-pub use sharded_storage::{GroupId, ShardedRaftStorage};
-
-#[cfg(feature = "raft-cluster")]
-pub use multi_raft_network::{MultiRaftNetworkClient, MultiRaftNetworkFactory};
-
-#[cfg(feature = "raft-cluster")]
-pub use multi_raft_node::MultiRaftNode;
-
-#[cfg(feature = "raft-cluster")]
-pub use router::{Router, SLOT_COUNT};
-
-#[cfg(feature = "raft-cluster")]
-pub use sharded_state_machine::ShardedStateMachine;
-
-#[cfg(feature = "raft-cluster")]
-pub use replica_allocator::ReplicaAllocator;
-
-#[cfg(feature = "raft-cluster")]
+pub use leader_watcher::LeaderChangeWatcher;
+pub use lifecycle_manager::{LifecycleManager, MembershipDrift, TickResult};
 pub use membership_coordinator::MembershipCoordinator;
-
-#[cfg(feature = "raft-cluster")]
-pub use slot_migration::{MigrationConfig, MigrationManager};
-
-// TODO: Phase 3-4 - Re-enable after rewriting for openraft
-// #[cfg(feature = "raft-cluster")]
-// pub use raft_node::{
-//     encode_delete, encode_put, RaftConfig, RaftNode, RaftStateMachine, StateMachine,
-// };
-
-// #[cfg(feature = "raft-cluster")]
-// pub use raft_transport::{RaftPeer, RaftTransport};
-
-// #[cfg(feature = "raft-cluster")]
-// pub use raft_peer::RaftBasedPeer;
+pub use meta_raft_node::MetaRaftNode;
+pub use meta_state_machine::{ApplyOutput, MetaStateMachine};
+pub use meta_types::{
+  default_slot_table, ClusterMeta, GroupMeta, MetaRequest, NodeInfo, NodeRole, NodeStatus,
+  ReplicaInfo, SlotMigrationState, SlotStatus, SlotTable, METARAFT_GROUP_ID, SLOT_COUNT,
+};
+pub use multi_raft_node::MultiRaftNode;
+pub use network::{
+  RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
+};
+pub use node::OpenRaftNode;
+pub use replica_allocator::ReplicaAllocator;
+pub use router::{crc16, extract_hash_tag, key_to_slot, Router};
+pub use sharded_storage::{AggregateStats, ShardedStorage, StorageStats};
+pub use slot_migration::{
+  MigrationPhase, MigrationProgress, SlotMigrationExecutor, SlotMigrationManager,
+};
+pub use storage::{OpenRaftStorage, DEFAULT_GROUP_ID};
+pub use types::{
+  ClusterError, LogEntry, NodeId, RaftNodeConfig, Request, Response, ThinWriteBatch, ThinWriteOp,
+  TypeConfig,
+};

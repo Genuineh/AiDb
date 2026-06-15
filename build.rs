@@ -1,32 +1,27 @@
 use std::path::Path;
+use std::process::Command;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Enable tonic-build to use protoc from the system if PROTOC is explicitly set
-    // Otherwise fallback to protobuf-src (which compiles from source)
-    #[cfg(not(target_os = "windows"))]
-    if std::env::var("PROTOC").is_err() {
-        std::env::set_var("PROTOC", protobuf_src::protoc());
-    }
+fn main() {
+  if std::env::var("CARGO_FEATURE_CLUSTER").is_ok() {
+    println!("cargo:rerun-if-changed=proto/raft.proto");
 
-    // Emit generated protobuf into src/cluster so it's available at compile time
-    // This avoids relying on env!("OUT_DIR") at compile-time which can be fragile
     let out = Path::new("src").join("cluster");
-    std::fs::create_dir_all(&out)?;
+    let _ = std::fs::create_dir_all(&out);
 
-    // Use separate configure calls because `Builder::compile` takes self by value
-    if std::env::var("CARGO_FEATURE_CLUSTER").is_ok() {
-        tonic_build::configure()
-            .out_dir(out.clone())
-            .compile(&["proto/aidb.proto"], &["proto"])?;
-        println!("cargo:rerun-if-changed=proto/aidb.proto");
+    // Only compile proto if protoc is available (CI may not have it).
+    let protoc_available = std::env::var("PROTOC")
+      .map(|p| Path::new(&p).exists())
+      .unwrap_or_else(|_| Command::new("protoc").arg("--version").output().is_ok());
+
+    if protoc_available {
+      if let Err(e) = tonic_build::configure()
+        .out_dir(&out)
+        .compile(&["proto/raft.proto"], &["proto"])
+      {
+        panic!("failed to compile proto: {e}");
+      }
+    } else {
+      println!("cargo:warning=protoc not found, using checked-in generated code");
     }
-
-    if std::env::var("CARGO_FEATURE_RAFT_CLUSTER").is_ok() {
-        tonic_build::configure()
-            .out_dir(out.clone())
-            .compile(&["proto/raft.proto"], &["proto"])?;
-        println!("cargo:rerun-if-changed=proto/raft.proto");
-    }
-
-    Ok(())
+  }
 }

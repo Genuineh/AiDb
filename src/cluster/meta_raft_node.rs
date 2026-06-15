@@ -1,579 +1,624 @@
-//! MetaRaft Node implementation for managing cluster metadata
-//!
-//! This module implements a specialized Raft node for managing global cluster metadata,
-//! including slot mappings, group information, and node status.
+//! MetaRaft node — control plane Raft group (group_id = 0).
 
-use parking_lot::RwLock;
-use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(test)]
+use std::time::Duration;
 
-#[cfg(feature = "raft-cluster")]
-use openraft::{storage::Adaptor, BasicNode, Config, Raft};
+use tracing::instrument;
 
-use super::meta_state_machine::MetaStateMachine;
-use super::meta_types::{ClusterMeta, MetaRequest, MetaResponse, NodeStatus, SlotMigrationState};
-use super::raft_network::RaftNetworkClientFactory;
-use super::raft_storage::{NodeId, OpenRaftStorage, Request, Response, TypeConfig};
-use super::sharded_storage::GroupId;
-use crate::config::Options;
+use crate::cluster::meta_state_machine::MetaStateMachine;
+use crate::cluster::meta_types::{MetaRequest, METARAFT_GROUP_ID};
+use crate::cluster::network::RaftNetworkClientFactory;
+use crate::cluster::node::OpenRaftNode;
+use crate::cluster::storage::OpenRaftStorage;
+use crate::cluster::types::{ClusterError, NodeId, RaftNodeConfig, Request, Response};
 use crate::error::{Error, Result};
 use crate::DB;
-use tracing::{info, warn};
 
-/// MetaRaft Node for managing cluster metadata
-///
-/// This is a specialized Raft node (Group 0) that manages global cluster metadata
-/// including slot-to-group mappings, group membership, and node information.
-///
-/// Like `OpenRaftNode`, this node maintains a reference to the network factory,
-/// allowing callers to pre-populate node addresses before calling Raft membership
-/// operations like `add_learner` or `change_membership`.
+/// 屏障超时常量 (仅 #[cfg(test)] 下 MetaRaft 屏障单测使用; 生产路径见 `OpenRaftNode`).
+#[cfg(test)]
+const CATCH_UP_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const CATCH_UP_POLL: Duration = Duration::from_millis(50);
+#[cfg(test)]
+const CATCH_UP_THRESHOLD: u64 = 5;
+#[cfg(test)]
+const REPLICATION_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(test)]
+const REPLICATION_POLL: Duration = Duration::from_millis(50);
+#[cfg(test)]
+const REPLICATION_HEARTBEAT_MULTIPLIER: u32 = 3;
+
 pub struct MetaRaftNode {
-    /// Node ID
-    node_id: NodeId,
-
-    /// OpenRaft instance for MetaRaft group (Group 0)
-    raft: Arc<Raft<TypeConfig>>,
-
-    /// Metadata state machine
-    meta_state: Arc<MetaStateMachine>,
-
-    /// Network factory for managing node addresses
-    ///
-    /// This is stored so that callers can add node addresses before Raft
-    /// membership changes. The factory is shared with the Raft instance.
-    network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
-
-    /// Data directory (reserved for future use)
-    #[allow(dead_code)]
-    data_dir: PathBuf,
+  inner: OpenRaftNode,
+  state_machine: Arc<MetaStateMachine>,
+  heartbeat_interval_ms: u64,
 }
 
 impl MetaRaftNode {
-    /// Create a new MetaRaft node
-    ///
-    /// # Arguments
-    ///
-    /// * `node_id` - ID of this node
-    /// * `data_dir` - Data directory for metadata storage
-    /// * `config` - Raft configuration
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use aidb::cluster::MetaRaftNode;
-    /// use openraft::Config;
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = Config::default();
-    /// let node = MetaRaftNode::new(1, "./data/meta", config).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn new<P: Into<PathBuf>>(
-        node_id: NodeId,
-        data_dir: P,
-        config: Config,
-    ) -> Result<Self> {
-        let data_dir = data_dir.into();
-        std::fs::create_dir_all(&data_dir)?;
+  pub async fn new(
+    mut config: RaftNodeConfig,
+    db: Arc<DB>,
+    network_factory: RaftNetworkClientFactory,
+  ) -> Result<Self> {
+    config.group_id = METARAFT_GROUP_ID;
+    let heartbeat_interval_ms = config.heartbeat_interval;
+    config.validate()?;
 
-        // Create metadata state machine
-        let meta_dir = data_dir.join("meta");
-        let meta_state = Arc::new(MetaStateMachine::new(&meta_dir)?);
-
-        // Create storage for MetaRaft (Group 0)
-        let db_dir = data_dir.join("db");
-        let options = Options::default();
-        let db = DB::open(&db_dir, options)?;
-        let storage = OpenRaftStorage::with_meta_state(db, meta_state.clone())?;
-
-        // Use Adaptor to split storage into log_store and state_machine
-        let (log_store, state_machine) = Adaptor::new(storage);
-
-        // Create network factory and wrap in Arc<RwLock<>> for shared access
-        let network_factory = Arc::new(RwLock::new(RaftNetworkClientFactory::new(node_id)));
-
-        // Clone the factory to share the underlying Arc<RwLock<HashMap>> of node addresses
-        // This ensures both the Raft instance and stored factory reference the same node map
-        let network_for_raft = network_factory.read().clone();
-
-        // Validate and build config
-        let config = config
-            .validate()
-            .map_err(|e| Error::Internal(format!("Invalid Raft config: {:?}", e)))?;
-
-        // Create Raft instance
-        let raft = Raft::new(node_id, Arc::new(config), network_for_raft, log_store, state_machine)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to create Raft: {:?}", e)))?;
-
-        Ok(Self { node_id, raft: Arc::new(raft), meta_state, network_factory, data_dir })
+    if !db.use_wal() {
+      return Err(Error::Cluster(ClusterError::InvalidConfig(
+        "raft mode requires use_wal=true".into(),
+      )));
     }
 
-    /// Initialize a new MetaRaft cluster
-    ///
-    /// This should be called once on the first node to bootstrap the cluster.
-    /// If the Raft cluster is already initialized (e.g. after a restart), this
-    /// is a no-op.
-    ///
-    /// # Arguments
-    ///
-    /// * `members` - Initial cluster members with their addresses
-    pub async fn initialize(&self, members: Vec<(NodeId, String)>) -> Result<()> {
-        let mut nodes = std::collections::BTreeMap::new();
-        for (member_id, addr) in members {
-            // Store the address in network factory so openraft can reach peers
-            self.network_factory.write().add_node(member_id, addr.clone());
-            nodes.insert(member_id, BasicNode { addr });
-        }
+    let state_machine = Arc::new(MetaStateMachine::new(db.clone())?);
+    let storage = OpenRaftStorage::new(
+      db.clone(),
+      METARAFT_GROUP_ID,
+      Some(Arc::clone(&state_machine)),
+    )?;
+    let inner = OpenRaftNode::new_with_storage(config, db, storage, network_factory).await?;
 
-        // Skip if already initialized (e.g. after restart) to avoid NotAllowed error
-        if self
-            .raft
-            .is_initialized()
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to check MetaRaft init status: {:?}", e)))?
-        {
-            return Ok(());
-        }
+    Ok(Self {
+      inner,
+      state_machine,
+      heartbeat_interval_ms,
+    })
+  }
 
-        self.raft
-            .initialize(nodes)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to initialize MetaRaft: {:?}", e)))?;
+  pub fn node_id(&self) -> NodeId {
+    self.inner.node_id()
+  }
 
-        Ok(())
+  /// Register a node's gRPC address in the network client factory.
+  pub fn add_node_address(&self, node_id: NodeId, addr: String) {
+    self.inner.add_node_address(node_id, addr);
+  }
+
+  pub async fn initialize(&self, nodes: Vec<(NodeId, String)>) -> Result<()> {
+    if self
+      .inner
+      .raft()
+      .is_initialized()
+      .await
+      .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?
+    {
+      return Ok(());
     }
+    self.inner.initialize(nodes.clone()).await?;
 
-    /// Add a learner node to the cluster
-    pub async fn add_learner(&self, node_id: NodeId, node: BasicNode) -> Result<()> {
-        // Store the address in network factory so openraft can reach this peer
-        self.network_factory.write().add_node(node_id, node.addr.clone());
-
-        self.raft
-            .add_learner(node_id, node, true)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to add learner: {:?}", e)))?;
-
-        Ok(())
+    // Register bootstrap nodes in the MetaStateMachine so CLUSTER NODES
+    // and other cluster commands can discover them immediately.
+    // This is safe because we are the only voter — propose goes through
+    // Raft consensus which will succeed with a single-node quorum.
+    for (node_id, rpc_addr) in &nodes {
+      self
+        .propose(MetaRequest::RegisterNode {
+          node_id: *node_id,
+          rpc_addr: rpc_addr.clone(),
+          client_addr: None, // 不设置 client_addr, 由调用方通过后续 MEET 提供
+          tags: std::collections::HashMap::new(),
+        })
+        .await?;
+      // Bootstrap nodes are Voters from the start — they form the initial
+      // Raft membership.  Marking them as Voter in ClusterMeta keeps the
+      // persisted metadata consistent with the Raft layer.
+      self
+        .propose(MetaRequest::ChangeNodeRole {
+          node_id: *node_id,
+          role: crate::cluster::meta_types::NodeRole::Voter,
+        })
+        .await?;
     }
+    Ok(())
+  }
 
-    /// Change cluster membership
-    pub async fn change_membership(&self, members: BTreeSet<NodeId>, retain: bool) -> Result<()> {
-        self.raft
-            .change_membership(members, retain)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to change membership: {:?}", e)))?;
-
-        Ok(())
+  /// Bootstrap 注册时同时设置 client_addr (用于正确的 MOVED 重定向端口).
+  pub async fn initialize_with_client(
+    &self,
+    nodes: Vec<(NodeId, String, Option<String>)>,
+  ) -> Result<()> {
+    if self
+      .inner
+      .raft()
+      .is_initialized()
+      .await
+      .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?
+    {
+      return Ok(());
     }
+    let rpc_only: Vec<(NodeId, String)> = nodes
+      .iter()
+      .map(|(id, addr, _)| (*id, addr.clone()))
+      .collect();
+    self.inner.initialize(rpc_only).await?;
 
-    /// Add a node to the cluster metadata
-    ///
-    /// This proposes a metadata change through Raft consensus.
-    pub async fn add_node(&self, node_id: NodeId, addr: String) -> Result<MetaResponse> {
-        let request = MetaRequest::AddNode { node_id, addr };
-        self.propose_meta_change(request).await
+    for (node_id, rpc_addr, client_addr) in &nodes {
+      self
+        .propose(MetaRequest::RegisterNode {
+          node_id: *node_id,
+          rpc_addr: rpc_addr.clone(),
+          client_addr: client_addr.clone(),
+          tags: std::collections::HashMap::new(),
+        })
+        .await?;
+      self
+        .propose(MetaRequest::ChangeNodeRole {
+          node_id: *node_id,
+          role: crate::cluster::meta_types::NodeRole::Voter,
+        })
+        .await?;
     }
+    Ok(())
+  }
 
-    /// Remove a node from the cluster metadata
-    pub async fn remove_node(&self, node_id: NodeId) -> Result<MetaResponse> {
-        let request = MetaRequest::RemoveNode { node_id };
-        self.propose_meta_change(request).await
+  #[instrument(name = "meta_propose", skip(self))]
+  pub async fn propose(&self, request: MetaRequest) -> Result<Response> {
+    // Validate locally as an early optimization (catches obvious errors
+    // before Raft round-trip).  For non-leader nodes the local state may
+    // lag behind committed state — the leader will perform authoritative
+    // validation when applying the entry.
+    if let Err(e) = self.state_machine.validate_meta_request(&request) {
+      tracing::warn!(error = %e, "local validation failed (will be validated by leader)");
     }
+    self.inner.propose(Request::Meta(request)).await
+  }
 
-    /// Create a new Raft group
-    pub async fn create_group(
-        &self,
-        group_id: GroupId,
-        replicas: Vec<NodeId>,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::CreateGroup { group_id, replicas };
-        self.propose_meta_change(request).await
-    }
+  #[instrument(name = "meta_query", skip(self))]
+  pub fn get_cluster_meta(&self) -> crate::cluster::meta_types::ClusterMeta {
+    self.state_machine.get_cluster_meta()
+  }
 
-    /// Update slot mappings
-    pub async fn update_slots(
-        &self,
-        start: u16,
-        end: u16,
-        group_id: GroupId,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::UpdateSlots { start, end, group_id };
-        self.propose_meta_change(request).await
-    }
+  #[instrument(name = "meta_slot_query", skip(self))]
+  pub fn get_slot_table(&self) -> crate::cluster::meta_types::SlotTable {
+    self.state_machine.get_slot_table()
+  }
 
-    /// Update group membership
-    pub async fn update_group_members(
-        &self,
-        group_id: GroupId,
-        replicas: Vec<NodeId>,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::UpdateGroupMembers { group_id, replicas };
-        self.propose_meta_change(request).await
-    }
+  /// Directly set slot table (for testing).
+  pub fn set_slot_table(&self, table: crate::cluster::meta_types::SlotTable) {
+    self.state_machine.set_slot_table(table);
+  }
 
-    /// Start a slot migration
-    pub async fn start_migration(
-        &self,
-        slot: u16,
-        from_group: GroupId,
-        to_group: GroupId,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::StartMigration { slot, from_group, to_group };
-        self.propose_meta_change(request).await
-    }
+  pub fn get_migration_state(&self) -> Option<crate::cluster::meta_types::SlotMigrationState> {
+    self.state_machine.get_migration_state()
+  }
 
-    /// Complete a slot migration
-    pub async fn complete_migration(&self, slot: u16) -> Result<MetaResponse> {
-        let request = MetaRequest::CompleteMigration { slot };
-        self.propose_meta_change(request).await
-    }
+  /// Set migration state directly (for testing).
+  /// Skips Raft consensus — only use in test scenarios.
+  pub fn set_migration_state(&self, state: Option<crate::cluster::meta_types::SlotMigrationState>) {
+    self.state_machine.set_migration_state(state);
+  }
 
-    /// Set migration state for a slot.
-    pub async fn set_slot_migration_state(
-        &self,
-        slot: u16,
-        state: SlotMigrationState,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::SetSlotMigrationState { slot, state };
-        self.propose_meta_change(request).await
-    }
+  pub async fn is_leader(&self) -> bool {
+    self.inner.is_leader().await
+  }
 
-    /// Clear migration metadata for a slot.
-    pub async fn clear_slot_migration(&self, slot: u16) -> Result<MetaResponse> {
-        let request = MetaRequest::ClearSlotMigration { slot };
-        self.propose_meta_change(request).await
-    }
+  pub async fn get_leader(&self) -> Option<NodeId> {
+    self.inner.get_leader().await
+  }
 
-    /// Update the cached group leader in MetaRaft metadata.
-    ///
-    /// This should only be called by:
-    /// - The background leader sync (`sync_data_group_leaders_to_meta`)
-    /// - Single-node group bootstrap (where the leader is deterministic)
-    ///
-    /// Do NOT call from cluster_failover — rely on Data Raft's natural leader election
-    /// and let the background watcher propagate the result to MetaRaft.
-    pub async fn update_group_leader(
-        &self,
-        group_id: GroupId,
-        leader: NodeId,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::UpdateGroupLeader { group_id, leader };
-        self.propose_meta_change(request).await
-    }
+  pub async fn add_learner(&self, node_id: NodeId, address: String) -> Result<()> {
+    self.inner.add_learner(node_id, address).await
+  }
 
-    /// Update node status in cluster metadata.
-    pub async fn update_node_status(
-        &self,
-        node_id: NodeId,
-        status: NodeStatus,
-    ) -> Result<MetaResponse> {
-        let request = MetaRequest::UpdateNodeStatus { node_id, status };
-        self.propose_meta_change(request).await
-    }
+  /// Add a learner without blocking for replication catch-up.
+  pub async fn add_learner_nonblocking(&self, node_id: NodeId, address: String) -> Result<()> {
+    self.inner.add_learner_nonblocking(node_id, address).await
+  }
 
-    /// Get current cluster metadata
-    ///
-    /// This reads from the local state machine without going through Raft.
-    pub fn get_cluster_meta(&self) -> ClusterMeta {
-        self.meta_state.get_cluster_meta()
-    }
+  /// 等待 learner 追平 leader 日志 (屏障 1).
+  ///
+  /// 每 50ms 检查一次 replication metrics, 允许落后 5 条以内.
+  /// 超过 30s 返回 `ClusterError::Timeout`.
+  #[cfg(test)]
+  #[instrument(skip(self), fields(node_id))]
+  async fn wait_learner_catch_up(&self, node_id: NodeId) -> Result<()> {
+    let start = tokio::time::Instant::now();
+    let deadline = start + CATCH_UP_TIMEOUT;
+    loop {
+      let metrics = self.inner.metrics().await;
+      let leader_last = metrics.last_log_index.unwrap_or(0);
+      let learner_matched = metrics
+        .replication
+        .as_ref()
+        .and_then(|r| r.get(&node_id))
+        .and_then(|v| v.as_ref())
+        .map(|log_id| log_id.index)
+        .unwrap_or(0);
 
-    /// See [`MetaStateMachine::get_config_version`].
-    pub fn get_config_version(&self) -> u64 {
-        self.meta_state.get_config_version()
-    }
+      tracing::debug!(
+        node_id,
+        leader_last,
+        learner_matched,
+        behind = leader_last.saturating_sub(learner_matched),
+        "waiting for learner to catch up"
+      );
 
-    /// Propose a metadata change through Raft consensus
-    ///
-    /// This serializes the MetaRequest and proposes it as a Raft log entry.
-    async fn propose_meta_change(&self, request: MetaRequest) -> Result<MetaResponse> {
-        let t0 = std::time::Instant::now();
-        info!(
-            diag_event = "metaraft_propose_attempt",
-            requester_node_id = self.node_id,
-            request_type = %match &request {
-                MetaRequest::AddNode { .. } => "AddNode",
-                MetaRequest::RemoveNode { .. } => "RemoveNode",
-                MetaRequest::CreateGroup { .. } => "CreateGroup",
-                MetaRequest::UpdateSlots { .. } => "UpdateSlots",
-                MetaRequest::UpdateGroupMembers { .. } => "UpdateGroupMembers",
-                MetaRequest::StartMigration { .. } => "StartMigration",
-                MetaRequest::CompleteMigration { .. } => "CompleteMigration",
-                MetaRequest::SetSlotMigrationState { .. } => "SetSlotMigrationState",
-                MetaRequest::ClearSlotMigration { .. } => "ClearSlotMigration",
-                MetaRequest::UpdateGroupLeader { .. } => "UpdateGroupLeader",
-                MetaRequest::UpdateNodeStatus { .. } => "UpdateNodeStatus",
-            },
-            "MetaRaft propose attempt"
+      if leader_last.saturating_sub(learner_matched) <= CATCH_UP_THRESHOLD
+        && Self::is_learner_connected(&metrics, node_id)
+      {
+        return Ok(());
+      }
+      if tokio::time::Instant::now() >= deadline {
+        tracing::warn!(
+          node_id,
+          leader_last,
+          learner_matched,
+          elapsed_ms = start.elapsed().as_millis(),
+          "learner catch-up timed out"
         );
-        // Create a Request::Meta directly
-        let meta_request = Request::Meta(request);
+        return Err(Error::Cluster(ClusterError::Timeout(format!(
+          "learner {node_id} failed to catch up within 30s"
+        ))));
+      }
+      tokio::time::sleep(CATCH_UP_POLL).await;
+    }
+  }
 
-        // Propose through Raft
-        let cw = self
-            .raft
-            .client_write(meta_request)
-            .await
-            .map_err(|e| {
-                let emsg = format!("{:?}", e);
-                if emsg.contains("ForwardToLeader") {
-                    warn!(
-                        diag_event = "metaraft_propose_forward_to_leader",
-                        requester_node_id = self.node_id,
-                        duration_ms = t0.elapsed().as_millis() as u64,
-                        error = %emsg,
-                        "MetaRaft propose returned ForwardToLeader"
-                    );
-                } else {
-                    warn!(
-                        diag_event = "metaraft_propose_failed",
-                        requester_node_id = self.node_id,
-                        duration_ms = t0.elapsed().as_millis() as u64,
-                        error = %emsg,
-                        "MetaRaft propose failed"
-                    );
-                }
-                Error::Internal(format!("Failed to propose change: {:?}", e))
-            })?;
-
-        match cw.data {
-            Response::Ok => {
-                info!(
-                    diag_event = "metaraft_propose_success",
-                    requester_node_id = self.node_id,
-                    duration_ms = t0.elapsed().as_millis() as u64,
-                    "MetaRaft propose applied"
-                );
-                Ok(MetaResponse::Ok)
-            }
-            Response::Error(msg) => {
-                warn!(
-                    diag_event = "metaraft_apply_rejected",
-                    requester_node_id = self.node_id,
-                    duration_ms = t0.elapsed().as_millis() as u64,
-                    error = %msg,
-                    "MetaRaft state machine rejected metadata change"
-                );
-                Err(Error::Internal(msg))
-            }
-            Response::Value(v) => Err(Error::Internal(format!(
-                "Unexpected MetaRaft client_write payload: {:?}",
-                v
-            ))),
-        }
+  /// 确认 membership change entry 已传播到至少一个其他 voter (屏障 2).
+  ///
+  /// Step 1: 等待至少一个其他 voter 的 `matched >= last_log_index`.
+  /// Step 2: sleep `3 * heartbeat_interval` 让 commit_index 传播.
+  #[cfg(test)]
+  #[instrument(skip(self), fields(voter_count = voter_ids.len()))]
+  async fn confirm_replication(&self, voter_ids: &[NodeId]) -> Result<()> {
+    // 快速路径: 只有本节点一个 voter, entry 已本地 committed
+    if voter_ids.len() <= 1 {
+      tracing::debug!("single voter, replication confirmation skipped");
+      return Ok(());
     }
 
-    /// Check if this node is the leader
-    pub async fn is_leader(&self) -> bool {
-        self.raft.ensure_linearizable().await.is_ok()
+    // Step 1: 确认至少一个其他 voter 收到 entry
+    let last_log = self.inner.metrics().await.last_log_index.unwrap_or(0);
+    let deadline = tokio::time::Instant::now() + REPLICATION_CONFIRM_TIMEOUT;
+
+    loop {
+      let metrics = self.inner.metrics().await;
+      let confirmed_voter = voter_ids.iter().find(|id| {
+        **id != self.node_id()
+          && metrics
+            .replication
+            .as_ref()
+            .and_then(|r| r.get(id))
+            .and_then(|v| v.as_ref())
+            .map(|log_id| log_id.index >= last_log)
+            .unwrap_or(false)
+      });
+      if let Some(voter_id) = confirmed_voter {
+        tracing::debug!(
+          confirmed_voter = %voter_id,
+          last_log_index = last_log,
+          "replication confirmed, waiting for commit propagation"
+        );
+        break;
+      }
+      if tokio::time::Instant::now() >= deadline {
+        return Err(Error::Cluster(ClusterError::Timeout(
+          "no voter confirmed replication within 5s".into(),
+        )));
+      }
+      tokio::time::sleep(REPLICATION_POLL).await;
     }
 
-    /// Get the current leader ID
-    pub async fn get_leader(&self) -> Option<NodeId> {
-        let metrics = self.raft.metrics().borrow().clone();
-        metrics.current_leader
-    }
+    // Step 2: 等 3 个 heartbeat 让 commit_index 传播
+    tokio::time::sleep(Duration::from_millis(
+      REPLICATION_HEARTBEAT_MULTIPLIER as u64 * self.heartbeat_interval_ms,
+    ))
+    .await;
+    Ok(())
+  }
 
-    /// Look up a peer's gRPC address from the replicated MetaRaft membership.
-    ///
-    /// OpenRaft replicates `BasicNode { addr }` to every voter/learner, so even
-    /// nodes that never received the `ADDLEARNER` command directly will know the
-    /// correct address after log-replay.
-    pub fn get_member_address(&self, node_id: NodeId) -> Option<String> {
-        let metrics = self.raft.metrics().borrow().clone();
-        metrics
-            .membership_config
-            .membership()
-            .get_node(&node_id)
-            .map(|n| n.addr.clone())
+  /// Promote the given node from Learner to Voter in the MetaRaft group.
+  ///
+  /// Reads the current voter set from ClusterMeta and builds a new voter
+  /// list that includes the target node.  Delegates to
+  /// `OpenRaftNode::change_membership` which includes replication barriers
+  /// (member catch-up + replication confirmation).
+  ///
+  /// After the membership change commits, updates ClusterMeta so subsequent
+  /// promotions see the correct voter set.
+  #[instrument(skip(self), fields(node_id, heartbeat_ms = self.heartbeat_interval_ms))]
+  pub async fn promote_learner_to_voter(&self, node_id: NodeId) -> Result<()> {
+    let meta = self.get_cluster_meta();
+    let mut voter_ids: Vec<NodeId> = meta
+      .nodes
+      .iter()
+      .filter(|(_, info)| matches!(info.role, crate::cluster::meta_types::NodeRole::Voter))
+      .map(|(id, _)| *id)
+      .collect();
+    // Safety net: if no voters are recorded in ClusterMeta (possible with stale
+    // persisted data from an earlier release), include the local bootstrap node
+    // which is always the initial voter.
+    if voter_ids.is_empty() {
+      voter_ids.push(self.node_id());
     }
-
-    /// Get node ID
-    pub fn node_id(&self) -> NodeId {
-        self.node_id
+    if !voter_ids.contains(&node_id) {
+      voter_ids.push(node_id);
     }
+    // change_membership 内含复制屏障 (wait_members_catch_up + confirm_replication)
+    self.inner.change_membership(voter_ids).await?;
 
-    /// Get Raft instance (for advanced operations)
-    pub fn raft(&self) -> &Arc<Raft<TypeConfig>> {
-        &self.raft
-    }
+    // Update ClusterMeta so the promoted node is recorded as Voter.
+    // This keeps the persisted metadata consistent with the Raft layer
+    // so that subsequent promotions see the correct voter set.
+    self
+      .propose(MetaRequest::ChangeNodeRole {
+        node_id,
+        role: crate::cluster::meta_types::NodeRole::Voter,
+      })
+      .await?;
+    Ok(())
+  }
 
-    /// Add a known node address to the network factory without changing membership.
-    ///
-    /// This is used to pre-populate peer addresses from configuration so the node can
-    /// contact other nodes for elections and replication. Call this method before
-    /// `add_learner` or `change_membership` to ensure the network factory knows how
-    /// to reach the target nodes.
-    ///
-    /// # Arguments
-    ///
-    /// * `node_id` - The ID of the node to register
-    /// * `address` - The network address (e.g., "http://127.0.0.1:50051")
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use aidb::cluster::MetaRaftNode;
-    /// use openraft::Config;
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = Config::default();
-    /// let node = MetaRaftNode::new(1, "./data/meta", config).await?;
-    ///
-    /// // Pre-populate peer addresses before membership changes
-    /// node.add_node_address(2, "http://127.0.0.1:50052".to_string());
-    /// node.add_node_address(3, "http://127.0.0.1:50053".to_string());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn add_node_address(&self, node_id: NodeId, address: String) {
-        self.network_factory.write().add_node(node_id, address);
-    }
+  /// 检查 learner 是否已出现在 replication metrics 中.
+  #[cfg(test)]
+  fn is_learner_connected(
+    metrics: &openraft::RaftMetrics<NodeId, openraft::BasicNode>,
+    node_id: NodeId,
+  ) -> bool {
+    metrics
+      .replication
+      .as_ref()
+      .map(|r| r.contains_key(&node_id))
+      .unwrap_or(false)
+  }
 
-    /// Remove a known node address from the network factory.
-    ///
-    /// This removes the address mapping for a node. Call this after removing a node
-    /// from the cluster to clean up the network factory.
-    ///
-    /// # Arguments
-    ///
-    /// * `node_id` - The ID of the node to remove
-    pub fn remove_node_address(&self, node_id: NodeId) {
-        self.network_factory.write().remove_node(node_id);
-    }
+  pub async fn change_membership(&self, members: Vec<NodeId>) -> Result<()> {
+    self.inner.change_membership(members).await
+  }
 
-    /// Return current node addresses known to the network factory.
-    ///
-    /// This returns all node addresses that have been registered via `add_node_address`,
-    /// `initialize`, or `add_learner`.
-    ///
-    /// # Returns
-    ///
-    /// A vector of (NodeId, address) tuples for all known nodes.
-    pub fn node_addresses(&self) -> Vec<(NodeId, String)> {
-        self.network_factory.read().list_nodes()
-    }
+  pub async fn start_server(
+    &self,
+    addr: std::net::SocketAddr,
+    max_message_size: u64,
+  ) -> Result<()> {
+    self.inner.start_server(addr, max_message_size).await
+  }
 
-    /// Get the network factory instance (for advanced operations).
-    ///
-    /// This provides direct access to the network factory, which can be useful
-    /// for integrating with other components that need to share node address
-    /// information.
-    pub fn network_factory(&self) -> &Arc<RwLock<RaftNetworkClientFactory>> {
-        &self.network_factory
-    }
+  /// 启动 MetaRaft gRPC server, 使用外部共享的 dispatcher.
+  ///
+  /// 共享 dispatcher 使 MetaRaft 端口 (如 16379) 也能路由
+  /// MultiRaft 数据 group 的 Raft 消息, 解决 `add_learner_to_group`
+  /// 等操作使用 MetaRaft RPC 地址导致的端口错位问题.
+  pub async fn start_server_with_dispatcher(
+    &self,
+    addr: std::net::SocketAddr,
+    max_message_size: u64,
+    dispatcher: std::sync::Arc<crate::cluster::network::RaftServiceDispatcher>,
+  ) -> Result<()> {
+    self
+      .inner
+      .start_server_with_dispatcher(addr, max_message_size, dispatcher)
+      .await
+  }
 
-    /// Shutdown the node gracefully
-    pub async fn shutdown(&self) -> Result<()> {
-        self.raft
-            .shutdown()
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to shutdown: {:?}", e)))?;
+  pub async fn shutdown(&self) -> Result<()> {
+    self.inner.shutdown().await
+  }
 
-        Ok(())
-    }
+  pub fn inner(&self) -> &OpenRaftNode {
+    &self.inner
+  }
+
+  pub fn state_machine(&self) -> &Arc<MetaStateMachine> {
+    &self.state_machine
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
+  use super::*;
+  use crate::cluster::types::RaftNodeConfig;
+  use crate::config::Options;
+  use std::collections::HashMap;
+  use std::time::Duration;
+  use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn test_create_meta_raft_node() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
+  #[tokio::test]
+  async fn test_single_node_propose_register() {
+    let dir = TempDir::new().unwrap();
+    let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+    let factory = RaftNetworkClientFactory::new(
+      1,
+      METARAFT_GROUP_ID,
+      RaftNodeConfig::default().rpc_timeout_ms,
+      RaftNodeConfig::default().grpc_max_message_size,
+    );
+    let cfg = RaftNodeConfig {
+      node_id: 1,
+      group_id: METARAFT_GROUP_ID,
+      election_timeout_min: 500,
+      election_timeout_max: 1000,
+      heartbeat_interval: 50,
+      ..Default::default()
+    };
+    let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+    node
+      .initialize(vec![(1, "http://127.0.0.1:1".into())])
+      .await
+      .unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let result = tokio::time::timeout(
+      Duration::from_secs(10),
+      node.propose(MetaRequest::RegisterNode {
+        node_id: 10,
+        rpc_addr: "http://127.0.0.1:9010".into(),
+        client_addr: None,
+        tags: HashMap::new(),
+      }),
+    )
+    .await
+    .expect("propose timed out")
+    .unwrap();
+    assert!(matches!(result, Response::Ok));
+    assert!(node.get_cluster_meta().nodes.contains_key(&10));
+  }
 
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
-        assert_eq!(node.node_id(), 1);
+  /// 屏障 1 超时: learner 不在 replication metrics 中 → 30s 后 Timeout.
+  #[tokio::test]
+  async fn test_learner_catch_up_timeout() {
+    tokio::time::pause();
+
+    let dir = TempDir::new().unwrap();
+    let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+    let factory = RaftNetworkClientFactory::new(
+      1,
+      METARAFT_GROUP_ID,
+      RaftNodeConfig::default().rpc_timeout_ms,
+      RaftNodeConfig::default().grpc_max_message_size,
+    );
+    let cfg = RaftNodeConfig {
+      node_id: 1,
+      group_id: METARAFT_GROUP_ID,
+      election_timeout_min: 500,
+      election_timeout_max: 1000,
+      heartbeat_interval: 50,
+      ..Default::default()
+    };
+    let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+    node
+      .initialize(vec![(1, "http://127.0.0.1:1".into())])
+      .await
+      .unwrap();
+
+    // Propose enough entries so leader_last > CATCH_UP_THRESHOLD (5)
+    for i in 0..10 {
+      node
+        .propose(MetaRequest::RegisterNode {
+          node_id: 100 + i,
+          rpc_addr: format!("http://127.0.0.1:{}", 100 + i),
+          client_addr: None,
+          tags: HashMap::new(),
+        })
+        .await
+        .unwrap();
     }
+    tokio::time::advance(Duration::from_millis(500)).await;
 
-    #[tokio::test]
-    async fn test_get_cluster_meta() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
+    // node 999 不在 group 中, metrics.replication 不会有它
+    // → learner_matched = 0, leader_last > 5
+    // → 循环等待直到 30s 超时
 
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
-        let meta = node.get_cluster_meta();
-
-        assert_eq!(meta.config_version, 0);
-        assert_eq!(meta.groups.len(), 0);
-        assert_eq!(meta.nodes.len(), 0);
+    // 用 select! 并行推进时间, 使 catch_up 内部的 loop 能够运行
+    tokio::select! {
+      r = node.wait_learner_catch_up(999) => {
+        assert!(r.is_err(), "expected Timeout error");
+        let err_msg = format!("{}", r.unwrap_err());
+        assert!(err_msg.contains("failed to catch up"), "unexpected: {err_msg}");
+      }
+      _ = async {
+        // 逐步推进时间, 让 poll loop 能迭代到 30s deadline
+        for _ in 0..35 {
+          tokio::time::advance(Duration::from_secs(1)).await;
+        }
+      } => {
+        panic!("time advancement completed before catch_up returned");
+      }
     }
+  }
 
-    #[tokio::test]
-    async fn test_initialize_cluster() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
+  /// 屏障 2 超时: 虚假 voter 不在 replication metrics 中 → 5s 后 Timeout.
+  #[tokio::test]
+  async fn test_replication_confirm_timeout() {
+    tokio::time::pause();
 
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+    let dir = TempDir::new().unwrap();
+    let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+    let factory = RaftNetworkClientFactory::new(
+      1,
+      METARAFT_GROUP_ID,
+      RaftNodeConfig::default().rpc_timeout_ms,
+      RaftNodeConfig::default().grpc_max_message_size,
+    );
+    let cfg = RaftNodeConfig {
+      node_id: 1,
+      group_id: METARAFT_GROUP_ID,
+      election_timeout_min: 500,
+      election_timeout_max: 1000,
+      heartbeat_interval: 50,
+      ..Default::default()
+    };
+    let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+    node
+      .initialize(vec![(1, "http://127.0.0.1:1".into())])
+      .await
+      .unwrap();
 
-        let members = vec![(1, "127.0.0.1:50051".to_string())];
-
-        // Initialize should succeed
-        let result = node.initialize(members).await;
-        assert!(result.is_ok());
-
-        // Verify that initialize also registered the node address
-        let addresses = node.node_addresses();
-        assert!(addresses.iter().any(|(id, _)| *id == 1));
+    // Propose enough entries so last_log_index > 0 for confirm check
+    for i in 0..5 {
+      node
+        .propose(MetaRequest::RegisterNode {
+          node_id: 100 + i,
+          rpc_addr: format!("http://127.0.0.1:{}", 100 + i),
+          client_addr: None,
+          tags: HashMap::new(),
+        })
+        .await
+        .unwrap();
     }
+    tokio::time::advance(Duration::from_millis(500)).await;
 
-    #[tokio::test]
-    async fn test_add_node_address() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
-
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
-
-        // Initially no addresses (except possibly self)
-        let initial_count = node.node_addresses().len();
-
-        // Add node addresses
-        node.add_node_address(2, "http://127.0.0.1:50052".to_string());
-        node.add_node_address(3, "http://127.0.0.1:50053".to_string());
-
-        let addresses = node.node_addresses();
-        assert_eq!(addresses.len(), initial_count + 2);
-
-        // Verify addresses are correct
-        let addr_map: std::collections::HashMap<_, _> = addresses.into_iter().collect();
-        assert_eq!(addr_map.get(&2), Some(&"http://127.0.0.1:50052".to_string()));
-        assert_eq!(addr_map.get(&3), Some(&"http://127.0.0.1:50053".to_string()));
+    // voter_ids 含虚假节点 999, 但 999 不在 replication 中
+    // → 永远不会确认 → 5s 后 Timeout
+    tokio::select! {
+      r = node.confirm_replication(&[1, 999]) => {
+        assert!(r.is_err(), "expected Timeout error");
+        let err_msg = format!("{}", r.unwrap_err());
+        assert!(err_msg.contains("no voter confirmed"), "unexpected: {err_msg}");
+      }
+      _ = async {
+        for _ in 0..10 {
+          tokio::time::advance(Duration::from_secs(1)).await;
+        }
+      } => {
+        panic!("time advancement completed before confirm_replication returned");
+      }
     }
+  }
 
-    #[tokio::test]
-    async fn test_remove_node_address() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
+  /// 快速路径: self 作为 learner (immediate catch_up) + 单个 voter (skip confirm).
+  #[tokio::test]
+  async fn test_barrier_fast_path() {
+    let dir = TempDir::new().unwrap();
+    let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+    let factory = RaftNetworkClientFactory::new(
+      1,
+      METARAFT_GROUP_ID,
+      RaftNodeConfig::default().rpc_timeout_ms,
+      RaftNodeConfig::default().grpc_max_message_size,
+    );
+    let cfg = RaftNodeConfig {
+      node_id: 1,
+      group_id: METARAFT_GROUP_ID,
+      election_timeout_min: 500,
+      election_timeout_max: 1000,
+      heartbeat_interval: 50,
+      ..Default::default()
+    };
+    let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+    node
+      .initialize(vec![(1, "http://127.0.0.1:1".into())])
+      .await
+      .unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
 
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
+    // 屏障 1: wait_learner_catch_up(1) — self 的 matched >= last_log, 立即返回
+    let start = std::time::Instant::now();
+    node.wait_learner_catch_up(1).await.unwrap();
+    let elapsed1 = start.elapsed();
 
-        // Add and then remove a node address
-        node.add_node_address(2, "http://127.0.0.1:50052".to_string());
-        assert!(node.node_addresses().iter().any(|(id, _)| *id == 2));
+    // 屏障 2: confirm_replication(&[1]) — len <= 1 → 快速路径
+    let start2 = std::time::Instant::now();
+    node.confirm_replication(&[1]).await.unwrap();
+    let elapsed2 = start2.elapsed();
 
-        node.remove_node_address(2);
-        assert!(!node.node_addresses().iter().any(|(id, _)| *id == 2));
-    }
-
-    #[tokio::test]
-    async fn test_network_factory_access() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = Config::default();
-
-        let node = MetaRaftNode::new(1, temp_dir.path(), config).await.unwrap();
-
-        // Verify network_factory() returns a valid reference
-        let factory = node.network_factory();
-        factory.write().add_node(5, "http://127.0.0.1:50055".to_string());
-
-        // Verify the address is accessible via node_addresses()
-        let addresses = node.node_addresses();
-        assert!(addresses.iter().any(|(id, _)| *id == 5));
-    }
+    assert!(
+      elapsed1 < Duration::from_millis(500),
+      "catch_up took {elapsed1:?}, expected <500ms"
+    );
+    assert!(
+      elapsed2 < Duration::from_millis(100),
+      "confirm took {elapsed2:?}, expected <100ms"
+    );
+  }
 }

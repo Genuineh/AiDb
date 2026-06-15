@@ -1,52 +1,61 @@
-//! Basic usage example for AiDb
-//!
-//! This example demonstrates the fundamental operations:
-//! - Opening a database
-//! - Writing key-value pairs
-//! - Reading values
-//! - Deleting keys
-
-use aidb::{Options, DB};
+/// AiDb 基础用法示例.
+///
+/// 运行: cargo run --example basic
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logger
-    env_logger::init();
+  let dir = Path::new("/tmp/aidb-example");
+  let _ = std::fs::remove_dir_all(dir);
 
-    // Configure database options
-    let options = Options::default()
-        .memtable_size(4 * 1024 * 1024) // 4MB
-        .use_wal(true);
+  // 打开/创建数据库
+  let db = aidb::DB::open(dir, aidb::config::Options::default())?;
+  println!("✅ 数据库已创建");
 
-    // Open database (will be created if it doesn't exist)
-    let db = DB::open("./example_data", options)?;
+  // 写入
+  db.put(b"hello", b"world")?;
+  db.put(b"foo", b"bar")?;
+  println!("✅ 写入 2 个 key");
 
-    println!("Database opened successfully");
+  // 读取
+  let val = db.get(b"hello")?.unwrap();
+  assert_eq!(val, b"world");
+  println!("✅ 读取 hello = {:?}", String::from_utf8_lossy(&val));
 
-    // Write some key-value pairs
-    println!("Writing data...");
-    db.put(b"key1", b"value1")?;
-    db.put(b"key2", b"value2")?;
-    db.put(b"key3", b"value3")?;
+  // 删除
+  db.delete(b"foo")?;
+  println!("✅ 删除 foo");
 
-    // Read values
-    println!("Reading data...");
-    if let Some(value) = db.get(b"key1")? {
-        println!("key1 => {:?}", String::from_utf8_lossy(&value));
-    }
+  // 确认删除
+  assert_eq!(db.get(b"foo")?, None);
+  println!("✅ 确认 foo 不存在");
 
-    // Delete a key
-    println!("Deleting key2...");
-    db.delete(b"key2")?;
+  // 批量写入
+  let mut batch = aidb::WriteBatch::new();
+  batch.put(b"batch1", b"value1");
+  batch.put(b"batch2", b"value2");
+  batch.put(b"batch3", b"value3");
+  db.write(&batch)?;
+  println!("✅ 批量写入 3 个 key");
 
-    // Try to read deleted key
-    match db.get(b"key2")? {
-        Some(_) => println!("key2 still exists (unexpected)"),
-        None => println!("key2 was successfully deleted"),
-    }
+  // 范围扫描
+  println!("  范围扫描 [a, z):");
+  let iter = db.scan(Some(b"a"), Some(b"z"))?;
+  for entry in iter {
+    let (k, v) = entry?;
+    println!(
+      "    {} => {}",
+      String::from_utf8_lossy(&k),
+      String::from_utf8_lossy(&v)
+    );
+  }
 
-    // Close database
-    db.close()?;
-    println!("Database closed");
+  // 快照读
+  let snapshot = db.snapshot()?;
+  println!("✅ 创建快照, sequence = {}", snapshot.sequence());
 
-    Ok(())
+  // 关闭
+  db.close()?;
+  println!("✅ 数据库已关闭");
+
+  Ok(())
 }

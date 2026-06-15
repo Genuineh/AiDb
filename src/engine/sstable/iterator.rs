@@ -1,0 +1,204 @@
+//! SSTable 全文件顺序迭代.
+
+use std::cmp::Ordering;
+use std::fs::File;
+use std::sync::Arc;
+
+use crate::engine::cache::BlockCache;
+use crate::engine::memtable::compare_internal_key;
+
+use super::block::{Block, BlockIterator};
+use super::block_io::read_block_cached;
+use super::handle::BlockHandle;
+
+pub struct SSTableIterator {
+  file: Arc<File>,
+  file_number: u64,
+  index_entries: Vec<(Vec<u8>, BlockHandle)>,
+  block_cache: Option<Arc<BlockCache>>,
+  block_index: usize,
+  block_iter: Option<BlockIterator>,
+  valid: bool,
+}
+
+impl SSTableIterator {
+  pub(crate) fn new(
+    file: Arc<File>,
+    file_number: u64,
+    index_entries: Vec<(Vec<u8>, BlockHandle)>,
+    block_cache: Option<Arc<BlockCache>>,
+  ) -> Self {
+    let mut it = Self {
+      file,
+      file_number,
+      index_entries,
+      block_cache,
+      block_index: 0,
+      block_iter: None,
+      valid: false,
+    };
+    it.seek_to_first();
+    it
+  }
+
+  pub fn seek_to_first(&mut self) {
+    self.block_index = 0;
+    self.load_block();
+  }
+
+  pub fn seek_to_target(&mut self, target: &[u8]) {
+    if self.index_entries.is_empty() {
+      self.valid = false;
+      return;
+    }
+    let last_key = &self.index_entries[self.index_entries.len() - 1].0;
+    if compare_internal_key(target, last_key) == Ordering::Greater {
+      self.valid = false;
+      self.block_iter = None;
+      return;
+    }
+
+    let mut lo = 0usize;
+    let mut hi = self.index_entries.len();
+    while lo < hi {
+      let mid = lo + (hi - lo) / 2;
+      if compare_internal_key(&self.index_entries[mid].0, target) == Ordering::Less {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    self.block_index = if lo < self.index_entries.len() {
+      lo
+    } else {
+      self.index_entries.len() - 1
+    };
+    self.load_block();
+    if let Some(ref mut bit) = self.block_iter {
+      bit.seek(target);
+      self.valid = bit.valid();
+    }
+  }
+
+  pub fn advance(&mut self) -> bool {
+    if let Some(ref mut bit) = self.block_iter {
+      if bit.advance() {
+        self.valid = true;
+        return true;
+      }
+    }
+    if self.block_index + 1 >= self.index_entries.len() {
+      self.valid = false;
+      return false;
+    }
+    self.block_index += 1;
+    self.load_block();
+    if let Some(ref mut bit) = self.block_iter {
+      if bit.valid() {
+        self.valid = true;
+        return true;
+      }
+      return self.advance();
+    }
+    self.valid = false;
+    false
+  }
+
+  /// 反向移动一步.
+  pub fn prev(&mut self) -> bool {
+    if !self.valid {
+      return false;
+    }
+
+    // Try prev in current block
+    if let Some(ref mut bit) = self.block_iter {
+      if bit.prev() {
+        self.valid = true;
+        return true;
+      }
+    }
+
+    // Move to previous block and seek to its last entry
+    if self.block_index == 0 {
+      self.valid = false;
+      return false;
+    }
+    self.block_index -= 1;
+    self.load_block();
+    if let Some(ref mut bit) = self.block_iter {
+      bit.seek_to_last();
+      self.valid = bit.valid();
+      return self.valid;
+    }
+    self.valid = false;
+    false
+  }
+
+  /// 定位到最后一个 entry.
+  pub fn seek_to_last(&mut self) {
+    if self.index_entries.is_empty() {
+      self.valid = false;
+      return;
+    }
+    self.block_index = self.index_entries.len() - 1;
+    self.load_block();
+    if let Some(ref mut bit) = self.block_iter {
+      bit.seek_to_last();
+      self.valid = bit.valid();
+    }
+  }
+
+  pub fn valid(&self) -> bool {
+    self.valid
+  }
+
+  pub fn key(&self) -> Option<&[u8]> {
+    self
+      .block_iter
+      .as_ref()
+      .filter(|_| self.valid)
+      .map(|b| b.key())
+  }
+
+  pub fn value(&self) -> Option<&[u8]> {
+    self
+      .block_iter
+      .as_ref()
+      .filter(|_| self.valid)
+      .map(|b| b.value())
+  }
+
+  fn load_block(&mut self) {
+    if self.block_index >= self.index_entries.len() {
+      self.valid = false;
+      self.block_iter = None;
+      return;
+    }
+    let handle = self.index_entries[self.block_index].1;
+    let data = match read_block_cached(
+      &self.file,
+      self.file_number,
+      &handle,
+      self.block_cache.as_ref(),
+    ) {
+      Ok(d) => d,
+      Err(_) => {
+        self.valid = false;
+        self.block_iter = None;
+        return;
+      }
+    };
+    let block = match Block::new(data) {
+      Ok(b) => b,
+      Err(_) => {
+        self.valid = false;
+        self.block_iter = None;
+        return;
+      }
+    };
+    let bit = block.iter();
+    let ok = bit.valid();
+    self.block_iter = Some(bit);
+    self.valid = ok;
+  }
+}

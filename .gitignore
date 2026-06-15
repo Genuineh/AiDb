@@ -1,34 +1,4 @@
-# Rust
 /target/
 **/*.rs.bk
-*.pdb
-Cargo.lock
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Database files
-*.db
-*.sst
-*.log
-/data/
-/test_data/
-
-# Deploy data and runtime artifacts
-deploy/data/
-deploy/logs/
-deploy/backups/
-
-# Documentation
-/target/doc/
-
-# Benchmarks
-/target/criterion/
+.env
+.worktrees/

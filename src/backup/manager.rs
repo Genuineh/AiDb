@@ -1,327 +1,427 @@
-//! Backup manager for creating and managing database backups.
+//! BackupManager: 备份创建、列举、删除、保留策略。
 
-use crate::backup::metadata::{BackupId, BackupInfo, BackupMetadata, BackupType, RetentionPolicy};
-use crate::backup::storage::BackupStorage;
-use crate::{Result, DB};
+use std::path::Path;
 use std::sync::Arc;
+#[cfg(feature = "monitoring")]
+use std::time::Instant;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const METADATA_FILE: &str = "metadata.json";
+use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
-/// Manager for creating and managing database backups.
-pub struct BackupManager<S: BackupStorage> {
-    /// Storage backend
-    storage: Arc<S>,
+use crate::backup::storage::BackupStorage;
+use crate::backup::util;
+use crate::engine::checkpoint::Checkpoint;
+use crate::error::{Error, Result};
+use crate::DB;
 
-    /// Backup metadata
-    metadata: parking_lot::RwLock<BackupMetadata>,
+/// 备份 ID, 基于时间戳生成。
+pub type BackupId = u64;
+
+/// 备份元信息。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupMetadata {
+  pub id: BackupId,
+  pub created_at: SystemTime,
+  pub description: Option<String>,
+  pub data_size: u64,
+  pub backup_size: u64,
+  pub file_count: u32,
+  pub checksum: String,
+  pub db_sequence: u64,
+  pub version: String,
 }
 
-impl<S: BackupStorage> BackupManager<S> {
-    /// Create a new backup manager with the given storage backend.
-    pub fn new(storage: S) -> Self {
-        Self::with_retention_policy(storage, RetentionPolicy::default())
+/// 备份清单。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupManifest {
+  pub metadata: BackupMetadata,
+  pub files: Vec<BackupFileEntry>,
+}
+
+/// 备份文件条目。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupFileEntry {
+  pub relative_path: String,
+  pub size: u64,
+  pub checksum: String,
+}
+
+/// 保留策略。
+#[derive(Debug, Clone)]
+pub struct RetentionPolicy {
+  pub min_count: usize,
+  pub max_count: usize,
+  pub min_age: Duration,
+  pub max_age: Duration,
+}
+
+impl Default for RetentionPolicy {
+  fn default() -> Self {
+    Self {
+      min_count: 3,
+      max_count: 30,
+      min_age: Duration::from_secs(86400u64),
+      max_age: Duration::from_secs(86400u64 * 30),
+    }
+  }
+}
+
+impl RetentionPolicy {
+  /// 返回应被删除的备份 ID 列表。
+  ///
+  /// 规则（按优先级）:
+  /// 1. min_age 以内的备份不删
+  /// 2. 至少保留 min_count 个
+  /// 3. 不超过 max_count 个（max_count >= min_count 时有意义）
+  /// 4. max_age 硬过期: 超过 max_age 的备份无条件删除
+  pub fn select_for_deletion(&self, backups: &[BackupMetadata]) -> Vec<BackupId> {
+    let now = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap_or_default();
+    let mut sorted: Vec<&BackupMetadata> = backups.iter().collect();
+    // 按 created_at 升序排列 = 最旧在前
+    sorted.sort_by_key(|b| b.created_at);
+
+    // partition_point: 找到第一个 age < min_age 的位置（即第一个"年轻"备份）
+    let cutoff = sorted.partition_point(|b| {
+      let age = now
+        .checked_sub(b.created_at.duration_since(UNIX_EPOCH).unwrap_or_default())
+        .unwrap_or_default();
+      age >= self.min_age
+    });
+    let (old, young) = sorted.split_at(cutoff);
+
+    // 2. 从 old 组中删除最旧的，直到剩余不超过 max_count
+    //    但必须保留至少 min_count 个
+    let young_count = young.len();
+
+    // 最多可删除 old 组中的多少个
+    let minimum_keep = self.min_count.saturating_sub(young_count);
+    let max_keep = self.max_count.saturating_sub(young_count);
+
+    // 从 old 中选择保留的数量
+    let keep = old.len().min(max_keep).max(minimum_keep.min(old.len()));
+    let delete_count = old.len().saturating_sub(keep);
+
+    let mut to_delete: Vec<BackupId> = old[..delete_count].iter().map(|b| b.id).collect();
+
+    // 3. max_age 硬过期: 超过 max_age 的备份无条件删除（不受 min_count 保护）
+    for b in &sorted {
+      let age = now
+        .checked_sub(b.created_at.duration_since(UNIX_EPOCH).unwrap_or_default())
+        .unwrap_or_default();
+      if age >= self.max_age && !to_delete.contains(&b.id) {
+        to_delete.push(b.id);
+      }
     }
 
-    /// Create a new backup manager with a custom retention policy.
-    pub fn with_retention_policy(storage: S, retention_policy: RetentionPolicy) -> Self {
-        let storage = Arc::new(storage);
+    to_delete
+  }
+}
 
-        // Try to load existing metadata
-        let metadata = match storage.read(METADATA_FILE) {
-            Ok(data) => match BackupMetadata::from_json(&String::from_utf8_lossy(&data)) {
-                Ok(mut meta) => {
-                    meta.retention_policy = retention_policy;
-                    meta
-                }
-                Err(_) => BackupMetadata::new(retention_policy),
-            },
-            Err(_) => BackupMetadata::new(retention_policy),
-        };
+/// 备份管理器。
+pub struct BackupManager {
+  storage: Arc<dyn BackupStorage>,
+  policy: RetentionPolicy,
+}
 
-        Self { storage, metadata: parking_lot::RwLock::new(metadata) }
-    }
+impl BackupManager {
+  pub fn new(storage: Arc<dyn BackupStorage>, policy: RetentionPolicy) -> Self {
+    Self { storage, policy }
+  }
 
-    /// Create a full backup of the database.
-    ///
-    /// This creates a consistent snapshot of all SSTables and the current WAL.
-    pub fn create_backup(&self, db: &DB) -> Result<BackupId> {
-        self.create_backup_with_description(db, None)
-    }
+  pub fn create_backup(&self, db: &DB) -> Result<BackupId> {
+    self.create_backup_with_description(db, None)
+  }
 
-    /// Create a full backup with a description.
-    pub fn create_backup_with_description(
-        &self,
-        db: &DB,
-        description: Option<String>,
-    ) -> Result<BackupId> {
-        // Generate unique backup ID
-        let backup_id = self.generate_backup_id();
+  #[instrument(name = "backup_create", skip(self, db), fields(backup_id))]
+  pub fn create_backup_with_description(
+    &self,
+    db: &DB,
+    description: Option<&str>,
+  ) -> Result<BackupId> {
+    use std::fs;
 
-        // Flush memtable to ensure all data is on disk
-        db.flush()?;
+    let backup_id = timestamp_nanos();
+    #[cfg(feature = "monitoring")]
+    let start = Instant::now();
 
-        // Get current sequence number
-        let sequence = db.get_sequence();
+    // 在临时位置创建 checkpoint
+    let checkpoint_dir = db.path().join(format!(".backup_tmp_{backup_id}"));
+    let _ = fs::remove_dir_all(&checkpoint_dir);
+    let cp_path = Checkpoint::create(db, &checkpoint_dir)?;
 
-        // Create backup info
-        let mut backup_info = BackupInfo::new(backup_id.clone(), sequence, BackupType::Full);
-        backup_info.description = description;
+    // 收集 checkpoint 中的文件
+    let mut file_entries = Vec::new();
+    let mut total_data_size = 0u64;
 
-        // Backup SSTables
-        let sstable_files = self.backup_sstables(db, &backup_id)?;
-        backup_info.sstable_files = sstable_files;
-
-        // Backup WAL files
-        let wal_files = self.backup_wal_files(db, &backup_id)?;
-        backup_info.wal_files = wal_files;
-
-        // Calculate total size
-        backup_info.size = self.calculate_backup_size(&backup_id)?;
-
-        // Add to metadata
-        {
-            let mut metadata = self.metadata.write();
-            metadata.add_backup(backup_info);
-            self.save_metadata(&metadata)?;
+    fn collect_files(dir: &Path) -> Result<Vec<std::path::PathBuf>> {
+      let mut files = Vec::new();
+      if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+          let entry = entry?;
+          let path = entry.path();
+          if path.is_dir() {
+            files.extend(collect_files(&path)?);
+          } else {
+            files.push(path);
+          }
         }
-
-        // Apply retention policy
-        self.apply_retention_policy()?;
-
-        Ok(backup_id)
+      }
+      Ok(files)
     }
 
-    /// List all available backups.
-    pub fn list_backups(&self) -> Vec<BackupInfo> {
-        let metadata = self.metadata.read();
-        metadata.backups.clone()
+    let cp_files = collect_files(&cp_path)?;
+
+    // 逐文件复制到备份存储
+    for src_path in &cp_files {
+      let rel = src_path
+        .strip_prefix(&cp_path)
+        .map_err(|e| Error::InvalidArgument(e.to_string()))?;
+      let dest = self.storage.backup_path(backup_id).join(rel);
+      let file_sha256 = self.storage.store(src_path, &dest)?;
+      let size = fs::metadata(src_path)?.len();
+      file_entries.push(BackupFileEntry {
+        relative_path: rel.to_string_lossy().to_string(),
+        size,
+        checksum: file_sha256,
+      });
+      total_data_size += size;
     }
 
-    /// Get information about a specific backup.
-    pub fn get_backup_info(&self, backup_id: &BackupId) -> Option<BackupInfo> {
-        let metadata = self.metadata.read();
-        metadata.get_backup(backup_id).cloned()
-    }
+    // 清理临时 checkpoint 目录
+    let _ = fs::remove_dir_all(&cp_path);
 
-    /// Delete a specific backup.
-    pub fn delete_backup(&self, backup_id: &BackupId) -> Result<()> {
-        // Remove backup files
-        let backup_dir = format!("{}/", backup_id);
-        self.storage.delete(&backup_dir)?;
+    // 构造 manifest
+    let metadata = BackupMetadata {
+      id: backup_id,
+      created_at: SystemTime::now(),
+      description: description.map(|s| s.to_string()),
+      data_size: total_data_size,
+      backup_size: total_data_size,
+      file_count: file_entries.len() as u32,
+      checksum: String::new(),
+      db_sequence: db.current_sequence(),
+      version: env!("CARGO_PKG_VERSION").to_string(),
+    };
 
-        // Remove from metadata
-        {
-            let mut metadata = self.metadata.write();
-            metadata.remove_backup(backup_id);
-            self.save_metadata(&metadata)?;
+    let mut manifest = BackupManifest {
+      metadata,
+      files: file_entries,
+    };
+
+    // 序列化并计算 checksum
+    let manifest_bytes =
+      serde_json::to_vec(&manifest).map_err(|e| Error::Corruption(e.to_string()))?;
+    let manifest_checksum = util::sha256_bytes(&manifest_bytes);
+    manifest.metadata.checksum = manifest_checksum.clone();
+    let final_bytes =
+      serde_json::to_vec(&manifest).map_err(|e| Error::Corruption(e.to_string()))?;
+
+    // 写入 manifest
+    self.storage.store_bytes(
+      &self
+        .storage
+        .backup_path(backup_id)
+        .join("backup_manifest.json"),
+      &final_bytes,
+    )?;
+
+    // 应用保留策略
+    self.apply_retention_policy()?;
+
+    tracing::Span::current().record("backup_id", backup_id);
+
+    #[cfg(feature = "monitoring")]
+    crate::metrics::record_backup_create(total_data_size, start.elapsed().as_secs_f64());
+
+    tracing::event!(
+      tracing::Level::INFO,
+      backup_id,
+      file_count = manifest.metadata.file_count,
+      total_size = manifest.metadata.data_size,
+      "backup.create.complete"
+    );
+
+    Ok(backup_id)
+  }
+
+  #[instrument(name = "backup_list", skip(self))]
+  pub fn list_backups(&self) -> Result<Vec<BackupMetadata>> {
+    let entries = self.storage.list("backup_")?;
+    let mut backups = Vec::new();
+    for name in entries {
+      let backup_id: u64 = name
+        .strip_prefix("backup_")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+      let manifest_path = self
+        .storage
+        .backup_path(backup_id)
+        .join("backup_manifest.json");
+      if manifest_path.exists() {
+        let data = self.storage.read_to_string(&manifest_path)?;
+        match serde_json::from_str::<BackupManifest>(&data) {
+          Ok(manifest) => backups.push(manifest.metadata),
+          Err(e) => tracing::warn!(backup_id, error = %e, "corrupt backup manifest"),
         }
-
-        Ok(())
+      }
     }
+    backups.sort_by_key(|b| std::cmp::Reverse(b.created_at));
+    Ok(backups)
+  }
 
-    /// Apply retention policy and delete old backups.
-    pub fn apply_retention_policy(&self) -> Result<()> {
-        let to_delete = {
-            let metadata = self.metadata.read();
-            metadata.get_backups_to_delete()
-        };
+  pub fn get_backup_info(&self, id: BackupId) -> Result<BackupMetadata> {
+    let manifest_path = self.storage.backup_path(id).join("backup_manifest.json");
+    let data = self.storage.read_to_string(&manifest_path)?;
+    let manifest: BackupManifest =
+      serde_json::from_str(&data).map_err(|e| Error::Corruption(e.to_string()))?;
+    Ok(manifest.metadata)
+  }
 
-        for backup_id in to_delete {
-            log::info!("Deleting old backup: {}", backup_id);
-            if let Err(e) = self.delete_backup(&backup_id) {
-                log::warn!("Failed to delete backup {}: {}", backup_id, e);
-            }
-        }
+  #[instrument(name = "backup_delete", skip(self), fields(backup_id = id))]
+  pub fn delete_backup(&self, id: BackupId) -> Result<()> {
+    let path = self.storage.backup_path(id);
+    let result = self.storage.delete(&path);
+    #[cfg(feature = "monitoring")]
+    crate::metrics::record_backup_delete();
+    tracing::info!(backup_id = id, "backup.delete");
+    result
+  }
 
-        Ok(())
+  #[instrument(name = "backup_retention", skip(self))]
+  pub fn apply_retention_policy(&self) -> Result<Vec<BackupId>> {
+    let backups = self.list_backups()?;
+    let to_delete = self.policy.select_for_deletion(&backups);
+    for id in &to_delete {
+      self.delete_backup(*id)?;
     }
+    Ok(to_delete)
+  }
+}
 
-    /// Generate a unique backup ID.
-    fn generate_backup_id(&self) -> BackupId {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::from_secs(0))
-            .as_secs();
-
-        format!("backup-{}", timestamp)
-    }
-
-    /// Backup all SSTable files.
-    fn backup_sstables(&self, db: &DB, backup_id: &BackupId) -> Result<Vec<String>> {
-        let db_path = db.get_path();
-        let mut backed_up = Vec::new();
-
-        // Get list of SSTable files from database
-        let sstables = db.list_sstable_files()?;
-
-        for sstable_file in sstables {
-            let source_path = db_path.join(&sstable_file);
-            let dest_path = format!("{}/sstables/{}", backup_id, sstable_file);
-
-            self.storage.upload_file(&source_path, &dest_path)?;
-            backed_up.push(sstable_file);
-        }
-
-        Ok(backed_up)
-    }
-
-    /// Backup WAL files.
-    fn backup_wal_files(&self, db: &DB, backup_id: &BackupId) -> Result<Vec<String>> {
-        let db_path = db.get_path();
-        let mut backed_up = Vec::new();
-
-        // Get list of WAL files
-        let wal_files = db.list_wal_files()?;
-
-        for wal_file in wal_files {
-            let source_path = db_path.join(&wal_file);
-            let dest_path = format!("{}/wal/{}", backup_id, wal_file);
-
-            self.storage.upload_file(&source_path, &dest_path)?;
-            backed_up.push(wal_file);
-        }
-
-        Ok(backed_up)
-    }
-
-    /// Calculate the total size of a backup.
-    fn calculate_backup_size(&self, backup_id: &BackupId) -> Result<u64> {
-        let prefix = format!("{}/", backup_id);
-        let files = self.storage.list(&prefix)?;
-
-        let mut total_size = 0u64;
-        for file in files {
-            if let Ok(data) = self.storage.read(&file) {
-                total_size += data.len() as u64;
-            }
-        }
-
-        Ok(total_size)
-    }
-
-    /// Save metadata to storage.
-    fn save_metadata(&self, metadata: &BackupMetadata) -> Result<()> {
-        let json = metadata.to_json()?;
-        self.storage.write(METADATA_FILE, json.as_bytes())
-    }
-
-    /// Get the storage backend.
-    pub fn storage(&self) -> Arc<S> {
-        Arc::clone(&self.storage)
-    }
+fn timestamp_nanos() -> u64 {
+  SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_nanos() as u64
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::backup::storage::LocalFileStorage;
-    use crate::Options;
-    use tempfile::TempDir;
+  use super::*;
 
-    #[test]
-    fn test_backup_manager_creation() {
-        let tmp_dir = TempDir::new().unwrap();
-        let storage = LocalFileStorage::new(tmp_dir.path());
-        let manager = BackupManager::new(storage);
-
-        let backups = manager.list_backups();
-        assert_eq!(backups.len(), 0);
+  fn make_backup(id: u64, age_secs: u64) -> BackupMetadata {
+    let now = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_secs();
+    BackupMetadata {
+      id,
+      created_at: UNIX_EPOCH + Duration::from_secs(now.saturating_sub(age_secs)),
+      description: None,
+      data_size: 100,
+      backup_size: 100,
+      file_count: 1,
+      checksum: "abc".into(),
+      db_sequence: id,
+      version: "0.11.1".into(),
     }
+  }
 
-    #[test]
-    fn test_create_backup() {
-        let db_dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
+  #[test]
+  fn test_retention_policy_under_max() {
+    let policy = RetentionPolicy {
+      min_count: 3,
+      max_count: 10,
+      min_age: Duration::from_secs(0),
+      max_age: Duration::from_secs(u64::MAX),
+    };
+    let backups: Vec<BackupMetadata> = (0..5).map(|i| make_backup(i, 1000 + i * 10)).collect();
+    let to_delete = policy.select_for_deletion(&backups);
+    assert_eq!(to_delete.len(), 0, "5 <= max=10, keep all");
+  }
 
-        // Create and populate a database
-        let db = DB::open(db_dir.path(), Options::default()).unwrap();
-        db.put(b"key1", b"value1").unwrap();
-        db.put(b"key2", b"value2").unwrap();
-        db.flush().unwrap();
-
-        // Create backup
-        let storage = LocalFileStorage::new(backup_dir.path());
-        let manager = BackupManager::new(storage);
-        let backup_id = manager.create_backup(&db).unwrap();
-
-        // Verify backup was created
-        let backups = manager.list_backups();
-        assert_eq!(backups.len(), 1);
-        assert_eq!(backups[0].id, backup_id);
-        assert_eq!(backups[0].backup_type, BackupType::Full);
+  #[test]
+  fn test_retention_policy_over_max() {
+    let policy = RetentionPolicy {
+      min_count: 1,
+      max_count: 3,
+      min_age: Duration::from_secs(0),
+      max_age: Duration::from_secs(u64::MAX),
+    };
+    // 10 backups, ages increase with id: id=oldest(age 2009) ... id=0(newest, age 2000)
+    let backups: Vec<BackupMetadata> = (0..10).map(|i| make_backup(i, 2000 + i)).collect();
+    let to_delete = policy.select_for_deletion(&backups);
+    assert_eq!(to_delete.len(), 7, "10 > max=3, delete 7");
+    // 最旧的 7 个应当是 id 9..3
+    for i in 3..10 {
+      assert!(
+        to_delete.contains(&(i as u64)),
+        "backup {i} should be deleted (oldest)"
+      );
     }
+  }
 
-    #[test]
-    fn test_list_backups() {
-        let db_dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
+  #[test]
+  fn test_retention_policy_min_count_respected() {
+    let policy = RetentionPolicy {
+      min_count: 3,
+      max_count: 4,
+      min_age: Duration::from_secs(0),
+      max_age: Duration::from_secs(u64::MAX),
+    };
+    // 5 backups, id 4 is oldest (age 1040), id 0 is newest (age 1000)
+    let backups: Vec<BackupMetadata> = (0..5).map(|i| make_backup(i, 1000 + i * 10)).collect();
+    let to_delete = policy.select_for_deletion(&backups);
+    assert_eq!(to_delete.len(), 1, "5>max=4, min=3: delete 1, keep 4");
+    assert_eq!(to_delete[0], 4, "oldest backup (id=4) should be deleted");
+  }
 
-        let db = DB::open(db_dir.path(), Options::default()).unwrap();
-        db.put(b"key1", b"value1").unwrap();
+  #[test]
+  fn test_retention_policy_max_age_expiry() {
+    let policy = RetentionPolicy {
+      min_count: 10,
+      max_count: 20,
+      min_age: Duration::from_secs(0),
+      max_age: Duration::from_secs(500),
+    };
+    // 4 backups: ids 0,1 old (>500s), 2,3 young (<500s)
+    let backups = vec![
+      make_backup(0, 1000),
+      make_backup(1, 600),
+      make_backup(2, 400),
+      make_backup(3, 200),
+    ];
+    let to_delete = policy.select_for_deletion(&backups);
+    // min_count=10 > total=4, normally nothing deleted,
+    // but max_age overrides: 0 and 1 are older than 500s
+    assert!(to_delete.contains(&0), "backup 0 exceeds max_age");
+    assert!(to_delete.contains(&1), "backup 1 exceeds max_age");
+    assert_eq!(to_delete.len(), 2, "only old backups deleted by max_age");
+  }
 
-        let storage = LocalFileStorage::new(backup_dir.path());
-        let manager = BackupManager::new(storage);
-
-        // Create multiple backups
-        let id1 = manager.create_backup(&db).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let id2 = manager.create_backup(&db).unwrap();
-
-        let backups = manager.list_backups();
-        assert_eq!(backups.len(), 2);
-        assert!(backups.iter().any(|b| b.id == id1));
-        assert!(backups.iter().any(|b| b.id == id2));
-    }
-
-    #[test]
-    fn test_get_backup_info() {
-        let db_dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
-
-        let db = DB::open(db_dir.path(), Options::default()).unwrap();
-        let storage = LocalFileStorage::new(backup_dir.path());
-        let manager = BackupManager::new(storage);
-
-        let backup_id = manager.create_backup(&db).unwrap();
-        let info = manager.get_backup_info(&backup_id);
-
-        assert!(info.is_some());
-        let info = info.unwrap();
-        assert_eq!(info.id, backup_id);
-        assert_eq!(info.backup_type, BackupType::Full);
-    }
-
-    #[test]
-    fn test_delete_backup() {
-        let db_dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
-
-        let db = DB::open(db_dir.path(), Options::default()).unwrap();
-        let storage = LocalFileStorage::new(backup_dir.path());
-        let manager = BackupManager::new(storage);
-
-        let backup_id = manager.create_backup(&db).unwrap();
-        assert_eq!(manager.list_backups().len(), 1);
-
-        manager.delete_backup(&backup_id).unwrap();
-        assert_eq!(manager.list_backups().len(), 0);
-    }
-
-    #[test]
-    fn test_backup_with_description() {
-        let db_dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
-
-        let db = DB::open(db_dir.path(), Options::default()).unwrap();
-        let storage = LocalFileStorage::new(backup_dir.path());
-        let manager = BackupManager::new(storage);
-
-        let desc = Some("Test backup".to_string());
-        let backup_id = manager.create_backup_with_description(&db, desc.clone()).unwrap();
-
-        let info = manager.get_backup_info(&backup_id).unwrap();
-        assert_eq!(info.description, desc);
-    }
+  #[test]
+  fn test_retention_policy_min_age_protection() {
+    let policy = RetentionPolicy {
+      min_count: 1,
+      max_count: 3,
+      min_age: Duration::from_secs(1000),
+      max_age: Duration::from_secs(u64::MAX),
+    };
+    // 5 backups: ids 0,1 are old (>1000s), 2,3,4 are young (<1000s)
+    let backups = vec![
+      make_backup(0, 2000),
+      make_backup(1, 1500),
+      make_backup(2, 500),
+      make_backup(3, 400),
+      make_backup(4, 300),
+    ];
+    let to_delete = policy.select_for_deletion(&backups);
+    // 5 > max=3, min=1: delete 2 oldest (must keep 3 total, but 3 are in min_age)
+    assert_eq!(to_delete.len(), 2);
+    assert_eq!(to_delete[0], 0);
+    assert_eq!(to_delete[1], 1);
+  }
 }

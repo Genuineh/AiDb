@@ -1,0 +1,241 @@
+//! SSTable 构建: 排序 K-V → 磁盘文件.
+
+use std::fs::{self, File};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+
+use crate::config::CompressionType;
+use crate::engine::filter::{BloomFilter, Filter};
+use crate::engine::memtable::{compare_internal_key, extract_user_key};
+use crate::error::{Error, Result};
+
+use super::block::BlockBuilder;
+use super::block_io::write_block;
+use super::footer::Footer;
+use super::handle::BlockHandle;
+use super::index::{IndexBlockBuilder, IndexEntry};
+use super::meta::{index_entry_for_bloom, write_raw_block};
+
+const MIN_BLOCK_SIZE: usize = 256;
+
+pub struct SSTableBuilder {
+  writer: BufWriter<File>,
+  tmp_path: PathBuf,
+  final_path: PathBuf,
+  data_block_builder: BlockBuilder,
+  index_block_builder: IndexBlockBuilder,
+  last_key: Vec<u8>,
+  data_block_offset: u64,
+  num_entries: u64,
+  block_size: usize,
+  block_restart_interval: usize,
+  compression: CompressionType,
+  pending_handle: Option<BlockHandle>,
+  block_count: u64,
+  enable_bloom: bool,
+  bloom_fp_rate: f64,
+  bloom_filter: Option<BloomFilter>,
+}
+
+impl SSTableBuilder {
+  pub fn new(
+    path: &Path,
+    block_size: usize,
+    block_restart_interval: usize,
+    compression: CompressionType,
+    bloom_false_positive_rate: f64,
+  ) -> Result<Self> {
+    if block_size < MIN_BLOCK_SIZE {
+      return Err(Error::InvalidArgument(format!(
+        "block_size {block_size} < {MIN_BLOCK_SIZE}"
+      )));
+    }
+    let tmp_path = path.with_extension("sst.tmp");
+    if let Some(parent) = tmp_path.parent() {
+      fs::create_dir_all(parent)?;
+    }
+    let file = File::create(&tmp_path)?;
+    let enable_bloom = bloom_false_positive_rate > 0.0;
+    Ok(Self {
+      writer: BufWriter::new(file),
+      tmp_path,
+      final_path: path.to_path_buf(),
+      data_block_builder: BlockBuilder::new(block_restart_interval),
+      index_block_builder: IndexBlockBuilder::new(),
+      last_key: Vec::new(),
+      data_block_offset: 0,
+      num_entries: 0,
+      block_size,
+      block_restart_interval,
+      compression,
+      pending_handle: None,
+      block_count: 0,
+      enable_bloom,
+      bloom_fp_rate: bloom_false_positive_rate,
+      bloom_filter: None,
+    })
+  }
+
+  pub fn set_expected_keys(&mut self, num_keys: usize) {
+    if self.enable_bloom && self.bloom_filter.is_none() {
+      self.bloom_filter = Some(BloomFilter::new(num_keys, self.bloom_fp_rate));
+    }
+  }
+
+  #[tracing::instrument(
+    name = "sst_build_add",
+    skip(self, key, value),
+    fields(key_len = key.len())
+  )]
+  pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+    if key.is_empty() {
+      return Err(Error::InvalidArgument("empty SSTable key".into()));
+    }
+    if !self.last_key.is_empty()
+      && compare_internal_key(key, &self.last_key) != std::cmp::Ordering::Greater
+    {
+      return Err(Error::InvalidArgument(
+        "SSTable keys must be strictly increasing".into(),
+      ));
+    }
+
+    if let Some(handle) = self.pending_handle.take() {
+      self.index_block_builder.add_entry(&IndexEntry {
+        key: self.last_key.clone(),
+        handle,
+      });
+    }
+
+    self.data_block_builder.add(key, value);
+    if self.data_block_builder.current_size() >= self.block_size {
+      self.flush_data_block()?;
+    }
+    self.last_key.clear();
+    self.last_key.extend_from_slice(key);
+
+    if self.enable_bloom {
+      if self.bloom_filter.is_none() {
+        self.bloom_filter = Some(BloomFilter::default_with_keys(10_000));
+      }
+      let user_key = extract_user_key(key);
+      self.bloom_filter.as_mut().unwrap().add(user_key);
+    }
+
+    self.num_entries += 1;
+    Ok(())
+  }
+
+  fn flush_data_block(&mut self) -> Result<()> {
+    if self.data_block_builder.is_empty() {
+      return Ok(());
+    }
+    let block_data = {
+      let mut b = BlockBuilder::new(self.block_restart_interval);
+      std::mem::swap(&mut self.data_block_builder, &mut b);
+      b.finish()
+    };
+    let offset = self.data_block_offset;
+    write_block(&mut self.writer, &block_data, self.compression)?;
+    let data_size = block_data.len() as u64;
+    let handle = BlockHandle {
+      offset,
+      size: data_size + super::BLOCK_TRAILER_SIZE as u64,
+    };
+    self.data_block_offset += handle.size;
+    self.pending_handle = Some(handle);
+    self.block_count += 1;
+    Ok(())
+  }
+
+  pub fn finish(mut self) -> Result<u64> {
+    let _span = tracing::info_span!(
+      "sst_build_finish",
+      file = %self.final_path.display()
+    )
+    .entered();
+    if self.num_entries == 0 {
+      return Err(Error::InvalidArgument("empty sstable".into()));
+    }
+
+    if !self.data_block_builder.is_empty() {
+      self.flush_data_block()?;
+    }
+    if let Some(handle) = self.pending_handle.take() {
+      self.index_block_builder.add_entry(&IndexEntry {
+        key: self.last_key.clone(),
+        handle,
+      });
+    }
+
+    let mut meta_index_builder = IndexBlockBuilder::new();
+    if let Some(ref filter) = self.bloom_filter {
+      let key_count = self.num_entries;
+      let num_bits = filter.num_bits();
+      let num_hashes = filter.num_hashes();
+      let _bloom_span =
+        tracing::info_span!("bloom_build", key_count, num_bits, num_hashes).entered();
+      let encoded = filter.encode();
+      tracing::debug!(
+        target: "sst",
+        key_count,
+        num_bits,
+        num_hashes,
+        encoded_len = encoded.len(),
+        "bloom.build"
+      );
+      let bloom_handle = write_raw_block(&mut self.writer, &mut self.data_block_offset, &encoded)?;
+      meta_index_builder.add_entry(&index_entry_for_bloom(bloom_handle));
+    }
+
+    let meta_index_data = meta_index_builder.finish();
+    let meta_index_offset = self.data_block_offset;
+    write_block(
+      &mut self.writer,
+      meta_index_data.as_ref(),
+      CompressionType::None,
+    )?;
+    let meta_index_handle = BlockHandle {
+      offset: meta_index_offset,
+      size: meta_index_data.len() as u64 + super::BLOCK_TRAILER_SIZE as u64,
+    };
+    self.data_block_offset += meta_index_handle.size;
+
+    let index_data = self.index_block_builder.finish();
+    let index_offset = self.data_block_offset;
+    write_block(&mut self.writer, index_data.as_ref(), CompressionType::None)?;
+    let index_handle = BlockHandle {
+      offset: index_offset,
+      size: index_data.len() as u64 + super::BLOCK_TRAILER_SIZE as u64,
+    };
+
+    let footer = Footer::new(meta_index_handle, index_handle);
+    self.writer.write_all(&footer.encode())?;
+    self.writer.flush()?;
+    self.writer.get_ref().sync_all()?;
+
+    drop(self.writer);
+    fs::rename(&self.tmp_path, &self.final_path)?;
+    let file_size = fs::metadata(&self.final_path)?.len();
+
+    tracing::info!(
+      target: "sst",
+      block_count = self.block_count,
+      file_size,
+      bloom = self.bloom_filter.is_some(),
+      "sst.build.complete"
+    );
+    Ok(file_size)
+  }
+
+  pub fn abandon(self) -> Result<()> {
+    drop(self.writer);
+    if self.tmp_path.exists() {
+      fs::remove_file(&self.tmp_path)?;
+    }
+    Ok(())
+  }
+
+  pub fn block_count(&self) -> u64 {
+    self.block_count
+  }
+}

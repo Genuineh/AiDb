@@ -1,0 +1,5 @@
+# 与 .github/workflows/ci.yml 一致 (stable + clippy/rustfmt).
+# 进入本目录后 rustup 会自动选用此工具链, 避免本地与 CI clippy 版本漂移.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]

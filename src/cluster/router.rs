@@ -1,534 +1,349 @@
-//! Router for sharded key routing in Multi-Raft clusters
+//! AiDb 数据面请求路由 (Phase 14: Multi-Raft).
 //!
-//! This module provides the routing logic that maps keys to Raft groups using
-//! slot-based sharding. It maintains a local cache of cluster metadata and
-//! watches for updates from MetaRaft.
-//!
-//! # Routing Logic
-//!
-//! 1. Compute slot from key (Redis Cluster rules): apply [hash tags](https://redis.io/docs/reference/cluster-spec/#hash-tags)
-//!    — only the substring inside `{...}` is hashed (if present); then `slot = crc16 % 16384`.
-//! 2. Look up group from slot: `group_id = meta.slots[slot]`
-//! 3. Get group replicas: `replicas = meta.groups[group_id].replicas`
-//!
-//! # Example
-//!
-//! ```
-//! # use aidb::cluster::{Router, ClusterMeta};
-//! let meta = ClusterMeta::new();
-//! let router = Router::new(meta);
-//!
-//! // Route a key to its group
-//! let key = b"user:12345";
-//! let group_id = router.route(key).unwrap();
-//!
-//! // Get the slot for a key
-//! let slot = Router::key_to_slot(key);
-//! ```
+//! 提供 CRC16 哈希、hash tag 提取、slot 计算和请求路由功能.
+//! Router 通过 Arc<RwLock<...>> 持有槽表、Group-Node 映射和节点地址表,
+//! 支持运行时原子刷新.
 
-use parking_lot::RwLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::meta_raft_node::MetaRaftNode;
-use super::meta_types::ClusterMeta;
-use super::raft_storage::NodeId;
-use super::sharded_storage::GroupId;
-use crate::error::{Error, Result};
+use parking_lot::RwLock;
 
-/// CRC-16/XMODEM polynomial (used in Redis Cluster)
-const CRC16_XMODEM: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
+use crate::cluster::meta_types::{SlotStatus, SlotTable, SLOT_COUNT};
+use crate::cluster::types::{ClusterError, NodeId, ThinWriteOp};
 
-/// Number of slots in the cluster (Redis Cluster compatible)
-pub const SLOT_COUNT: usize = 16384;
+// ---------------------------------------------------------------------------
+// CRC16-CCITT 查找表 (多项式 0x1021)
+// ---------------------------------------------------------------------------
 
-/// Redis Cluster hash tag: only the substring between the first `{` and the next `}` is used for
-/// the CRC16 slot (when that substring is non-empty). Matches Redis `HASH_SLOT` behavior used by
-/// AiKv `CLUSTER KEYSLOT` / MOVED checks.
-fn extract_hash_tag(key: &[u8]) -> &[u8] {
-    if let Some(start) = key.iter().position(|&b| b == b'{') {
-        if let Some(end) = key[start + 1..].iter().position(|&b| b == b'}') {
-            if end > 0 {
-                return &key[start + 1..start + 1 + end];
-            }
-        }
-    }
-    key
+/// CRC16-CCITT 查找表, 用于计算 key 的 slot.
+const CRC16_TABLE: [u16; 256] = [
+  0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108, 0x9129, 0xa14a, 0xb16b,
+  0xc18c, 0xd1ad, 0xe1ce, 0xf1ef, 0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+  0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de, 0x2462, 0x3443, 0x0420, 0x1401,
+  0x64e6, 0x74c7, 0x44a4, 0x5485, 0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+  0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4, 0xb75b, 0xa77a, 0x9719, 0x8738,
+  0xf7df, 0xe7fe, 0xd79d, 0xc7bc, 0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+  0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b, 0x5af5, 0x4ad4, 0x7ab7, 0x6a96,
+  0x1a71, 0x0a50, 0x3a33, 0x2a12, 0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+  0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41, 0xedae, 0xfd8f, 0xcdec, 0xddcd,
+  0xad2a, 0xbd0b, 0x8d68, 0x9d49, 0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+  0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78, 0x9188, 0x81a9, 0xb1ca, 0xa1eb,
+  0xd10c, 0xc12d, 0xf14e, 0xe16f, 0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+  0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e, 0x02b1, 0x1290, 0x22f3, 0x32d2,
+  0x4235, 0x5214, 0x6277, 0x7256, 0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+  0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405, 0xa7db, 0xb7fa, 0x8799, 0x97b8,
+  0xe75f, 0xf77e, 0xc71d, 0xd73c, 0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+  0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab, 0x5844, 0x4865, 0x7806, 0x6827,
+  0x18c0, 0x08e1, 0x3882, 0x28a3, 0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+  0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92, 0xfd2e, 0xed0f, 0xdd6c, 0xcd4d,
+  0xbdaa, 0xad8b, 0x9de8, 0x8dc9, 0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
+  0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8, 0x6e17, 0x7e36, 0x4e55, 0x5e74,
+  0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
+];
+
+/// CRC16-CCITT 计算.
+pub fn crc16(data: &[u8]) -> u16 {
+  let mut crc: u16 = 0;
+  for &byte in data {
+    let idx = ((crc >> 8) ^ u16::from(byte)) as usize;
+    crc = (crc << 8) ^ CRC16_TABLE[idx & 0xff];
+  }
+  crc
 }
 
-/// Router for mapping keys to Raft groups
+/// 提取 Redis hash tag (第一个 `{...}` 之间的内容).
 ///
-/// The Router maintains a local cache of cluster metadata and provides
-/// fast key-to-group lookups. It can optionally watch MetaRaft for
-/// metadata updates to keep the cache fresh.
+/// 规则:
+/// - 找到第一个 `{` 和它之后第一个 `}`.
+/// - 如果两者之间存在内容 (`}` 不在 `{` 之后立即出现), 返回该内容.
+/// - 否则返回完整的 key.
+pub fn extract_hash_tag(key: &[u8]) -> &[u8] {
+  let start = key.iter().position(|&b| b == b'{');
+  match start {
+    Some(s) => {
+      let after_open = &key[s + 1..];
+      let end = after_open.iter().position(|&b| b == b'}');
+      match end {
+        Some(e) if e > 0 => &key[s + 1..s + 1 + e],
+        _ => key,
+      }
+    }
+    None => key,
+  }
+}
+
+/// 计算 key 对应的 CRC16 slot (0..16384).
 ///
-/// # Thread Safety
+/// 如果 key 包含 hash tag, 只对 tag 内的内容计算 CRC16.
+pub fn key_to_slot(key: &[u8]) -> u16 {
+  let tag = extract_hash_tag(key);
+  crc16(tag) % (SLOT_COUNT as u16)
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+/// 数据面路由表.
 ///
-/// The Router is thread-safe and can be shared across multiple threads
-/// using `Arc<Router>`.
+/// 持有槽表、Group-ID 到 Node 列表的映射、Node-ID 到地址的映射,
+/// 以及每个 Group 的当前 leader.
+/// 所有内部状态通过 `Arc<RwLock<...>>` 保护, 支持运行时原子刷新.
+#[derive(Clone)]
 pub struct Router {
-    /// Local cache of cluster metadata
-    meta_cache: Arc<RwLock<ClusterMeta>>,
-
-    /// MetaRaft client for fetching updates (optional)
-    meta_client: Option<Arc<MetaRaftNode>>,
-
-    /// Cached configuration version for quick staleness checks
-    cached_version: AtomicU64,
+  slot_table: Arc<RwLock<SlotTable>>,
+  group_nodes: Arc<RwLock<HashMap<u64, Vec<NodeId>>>>,
+  node_addrs: Arc<RwLock<HashMap<NodeId, String>>>,
+  /// group_id → current leader node_id (from MetaRaft ReplicaInfo.is_leader).
+  group_leaders: Arc<RwLock<HashMap<u64, NodeId>>>,
+  /// group_id → leader from local MultiRaft observation (优先于 MetaRaft 缓存).
+  observed_group_leaders: Arc<RwLock<HashMap<u64, NodeId>>>,
 }
 
 impl Router {
-    /// Create a new Router with initial metadata
-    ///
-    /// # Arguments
-    ///
-    /// * `initial_meta` - Initial cluster metadata
-    pub fn new(initial_meta: ClusterMeta) -> Self {
-        let version = initial_meta.config_version;
-        Self {
-            meta_cache: Arc::new(RwLock::new(initial_meta)),
-            meta_client: None,
-            cached_version: AtomicU64::new(version),
-        }
+  /// 创建新的 Router.
+  pub fn new(
+    table: SlotTable,
+    group_nodes: HashMap<u64, Vec<NodeId>>,
+    node_addrs: HashMap<NodeId, String>,
+  ) -> Self {
+    Self {
+      slot_table: Arc::new(RwLock::new(table)),
+      group_nodes: Arc::new(RwLock::new(group_nodes)),
+      node_addrs: Arc::new(RwLock::new(node_addrs)),
+      group_leaders: Arc::new(RwLock::new(HashMap::new())),
+      observed_group_leaders: Arc::new(RwLock::new(HashMap::new())),
     }
+  }
 
-    /// Create a new Router with MetaRaft client for automatic updates
-    ///
-    /// # Arguments
-    ///
-    /// * `initial_meta` - Initial cluster metadata
-    /// * `meta_client` - MetaRaft client for fetching updates
-    pub fn with_meta_client(initial_meta: ClusterMeta, meta_client: Arc<MetaRaftNode>) -> Self {
-        let version = initial_meta.config_version;
-        Self {
-            meta_cache: Arc::new(RwLock::new(initial_meta)),
-            meta_client: Some(meta_client),
-            cached_version: AtomicU64::new(version),
-        }
+  /// 路由一个 key 到对应的 Group.
+  ///
+  /// 返回 `(group_id, slot_status)`, 其中 slot_status 反映槽的当前状态
+  /// (Assigned / Migrating).
+  pub fn route_key(&self, key: &[u8]) -> Result<(u64, SlotStatus), ClusterError> {
+    let slot = key_to_slot(key);
+    self.route_slot(slot)
+  }
+
+  /// 路由一个 slot 到对应的 Group.
+  ///
+  /// 如果 slot 未分配 (Unallocated) 或越界, 返回 `ClusterError::InvalidState`.
+  pub fn route_slot(&self, slot: u16) -> Result<(u64, SlotStatus), ClusterError> {
+    let idx = slot as usize;
+    if idx >= SLOT_COUNT {
+      return Err(ClusterError::InvalidState(format!(
+        "slot {} out of range (max {})",
+        slot, SLOT_COUNT
+      )));
     }
-
-    /// Compute the slot number for a key
-    ///
-    /// Uses Redis Cluster rules (hash tags + CRC-16/XMODEM) and modulo 16384.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The key to compute slot for
-    ///
-    /// # Returns
-    ///
-    /// Slot number in range [0, 16384)
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use aidb::cluster::router::Router;
-    ///
-    /// let slot = Router::key_to_slot(b"user:12345");
-    /// assert!(slot < 16384);
-    /// ```
-    pub fn key_to_slot(key: &[u8]) -> u16 {
-        let hash_part = extract_hash_tag(key);
-        let hash = CRC16_XMODEM.checksum(hash_part);
-        hash % SLOT_COUNT as u16
+    let table = self.slot_table.read();
+    match &table[idx] {
+      SlotStatus::Unallocated => Err(ClusterError::InvalidState(format!(
+        "slot {} is not allocated to any group",
+        slot
+      ))),
+      SlotStatus::Assigned(gid) => Ok((*gid, SlotStatus::Assigned(*gid))),
+      SlotStatus::Migrating(gid) => Ok((*gid, SlotStatus::Migrating(*gid))),
     }
+  }
 
-    /// Look up the group ID for a given slot
-    ///
-    /// # Arguments
-    ///
-    /// * `slot` - Slot number
-    ///
-    /// # Returns
-    ///
-    /// Group ID that owns this slot
-    pub fn slot_to_group(&self, slot: u16) -> Result<GroupId> {
-        if slot >= SLOT_COUNT as u16 {
-            return Err(Error::InvalidArgument(format!("Slot {} out of range", slot)));
-        }
-
-        let meta = self.meta_cache.read();
-        Ok(meta.slot_to_group(slot))
+  /// 将多个 key 按所属 Group 分组.
+  ///
+  /// 返回值: `HashMap<group_id, Vec<key>>`.
+  /// 未分配槽上的 key 会被跳过.
+  pub fn route_keys(&self, keys: &[Vec<u8>]) -> HashMap<u64, Vec<Vec<u8>>> {
+    let mut groups: HashMap<u64, Vec<Vec<u8>>> = HashMap::new();
+    for key in keys {
+      if let Ok((gid, _)) = self.route_key(key) {
+        groups.entry(gid).or_default().push(key.clone());
+      }
     }
+    groups
+  }
 
-    /// Route a key to its owning group
-    ///
-    /// This is the primary routing method. It computes the slot from the key
-    /// and looks up which group owns that slot.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The key to route
-    ///
-    /// # Returns
-    ///
-    /// Group ID that should handle this key
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use aidb::cluster::Router;
-    /// # fn example(router: &Router) -> Result<(), Box<dyn std::error::Error>> {
-    /// let group_id = router.route(b"user:12345")?;
-    /// println!("Key routed to group {}", group_id);
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn route(&self, key: &[u8]) -> Result<GroupId> {
-        let slot = Self::key_to_slot(key);
-        self.slot_to_group(slot)
+  /// 将多个 slot 按所属 Group 分组.
+  ///
+  /// 未分配 slot 会被跳过.
+  pub fn group_slots(&self, slots: Vec<u16>) -> HashMap<u64, Vec<u16>> {
+    let mut groups: HashMap<u64, Vec<u16>> = HashMap::new();
+    for slot in slots {
+      if let Ok((gid, _)) = self.route_slot(slot) {
+        groups.entry(gid).or_default().push(slot);
+      }
     }
+    groups
+  }
 
-    /// Route a key to the list of nodes that own its group
-    ///
-    /// Returns the replica nodes for the group that owns this key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The key to route
-    ///
-    /// # Returns
-    ///
-    /// Vector of node IDs that are replicas of the owning group
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the group metadata is not found
-    pub fn route_to_nodes(&self, key: &[u8]) -> Result<Vec<NodeId>> {
-        let group_id = self.route(key)?;
-        let meta = self.meta_cache.read();
+  /// 将多个 key 按所属 Group 分组.
+  ///
+  /// 与 `route_keys` 语义相同, 为 MGET/MSET 等批量操作提供便利.
+  pub fn group_keys(&self, keys: &[Vec<u8>]) -> HashMap<u64, Vec<Vec<u8>>> {
+    self.route_keys(keys)
+  }
 
-        meta.groups
-            .get(&group_id)
-            .map(|group| group.replicas.clone())
-            .ok_or_else(|| Error::NotFound(format!("Group {} metadata not found", group_id)))
+  /// 将多个写操作按所属 Group 分组.
+  ///
+  /// 用于 WriteBatch 分发到不同 Raft Group.
+  pub fn group_ops(&self, ops: &[ThinWriteOp]) -> HashMap<u64, Vec<ThinWriteOp>> {
+    let mut groups: HashMap<u64, Vec<ThinWriteOp>> = HashMap::new();
+    for op in ops {
+      let key = match op {
+        ThinWriteOp::Put { key, .. } => key.as_slice(),
+        ThinWriteOp::Delete { key } => key.as_slice(),
+      };
+      if let Ok((gid, _)) = self.route_key(key) {
+        groups.entry(gid).or_default().push(op.clone());
+      }
     }
+    groups
+  }
 
-    /// Get the current cluster metadata
-    ///
-    /// Returns a clone of the cached metadata.
-    pub fn get_metadata(&self) -> ClusterMeta {
-        self.meta_cache.read().clone()
+  /// 获取 Group 的当前 leader (从 MetaRaft ReplicaInfo.is_leader 缓存).
+  ///
+  /// 回退到 group 节点列表的第一个节点 (兼容未设置 leader 的情况).
+  pub fn get_group_leader(&self, group_id: u64) -> Option<NodeId> {
+    if let Some(&leader) = self.observed_group_leaders.read().get(&group_id) {
+      return Some(leader);
     }
-
-    /// Get the cached configuration version
-    ///
-    /// This is a fast atomic read that doesn't require locking.
-    pub fn get_version(&self) -> u64 {
-        self.cached_version.load(Ordering::Acquire)
+    // 优先从 group_leaders 缓存读取 (由 LifecycleManager tick 刷新).
+    if let Some(&leader) = self.group_leaders.read().get(&group_id) {
+      return Some(leader);
     }
+    // 回退: 节点列表的第一个.
+    let groups = self.group_nodes.read();
+    groups
+      .get(&group_id)
+      .and_then(|nodes| nodes.first().copied())
+  }
 
-    /// Update the cached metadata
-    ///
-    /// This should be called when new metadata is received from MetaRaft.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_meta` - New cluster metadata
-    ///
-    /// # Returns
-    ///
-    /// `true` if the metadata was updated (version is newer), `false` otherwise
-    pub fn update_metadata(&self, new_meta: ClusterMeta) -> bool {
-        let mut cache = self.meta_cache.write();
-        if new_meta.config_version > cache.config_version {
-            *cache = new_meta;
-            self.cached_version.store(cache.config_version, Ordering::Release);
-            true
-        } else {
-            false
-        }
-    }
+  /// 获取 Group 的所有节点.
+  pub fn get_group_nodes(&self, group_id: u64) -> Option<Vec<NodeId>> {
+    let groups = self.group_nodes.read();
+    groups.get(&group_id).cloned()
+  }
 
-    /// Fetch latest metadata from MetaRaft and update cache
-    ///
-    /// This requires that the Router was created with a MetaRaft client.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(true)` if metadata was updated, `Ok(false)` if already up-to-date
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if MetaRaft client is not configured or fetch fails
-    pub fn refresh_metadata(&self) -> Result<bool> {
-        self.pull_meta_if_behind_sm()
-    }
+  /// 获取节点的网络地址.
+  pub fn get_node_addr(&self, node_id: NodeId) -> Option<String> {
+    let addrs = self.node_addrs.read();
+    addrs.get(&node_id).cloned()
+  }
 
-    /// Refresh router cache when local MetaRaft SM has advanced (e.g. slot updates proposed on
-    /// another node). O(1) when `config_version` is already in sync.
-    pub fn sync_cache_from_meta_if_stale(&self) -> Result<()> {
-        let _ = self.pull_meta_if_behind_sm()?;
-        Ok(())
-    }
+  /// 更新单个 group 的 leader 缓存 (来自本地 Raft 观测, 不等待 MetaRaft 提交).
+  pub fn update_group_leader(&self, group_id: u64, leader_id: NodeId) {
+    self
+      .observed_group_leaders
+      .write()
+      .insert(group_id, leader_id);
+  }
 
-    /// Copy SM metadata into the router if `config_version` differs from the cache.
-    fn pull_meta_if_behind_sm(&self) -> Result<bool> {
-        let meta_client = self
-            .meta_client
-            .as_ref()
-            .ok_or_else(|| Error::Internal("MetaRaft client not configured".to_string()))?;
+  /// 原子刷新路由表的所有数据.
+  ///
+  /// 同时更新 slot table、group->nodes 映射、group->leader 映射和 node->addr 映射.
+  pub fn refresh_from_data(
+    &self,
+    table: SlotTable,
+    group_nodes: HashMap<u64, Vec<NodeId>>,
+    node_addrs: HashMap<NodeId, String>,
+    group_leaders: HashMap<u64, NodeId>,
+  ) {
+    *self.slot_table.write() = table;
+    *self.group_nodes.write() = group_nodes;
+    *self.node_addrs.write() = node_addrs;
+    *self.group_leaders.write() = group_leaders.clone();
+    // MetaRaft 已追平时清除过期的本地观测.
+    self
+      .observed_group_leaders
+      .write()
+      .retain(|gid, leader| group_leaders.get(gid) != Some(leader));
+  }
 
-        let live_v = meta_client.get_config_version();
-        if live_v == self.get_version() {
-            return Ok(false);
-        }
+  /// 返回 slot table 的只读引用 (Arc).
+  pub fn slot_table(&self) -> Arc<RwLock<SlotTable>> {
+    Arc::clone(&self.slot_table)
+  }
 
-        let new_meta = meta_client.get_cluster_meta();
-        let mut cache = self.meta_cache.write();
-        *cache = new_meta;
-        self.cached_version.store(cache.config_version, Ordering::Release);
-        Ok(true)
-    }
+  /// 返回 group->nodes 映射的只读引用 (Arc).
+  pub fn group_nodes_map(&self) -> Arc<RwLock<HashMap<u64, Vec<NodeId>>>> {
+    Arc::clone(&self.group_nodes)
+  }
 
-    /// Watch MetaRaft for metadata changes and automatically update cache
-    ///
-    /// This spawns a background task that periodically polls MetaRaft for
-    /// updates. The task runs until the Router is dropped.
-    ///
-    /// # Arguments
-    ///
-    /// * `poll_interval_ms` - How often to check for updates (milliseconds)
-    ///
-    /// # Returns
-    ///
-    /// A join handle for the background task
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if MetaRaft client is not configured
-    pub async fn start_watching(
-        self: Arc<Self>,
-        poll_interval_ms: u64,
-    ) -> Result<tokio::task::JoinHandle<()>> {
-        if self.meta_client.is_none() {
-            return Err(Error::Internal("MetaRaft client not configured".to_string()));
-        }
-
-        let handle = tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_millis(poll_interval_ms));
-            loop {
-                interval.tick().await;
-
-                match self.refresh_metadata() {
-                    Ok(updated) => {
-                        if updated {
-                            tracing::debug!(
-                                "Router metadata updated to version {}",
-                                self.get_version()
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to refresh router metadata: {}", e);
-                    }
-                }
-            }
-        });
-
-        Ok(handle)
-    }
-
-    /// Get the leader node for a group (if known)
-    ///
-    /// # Arguments
-    ///
-    /// * `group_id` - Group to query
-    ///
-    /// # Returns
-    ///
-    /// Leader node ID if known, `None` otherwise
-    pub fn get_group_leader(&self, group_id: GroupId) -> Option<NodeId> {
-        let meta = self.meta_cache.read();
-        meta.groups.get(&group_id).and_then(|g| g.leader)
-    }
-
-    /// Get all replicas for a group
-    ///
-    /// # Arguments
-    ///
-    /// * `group_id` - Group to query
-    ///
-    /// # Returns
-    ///
-    /// Vector of replica node IDs
-    pub fn get_group_replicas(&self, group_id: GroupId) -> Vec<NodeId> {
-        let meta = self.meta_cache.read();
-        meta.groups.get(&group_id).map(|g| g.replicas.clone()).unwrap_or_default()
-    }
-
-    /// Get information about a node
-    ///
-    /// # Arguments
-    ///
-    /// * `node_id` - Node to query
-    ///
-    /// # Returns
-    ///
-    /// Node address if found
-    pub fn get_node_address(&self, node_id: NodeId) -> Option<String> {
-        let meta = self.meta_cache.read();
-        meta.nodes.get(&node_id).map(|n| n.addr.clone())
-    }
+  /// 返回 node->addr 映射的只读引用 (Arc).
+  pub fn node_addrs_map(&self) -> Arc<RwLock<HashMap<NodeId, String>>> {
+    Arc::clone(&self.node_addrs)
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::cluster::meta_types::{GroupMeta, NodeInfo};
+  use super::*;
+  use crate::cluster::meta_types::default_slot_table;
 
-    #[test]
-    fn test_key_to_slot() {
-        // Test that slot is in valid range
-        let slot1 = Router::key_to_slot(b"user:12345");
-        assert!(slot1 < SLOT_COUNT as u16);
+  #[test]
+  fn test_crc16_standard_vector() {
+    assert_eq!(crc16(b"123456789"), 0x31C3);
+  }
 
-        // Test that same key produces same slot
-        let slot2 = Router::key_to_slot(b"user:12345");
-        assert_eq!(slot1, slot2);
+  #[test]
+  fn test_crc16_empty() {
+    assert_eq!(crc16(b""), 0x0000);
+  }
 
-        // Test that different keys produce different slots (usually)
-        let slot3 = Router::key_to_slot(b"user:67890");
-        // Note: Can't guarantee different slots due to hash collisions,
-        // but we can check it's in range
-        assert!(slot3 < SLOT_COUNT as u16);
-    }
+  #[test]
+  fn test_extract_hash_tag_basic() {
+    assert_eq!(extract_hash_tag(b"{user}.name"), b"user");
+  }
 
-    #[test]
-    fn test_key_to_slot_hash_tag_redis_cluster() {
-        // Same hashtag => same slot (cf. CLUSTER KEYSLOT / MOVED)
-        let a = Router::key_to_slot(b"{cluster_test}:key1");
-        let b = Router::key_to_slot(b"{cluster_test}:key2");
-        assert_eq!(a, b);
-        // Distinct from hashing the full key without tag semantics
-        let raw = Router::key_to_slot(b"cluster_test:key1");
-        assert_ne!(a, raw);
-    }
+  #[test]
+  fn test_extract_hash_tag_no_braces() {
+    assert_eq!(extract_hash_tag(b"username"), b"username");
+  }
 
-    #[test]
-    fn test_slot_distribution() {
-        // Test that slots are reasonably distributed
-        use std::collections::HashMap;
-        let mut slot_counts = HashMap::new();
+  #[test]
+  fn test_extract_hash_tag_empty_braces() {
+    assert_eq!(extract_hash_tag(b"{}.name"), b"{}.name");
+  }
 
-        // Generate 1000 keys and count slot distribution
-        for i in 0..1000 {
-            let key = format!("key:{}", i);
-            let slot = Router::key_to_slot(key.as_bytes());
-            *slot_counts.entry(slot / 100).or_insert(0) += 1;
-        }
+  #[test]
+  fn test_extract_hash_tag_only_open_brace() {
+    assert_eq!(extract_hash_tag(b"key{missing"), b"key{missing");
+  }
 
-        // We should have keys in multiple buckets
-        assert!(slot_counts.len() > 10);
-    }
+  #[test]
+  fn test_key_to_slot_consistency() {
+    let key = b"consistent-key";
+    assert_eq!(key_to_slot(key), key_to_slot(key));
+  }
 
-    #[test]
-    fn test_router_basic() {
-        let mut meta = ClusterMeta::new();
-        meta.config_version = 1;
+  #[test]
+  fn test_router_route_slot_unallocated() {
+    let table = {
+      let mut t = default_slot_table();
+      t[0] = SlotStatus::Assigned(1);
+      t[1] = SlotStatus::Unallocated;
+      t
+    };
+    let router = Router::new(table, HashMap::new(), HashMap::new());
+    assert!(router.route_slot(0).is_ok());
+    assert!(router.route_slot(1).is_err());
+    assert!(router.route_slot(65535).is_err());
+  }
 
-        // Set up simple mapping: slots 0-99 -> group 1, 100-199 -> group 2
-        for slot in 0..100 {
-            meta.slots[slot] = 1;
-        }
-        for slot in 100..200 {
-            meta.slots[slot] = 2;
-        }
+  #[test]
+  fn test_router_get_group_leader_no_nodes() {
+    let router = Router::new(default_slot_table(), HashMap::new(), HashMap::new());
+    assert_eq!(router.get_group_leader(1), None);
+  }
 
-        let router = Router::new(meta);
-
-        // Test slot lookup
-        assert_eq!(router.slot_to_group(50).unwrap(), 1);
-        assert_eq!(router.slot_to_group(150).unwrap(), 2);
-
-        // Test version
-        assert_eq!(router.get_version(), 1);
-    }
-
-    #[test]
-    fn test_router_with_groups() {
-        let mut meta = ClusterMeta::with_uniform_distribution(4);
-        meta.groups.insert(0, GroupMeta::new(0, vec![1, 2, 3]));
-        meta.groups.insert(1, GroupMeta::new(1, vec![1, 2, 3]));
-        meta.groups.insert(2, GroupMeta::new(2, vec![1, 2, 3]));
-        meta.groups.insert(3, GroupMeta::new(3, vec![1, 2, 3]));
-
-        let router = Router::new(meta);
-
-        // Find a key that maps to group 0
-        let mut found = false;
-        for i in 0..1000 {
-            let key = format!("key:{}", i);
-            if let Ok(group_id) = router.route(key.as_bytes()) {
-                if group_id == 0 {
-                    // Verify we can get nodes for this group
-                    let nodes = router.route_to_nodes(key.as_bytes()).unwrap();
-                    assert_eq!(nodes, vec![1, 2, 3]);
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "Should find at least one key mapping to group 0");
-    }
-
-    #[test]
-    fn test_router_update_metadata() {
-        let mut meta1 = ClusterMeta::new();
-        meta1.config_version = 1;
-        let router = Router::new(meta1);
-
-        assert_eq!(router.get_version(), 1);
-
-        // Update with newer version
-        let mut meta2 = ClusterMeta::new();
-        meta2.config_version = 2;
-        assert!(router.update_metadata(meta2));
-        assert_eq!(router.get_version(), 2);
-
-        // Try to update with older version
-        let mut meta3 = ClusterMeta::new();
-        meta3.config_version = 1;
-        assert!(!router.update_metadata(meta3));
-        assert_eq!(router.get_version(), 2);
-    }
-
-    #[test]
-    fn test_router_get_group_info() {
-        let mut meta = ClusterMeta::new();
-        let mut group = GroupMeta::new(1, vec![1, 2, 3]);
-        group.set_leader(1);
-        meta.groups.insert(1, group);
-
-        let router = Router::new(meta);
-
-        // Test get leader
-        assert_eq!(router.get_group_leader(1), Some(1));
-        assert_eq!(router.get_group_leader(999), None);
-
-        // Test get replicas
-        assert_eq!(router.get_group_replicas(1), vec![1, 2, 3]);
-        assert_eq!(router.get_group_replicas(999), Vec::<NodeId>::new());
-    }
-
-    #[test]
-    fn test_router_get_node_address() {
-        let mut meta = ClusterMeta::new();
-        meta.nodes.insert(1, NodeInfo::new(1, "127.0.0.1:50051".to_string()));
-
-        let router = Router::new(meta);
-
-        assert_eq!(router.get_node_address(1), Some("127.0.0.1:50051".to_string()));
-        assert_eq!(router.get_node_address(999), None);
-    }
-
-    #[test]
-    fn test_slot_out_of_range() {
-        let meta = ClusterMeta::new();
-        let router = Router::new(meta);
-
-        assert!(router.slot_to_group(16384).is_err());
-        assert!(router.slot_to_group(20000).is_err());
-    }
+  #[test]
+  fn test_router_refresh_empty() {
+    let router = Router::new(default_slot_table(), HashMap::new(), HashMap::new());
+    router.refresh_from_data(
+      default_slot_table(),
+      HashMap::new(),
+      HashMap::new(),
+      HashMap::new(),
+    );
+    assert_eq!(router.get_group_leader(99), None);
+  }
 }

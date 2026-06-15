@@ -1,203 +1,87 @@
-// Read performance benchmarks for AiDb
+//! Phase 7.6 read benchmarks (criterion).
+//!
+//! Preload uses WriteBatch chunks (500 keys/batch). Default 10_000 keys (smoke/regression).
+//! Every 1000 keys calls `db.flush()` during setup (avoids immutable MemTable backlog stall).
+//!
+//! Environment:
+//!   WIQUN_BENCH_PRELOAD — override preload size (e.g. 100_000 for larger read working set)
+//!
+//! Smoke:
+//!   cargo bench --bench read_bench
+//!
+//! Acceptance:
+//!   python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/bench-acceptance.json
 
-use aidb::{Options, DB};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::hint::black_box;
-use tempfile::TempDir;
+use std::time::Duration;
 
-fn benchmark_sequential_read(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sequential_read");
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use rand::Rng;
+use tempfile::tempdir;
+use aidb::config::Options;
+use aidb::{WriteBatch, DB};
 
-    for size in [100, 1000, 10000].iter() {
-        group.throughput(Throughput::Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            // Setup database once for this size parameter
-            let temp_dir = TempDir::new().unwrap();
-            let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+const BATCH_SIZE: u64 = 500;
+const DEFAULT_PRELOAD_KEYS: u64 = 10_000;
+const VALUE_1KB: [u8; 1024] = [0u8; 1024];
 
-            // Pre-populate data
-            for i in 0..size {
-                let key = format!("key{:08}", i);
-                let value = format!("value{:08}", i);
-                db.put(key.as_bytes(), value.as_bytes()).unwrap();
-            }
-            db.flush().unwrap();
-
-            b.iter(|| {
-                for i in 0..size {
-                    let key = format!("key{:08}", i);
-                    let value = db.get(key.as_bytes()).unwrap();
-                    black_box(value);
-                }
-            });
-        });
-    }
-
-    group.finish();
+fn preload_keys() -> u64 {
+  std::env::var("WIQUN_BENCH_PRELOAD")
+    .ok()
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(DEFAULT_PRELOAD_KEYS)
 }
 
-fn benchmark_random_read(c: &mut Criterion) {
-    let mut group = c.benchmark_group("random_read");
-
-    for size in [100, 1000, 10000].iter() {
-        group.throughput(Throughput::Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            // Setup database once for this size parameter
-            let temp_dir = TempDir::new().unwrap();
-            let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-            // Pre-populate data
-            for i in 0..size {
-                let key = format!("key{:08}", i);
-                let value = format!("value{:08}", i);
-                db.put(key.as_bytes(), value.as_bytes()).unwrap();
-            }
-            db.flush().unwrap();
-
-            b.iter(|| {
-                use rand::Rng;
-                let mut rng = rand::rng();
-
-                for _ in 0..size {
-                    let key_num: usize = rng.random_range(0..size);
-                    let key = format!("key{:08}", key_num);
-                    let value = db.get(key.as_bytes()).unwrap();
-                    black_box(value);
-                }
-            });
-        });
+fn preload_db(db: &DB, count: u64) {
+  let mut written = 0u64;
+  while written < count {
+    let batch_end = (written + BATCH_SIZE).min(count);
+    let mut batch = WriteBatch::new();
+    for i in written..batch_end {
+      batch.put(format!("key_{:05}", i).as_bytes(), VALUE_1KB.as_slice());
     }
-
-    group.finish();
+    db.write(&batch).unwrap();
+    written = batch_end;
+    if written.is_multiple_of(1000) || written == count {
+      db.flush().unwrap();
+    }
+  }
 }
 
-fn benchmark_cache_hit(c: &mut Criterion) {
-    let mut group = c.benchmark_group("cache_hit");
+fn bench_read(c: &mut Criterion) {
+  let preload = preload_keys();
+  let mut group = c.benchmark_group("read");
+  group.warm_up_time(Duration::from_secs(1));
+  group.measurement_time(Duration::from_secs(2));
+  group.sample_size(10);
 
-    group.throughput(Throughput::Elements(1000));
-    group.bench_function("cached_reads", |b| {
-        // Setup database once for all iterations
-        let temp_dir = TempDir::new().unwrap();
-        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+  let dir = tempdir().unwrap();
+  let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+  preload_db(&db, preload);
+  db.flush().unwrap();
 
-        // Pre-populate data
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
+  let keys: Vec<String> = (0..preload).map(|i| format!("key_{:05}", i)).collect();
+  let mut rng = rand::thread_rng();
 
-        // Warm up cache by reading all keys once
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let _ = db.get(key.as_bytes()).unwrap();
-        }
-
-        b.iter(|| {
-            for i in 0..1000 {
-                let key = format!("key{:08}", i);
-                let value = db.get(key.as_bytes()).unwrap();
-                black_box(value);
-            }
-        });
+  group.bench_function("random_get_1kb", |b| {
+    b.iter(|| {
+      let idx = rng.gen_range(0..preload as usize);
+      let key = &keys[idx];
+      let result = db.get(black_box(key.as_bytes())).unwrap();
+      black_box(result);
     });
+  });
 
-    group.finish();
-}
-
-fn benchmark_read_missing_keys(c: &mut Criterion) {
-    let mut group = c.benchmark_group("read_missing");
-
-    group.throughput(Throughput::Elements(1000));
-    group.bench_function("missing_keys", |b| {
-        // Setup database once for all iterations
-        let temp_dir = TempDir::new().unwrap();
-        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-        // Pre-populate data with keys 0-999
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
-
-        b.iter(|| {
-            // Try to read keys 1000-1999 (which don't exist)
-            for i in 1000..2000 {
-                let key = format!("key{:08}", i);
-                let value = db.get(key.as_bytes()).unwrap();
-                black_box(value);
-            }
-        });
+  group.bench_function("sequential_scan_100", |b| {
+    b.iter(|| {
+      let mut it = db.scan(Some(b"key_00000"), Some(b"key_00100")).unwrap();
+      while let Some(Ok((k, v))) = it.next() {
+        black_box((k, v));
+      }
     });
+  });
 
-    group.finish();
+  group.finish();
 }
 
-fn benchmark_read_with_bloom_filter(c: &mut Criterion) {
-    let mut group = c.benchmark_group("read_with_bloom");
-
-    // Without bloom filter
-    {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = Options { use_bloom_filter: false, ..Default::default() };
-        let db = DB::open(temp_dir.path(), opts).unwrap();
-
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
-
-        group.bench_function("without_bloom", |b| {
-            b.iter(|| {
-                // Try to read missing keys
-                for i in 1000..2000 {
-                    let key = format!("key{:08}", i);
-                    let value = db.get(key.as_bytes()).unwrap();
-                    black_box(value);
-                }
-            });
-        });
-    }
-
-    // With bloom filter
-    {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = Options::default(); // Bloom filter enabled by default
-        let db = DB::open(temp_dir.path(), opts).unwrap();
-
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let value = format!("value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-        db.flush().unwrap();
-
-        group.bench_function("with_bloom", |b| {
-            b.iter(|| {
-                // Try to read missing keys
-                for i in 1000..2000 {
-                    let key = format!("key{:08}", i);
-                    let value = db.get(key.as_bytes()).unwrap();
-                    black_box(value);
-                }
-            });
-        });
-    }
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    benchmark_sequential_read,
-    benchmark_random_read,
-    benchmark_cache_hit,
-    benchmark_read_missing_keys,
-    benchmark_read_with_bloom_filter
-);
+criterion_group!(benches, bench_read);
 criterion_main!(benches);

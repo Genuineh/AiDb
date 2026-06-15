@@ -1,41 +1,23 @@
-#!/bin/sh
-#
-# Pre-commit hook to run cargo fmt and cargo clippy before commits
-# This ensures code quality and consistent formatting
+#!/bin/bash
+set -euo pipefail
 
-echo "Running pre-commit checks..."
+echo "=== pre-commit: aidb ==="
 
-# Run cargo fmt to check formatting
-echo "Checking code formatting with cargo fmt..."
-cargo fmt --all -- --check
-FMT_EXIT=$?
-
-if [ $FMT_EXIT -ne 0 ]; then
-    echo "❌ Code formatting check failed!"
-    echo "Please run 'cargo fmt --all' to format your code before committing."
+cargo fmt --check || {
+    echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
     exit 1
-fi
+}
 
-echo "✓ Code formatting check passed"
-
-# Run cargo clippy for linting (lib and examples)
-echo "Running clippy checks..."
-cargo clippy --all-features --lib --examples -- \
-    -D warnings \
-    -W clippy::all \
-    -W clippy::pedantic \
-    -A clippy::missing-errors-doc \
-    -A clippy::missing-panics-doc \
-    -A clippy::module-name-repetitions
-CLIPPY_EXIT=$?
-
-if [ $CLIPPY_EXIT -ne 0 ]; then
-    echo "❌ Clippy check failed!"
-    echo "Please fix the clippy warnings before committing."
+# 与 CI 相同: RUSTFLAGS=-D warnings + clippy --all-targets
+export RUSTFLAGS='-D warnings'
+cargo clippy --all-targets || {
+    echo "ERROR: Clippy found issues."
     exit 1
-fi
+}
 
-echo "✓ Clippy check passed"
-echo "✅ All pre-commit checks passed!"
+cargo test --workspace -- --test-threads=1 || {
+    echo "ERROR: Tests failed."
+    exit 1
+}
 
-exit 0
+echo "All pre-commit checks passed."

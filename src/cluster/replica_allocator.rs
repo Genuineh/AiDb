@@ -1,390 +1,414 @@
-//! Replica Allocator for load-balanced replica assignment
-//!
-//! This module implements algorithms for allocating replicas across nodes in a Multi-Raft cluster.
-//! It ensures even distribution of groups and considers node load when assigning new replicas.
+//! Replica allocation and rebalancing (Phase 15).
 
 use std::collections::HashMap;
 
-use super::raft_storage::NodeId;
-use super::sharded_storage::GroupId;
-use crate::error::{Error, Result};
+use tracing::{instrument, warn};
 
-/// Replica allocator for load-balanced group assignment
-///
-/// This allocator implements a simple but effective algorithm:
-/// 1. Prefer nodes with fewer groups (load balancing)
-/// 2. Ensure replicas are on different nodes (fault tolerance)
-/// 3. Maintain target replication factor
+use crate::cluster::meta_types::{ClusterMeta, SlotStatus, SLOT_COUNT};
+use crate::cluster::types::{ClusterError, NodeId};
+
+pub type WeightMap = HashMap<NodeId, f64>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllocationStrategy {
+  Balanced,
+  Weighted,
+}
+
+#[derive(Debug, Clone)]
+pub struct AllocationResult {
+  pub group_id: u64,
+  pub primary: NodeId,
+  pub replicas: Vec<NodeId>,
+  pub slots: Vec<(u16, u16)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplicaRebalancePlan {
+  pub group_id: u64,
+  pub source_node: NodeId,
+  pub target_node: NodeId,
+  pub slot_ranges: Vec<(u16, u16)>,
+}
+
 pub struct ReplicaAllocator {
-    /// Target replication factor (e.g., 3 for triple replication)
-    replication_factor: usize,
+  weights: WeightMap,
+}
+
+impl Default for ReplicaAllocator {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl ReplicaAllocator {
-    /// Create a new replica allocator
-    ///
-    /// # Arguments
-    ///
-    /// * `replication_factor` - Number of replicas per group (typically 3 or 5)
-    pub fn new(replication_factor: usize) -> Self {
-        Self { replication_factor }
+  pub fn new() -> Self {
+    Self {
+      weights: HashMap::new(),
+    }
+  }
+
+  pub fn set_weight(&mut self, node_id: NodeId, weight: f64) {
+    self.weights.insert(node_id, weight);
+  }
+
+  pub fn get_weight(&self, node_id: NodeId) -> f64 {
+    self.weights.get(&node_id).copied().unwrap_or(1.0)
+  }
+
+  #[instrument(skip(self, cluster_meta))]
+  pub fn allocate_group(
+    &self,
+    group_id: u64,
+    replication_factor: usize,
+    strategy: AllocationStrategy,
+    cluster_meta: &ClusterMeta,
+    slot_table: &[SlotStatus],
+  ) -> Result<AllocationResult, ClusterError> {
+    use crate::cluster::NodeStatus;
+
+    // 1. Filter available Online nodes
+    let mut available: Vec<NodeId> = cluster_meta
+      .nodes
+      .iter()
+      .filter(|(_, n)| n.status == NodeStatus::Online)
+      .map(|(id, _)| *id)
+      .collect();
+    available.sort();
+
+    if available.is_empty() {
+      return Err(ClusterError::InvalidConfig("no available nodes".into()));
     }
 
-    /// Allocate replicas for a new group
-    ///
-    /// Selects `replication_factor` nodes with the lowest current load.
-    ///
-    /// # Arguments
-    ///
-    /// * `group_id` - ID of the group to allocate replicas for
-    /// * `available_nodes` - List of available node IDs
-    /// * `current_allocation` - Current group-to-replicas mapping
-    ///
-    /// # Returns
-    ///
-    /// A vector of node IDs that should host replicas for this group
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if there are not enough nodes to satisfy the replication factor
-    pub fn allocate_replicas(
-        &self,
-        _group_id: GroupId,
-        available_nodes: &[NodeId],
-        current_allocation: &HashMap<GroupId, Vec<NodeId>>,
-    ) -> Result<Vec<NodeId>> {
-        if available_nodes.len() < self.replication_factor {
-            return Err(Error::Internal(format!(
-                "Not enough nodes: need {}, have {}",
-                self.replication_factor,
-                available_nodes.len()
-            )));
-        }
+    // 2. Handle replication factor
+    let actual_rf = if available.len() < replication_factor {
+      warn!(
+        "replication_factor {} exceeds available nodes {}, using {} replicas",
+        replication_factor,
+        available.len(),
+        available.len()
+      );
+      available.len()
+    } else {
+      replication_factor
+    };
 
-        // Calculate load for each node (number of groups it participates in)
-        let mut node_loads: HashMap<NodeId, usize> = HashMap::new();
-        for node_id in available_nodes {
-            node_loads.insert(*node_id, 0);
-        }
+    // 3. Compute load per node
+    let mut loads: HashMap<NodeId, f64> = available
+      .iter()
+      .map(|id| {
+        let count = count_groups_on_node(cluster_meta, *id);
+        let load = if strategy == AllocationStrategy::Weighted {
+          let w = self.get_weight(*id);
+          if w <= 0.0 {
+            f64::MAX
+          } else {
+            count as f64 / w
+          }
+        } else {
+          count as f64
+        };
+        (*id, load)
+      })
+      .collect();
 
-        // Count existing group assignments
-        for replicas in current_allocation.values() {
-            for &replica in replicas {
-                if node_loads.contains_key(&replica) {
-                    *node_loads.get_mut(&replica).unwrap() += 1;
-                }
-            }
-        }
+    // 4. Pick primary (lowest load)
+    let mut sorted: Vec<NodeId> = available.clone();
+    sorted.sort_by(|a, b| {
+      loads[a]
+        .partial_cmp(&loads[b])
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let primary = sorted[0];
+    *loads.get_mut(&primary).unwrap() += 1.0;
 
-        // Sort nodes by load (ascending)
-        let mut nodes_by_load: Vec<(NodeId, usize)> = node_loads.into_iter().collect();
-        nodes_by_load.sort_by_key(|(_, load)| *load);
-
-        // Select the least loaded nodes
-        let selected_nodes: Vec<NodeId> = nodes_by_load
-            .into_iter()
-            .take(self.replication_factor)
-            .map(|(node_id, _)| node_id)
-            .collect();
-
-        Ok(selected_nodes)
+    // 5. Pick replicas
+    sorted.sort_by(|a, b| {
+      loads[a]
+        .partial_cmp(&loads[b])
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut replicas: Vec<NodeId> = Vec::new();
+    for &node in &sorted {
+      if node == primary {
+        continue;
+      }
+      if replicas.len() >= actual_rf - 1 {
+        break;
+      }
+      replicas.push(node);
     }
 
-    /// Rebalance replicas when nodes join or leave
-    ///
-    /// This method examines the current allocation and proposes changes to
-    /// achieve better load balance across all nodes.
-    ///
-    /// # Arguments
-    ///
-    /// * `available_nodes` - Current list of available nodes
-    /// * `current_allocation` - Current group-to-replicas mapping
-    ///
-    /// # Returns
-    ///
-    /// A new allocation map with proposed changes for better balance
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Calculate current load per node
-    /// 2. For under-replicated groups, add new replicas
-    /// 3. For over-replicated groups, remove excess replicas
-    /// 4. Redistribute to minimize load imbalance
-    pub fn rebalance(
-        &self,
-        available_nodes: &[NodeId],
-        current_allocation: HashMap<GroupId, Vec<NodeId>>,
-    ) -> Result<HashMap<GroupId, Vec<NodeId>>> {
-        if available_nodes.is_empty() {
-            return Ok(current_allocation);
-        }
+    // 6. Allocate slots
+    let slots = suggest_slot_allocation_for_group(cluster_meta, slot_table)
+      .ok_or_else(|| ClusterError::InvalidConfig("no free slots available".into()))?;
 
-        let mut new_allocation = HashMap::new();
+    Ok(AllocationResult {
+      group_id,
+      primary,
+      replicas,
+      slots,
+    })
+  }
 
-        // Process each group
-        for (group_id, current_replicas) in &current_allocation {
-            // Filter out nodes that are no longer available
-            let valid_replicas: Vec<NodeId> = current_replicas
-                .iter()
-                .filter(|&node| available_nodes.contains(node))
-                .copied()
-                .collect();
+  #[instrument(skip(self, cluster_meta))]
+  pub fn rebalance_replicas(
+    &self,
+    cluster_meta: &ClusterMeta,
+    threshold: f64,
+  ) -> Vec<ReplicaRebalancePlan> {
+    use crate::cluster::NodeStatus;
 
-            // Determine if we need to add or remove replicas
-            if valid_replicas.len() < self.replication_factor {
-                // Under-replicated: add new replicas
-                let needed = self.replication_factor - valid_replicas.len();
-                let mut updated_replicas = valid_replicas.clone();
+    let nodes: Vec<NodeId> = cluster_meta
+      .nodes
+      .iter()
+      .filter(|(_, n)| n.status == NodeStatus::Online)
+      .map(|(id, _)| *id)
+      .collect();
 
-                // Calculate node loads
-                let mut node_loads = self.calculate_node_loads(available_nodes, &new_allocation);
-
-                // Add load from current group's valid replicas
-                for &replica in &valid_replicas {
-                    *node_loads.entry(replica).or_insert(0) += 1;
-                }
-
-                // Find candidates (nodes not already in this group)
-                let mut candidates: Vec<(NodeId, usize)> = node_loads
-                    .into_iter()
-                    .filter(|(node_id, _)| !valid_replicas.contains(node_id))
-                    .collect();
-                candidates.sort_by_key(|(_, load)| *load);
-
-                // Add the least loaded candidates
-                for (node_id, _) in candidates.into_iter().take(needed) {
-                    updated_replicas.push(node_id);
-                }
-
-                new_allocation.insert(*group_id, updated_replicas);
-            } else if valid_replicas.len() > self.replication_factor {
-                // Over-replicated: remove excess replicas
-                // Strategy: Keep replicas on nodes with higher overall load across the cluster,
-                // as these nodes are likely more stable and have proven capacity. This helps
-                // avoid moving replicas to underutilized nodes that might be new or unstable.
-                let mut replicas_with_load: Vec<(NodeId, usize)> = valid_replicas
-                    .iter()
-                    .map(|&node| {
-                        let load = self.count_node_load(node, &current_allocation);
-                        (node, load)
-                    })
-                    .collect();
-
-                // Sort by load (descending) to keep the most loaded nodes' replicas
-                replicas_with_load.sort_by_key(|(_, load)| std::cmp::Reverse(*load));
-                let kept_replicas: Vec<NodeId> = replicas_with_load
-                    .into_iter()
-                    .take(self.replication_factor)
-                    .map(|(node, _)| node)
-                    .collect();
-
-                new_allocation.insert(*group_id, kept_replicas);
-            } else {
-                // Correctly replicated: keep as is
-                new_allocation.insert(*group_id, valid_replicas);
-            }
-        }
-
-        Ok(new_allocation)
+    if nodes.len() < 2 {
+      return vec![];
     }
 
-    /// Calculate current load for each node
-    fn calculate_node_loads(
-        &self,
-        available_nodes: &[NodeId],
-        allocation: &HashMap<GroupId, Vec<NodeId>>,
-    ) -> HashMap<NodeId, usize> {
-        let mut node_loads: HashMap<NodeId, usize> = HashMap::new();
+    let loads: HashMap<NodeId, f64> = nodes
+      .iter()
+      .map(|id| (*id, count_groups_on_node(cluster_meta, *id) as f64))
+      .collect();
 
-        // Initialize all nodes with 0 load
-        for &node_id in available_nodes {
-            node_loads.insert(node_id, 0);
+    let avg: f64 = loads.values().sum::<f64>() / nodes.len() as f64;
+    let variance: f64 = loads.values().map(|l| (l - avg).powi(2)).sum::<f64>() / nodes.len() as f64;
+    let stddev = variance.sqrt();
+
+    if stddev <= threshold {
+      return vec![];
+    }
+
+    let overloaded: Vec<NodeId> = nodes
+      .iter()
+      .filter(|id| loads[id] > avg + threshold)
+      .copied()
+      .collect();
+    let underloaded: Vec<NodeId> = nodes
+      .iter()
+      .filter(|id| loads[id] < avg - threshold)
+      .copied()
+      .collect();
+
+    let mut plans = Vec::new();
+    for src in &overloaded {
+      for dst in &underloaded {
+        for (gid, group) in &cluster_meta.groups {
+          if group.replicas.iter().any(|r| r.node_id == *src)
+            && !group.replicas.iter().any(|r| r.node_id == *dst)
+          {
+            plans.push(ReplicaRebalancePlan {
+              group_id: *gid,
+              source_node: *src,
+              target_node: *dst,
+              slot_ranges: group.slot_ranges.clone(),
+            });
+            break;
+          }
         }
-
-        // Count group assignments
-        for replicas in allocation.values() {
-            for &replica in replicas {
-                if node_loads.contains_key(&replica) {
-                    *node_loads.get_mut(&replica).unwrap() += 1;
-                }
-            }
-        }
-
-        node_loads
+      }
     }
+    plans
+  }
 
-    /// Count how many groups a specific node participates in
-    fn count_node_load(
-        &self,
-        node_id: NodeId,
-        allocation: &HashMap<GroupId, Vec<NodeId>>,
-    ) -> usize {
-        allocation.values().filter(|replicas| replicas.contains(&node_id)).count()
+  pub fn suggest_slot_allocation(group_count: usize) -> Vec<Vec<(u16, u16)>> {
+    let slots_per_group = SLOT_COUNT / group_count;
+    let remainder = SLOT_COUNT % group_count;
+    let mut result = Vec::with_capacity(group_count);
+    let mut start = 0u16;
+    for i in 0..group_count {
+      let count = if i < remainder {
+        slots_per_group + 1
+      } else {
+        slots_per_group
+      };
+      let end = start + count as u16 - 1;
+      result.push(vec![(start, end)]);
+      start = end + 1;
     }
+    result
+  }
+}
 
-    /// Get the replication factor
-    pub fn replication_factor(&self) -> usize {
-        self.replication_factor
+fn count_groups_on_node(cluster_meta: &ClusterMeta, node_id: NodeId) -> usize {
+  cluster_meta
+    .groups
+    .values()
+    .filter(|g| g.replicas.iter().any(|r| r.node_id == node_id))
+    .count()
+}
+
+#[allow(unused_variables)]
+fn suggest_slot_allocation_for_group(
+  cluster_meta: &ClusterMeta,
+  slot_table: &[SlotStatus],
+) -> Option<Vec<(u16, u16)>> {
+  let mut ranges = Vec::new();
+  let mut i = 0usize;
+  while i < SLOT_COUNT {
+    if slot_table[i] == SlotStatus::Unallocated {
+      let start = i;
+      while i < SLOT_COUNT && slot_table[i] == SlotStatus::Unallocated {
+        i += 1;
+      }
+      ranges.push((start as u16, (i - 1) as u16));
+    } else {
+      i += 1;
     }
+  }
+  if ranges.is_empty() {
+    return None;
+  }
+  Some(vec![ranges[0]])
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
+  use crate::cluster::meta_types::{
+    default_slot_table, ClusterMeta, GroupMeta, NodeInfo, NodeRole, NodeStatus, ReplicaInfo,
+  };
+  use std::collections::HashMap;
 
-    #[test]
-    fn test_allocate_replicas_basic() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2, 3, 4, 5];
-        let current_allocation = HashMap::new();
-
-        let result = allocator.allocate_replicas(100, &available_nodes, &current_allocation);
-        assert!(result.is_ok());
-
-        let replicas = result.unwrap();
-        assert_eq!(replicas.len(), 3);
-
-        // All replicas should be unique
-        let unique_replicas: std::collections::HashSet<_> = replicas.iter().collect();
-        assert_eq!(unique_replicas.len(), 3);
+  fn make_meta(nodes: Vec<(u64, NodeStatus)>) -> ClusterMeta {
+    ClusterMeta {
+      nodes: nodes
+        .into_iter()
+        .map(|(id, status)| {
+          (
+            id,
+            NodeInfo {
+              node_id: id,
+              rpc_addr: format!("127.0.0.1:{}", 7000 + id),
+              client_addr: None,
+              role: NodeRole::Voter,
+              status,
+              registered_at: 0,
+              tags: HashMap::new(),
+            },
+          )
+        })
+        .collect(),
+      groups: HashMap::new(),
+      cluster_id: "test".into(),
+      version: 0,
+      format_version: 1,
     }
+  }
 
-    #[test]
-    fn test_allocate_replicas_insufficient_nodes() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2]; // Only 2 nodes, need 3
-        let current_allocation = HashMap::new();
+  #[test]
+  fn test_allocator_no_nodes() {
+    let alloc = ReplicaAllocator::new();
+    let meta = make_meta(vec![]);
+    let table = default_slot_table();
+    let result = alloc.allocate_group(1, 3, AllocationStrategy::Balanced, &meta, &table);
+    assert!(result.is_err());
+  }
 
-        let result = allocator.allocate_replicas(100, &available_nodes, &current_allocation);
-        assert!(result.is_err());
-    }
+  #[test]
+  fn test_allocator_single_node() {
+    let alloc = ReplicaAllocator::new();
+    let meta = make_meta(vec![(1, NodeStatus::Online)]);
+    let table = default_slot_table();
+    let result = alloc
+      .allocate_group(1, 3, AllocationStrategy::Balanced, &meta, &table)
+      .unwrap();
+    assert_eq!(result.primary, 1);
+    assert!(result.replicas.is_empty());
+  }
 
-    #[test]
-    fn test_allocate_replicas_load_balancing() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2, 3, 4, 5];
+  #[test]
+  fn test_allocator_balanced() {
+    let alloc = ReplicaAllocator::new();
+    let meta = make_meta(vec![
+      (1, NodeStatus::Online),
+      (2, NodeStatus::Online),
+      (3, NodeStatus::Online),
+    ]);
+    let table = default_slot_table();
+    let result = alloc
+      .allocate_group(1, 3, AllocationStrategy::Balanced, &meta, &table)
+      .unwrap();
+    assert_eq!(result.group_id, 1);
+    assert_eq!(result.replicas.len(), 2);
+  }
 
-        // Create allocation where nodes 1 and 2 are heavily loaded
-        let mut current_allocation = HashMap::new();
-        for group_id in 0..5 {
-            current_allocation.insert(group_id, vec![1, 2, 3]);
-        }
+  #[test]
+  fn test_allocator_slot_distribution() {
+    let result = ReplicaAllocator::suggest_slot_allocation(4);
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0][0], (0, 4095));
+    assert_eq!(result[3][0], (12288, 16383));
+  }
 
-        // Allocate for a new group - should prefer less loaded nodes
-        let result = allocator.allocate_replicas(100, &available_nodes, &current_allocation);
-        assert!(result.is_ok());
+  #[test]
+  fn test_rebalance_even() {
+    let alloc = ReplicaAllocator::new();
+    let meta = make_meta(vec![(1, NodeStatus::Online), (2, NodeStatus::Online)]);
+    let plans = alloc.rebalance_replicas(&meta, 1.0);
+    assert!(plans.is_empty());
+  }
 
-        let replicas = result.unwrap();
-        assert_eq!(replicas.len(), 3);
+  #[test]
+  fn test_rebalance_trigger() {
+    let alloc = ReplicaAllocator::new();
+    let mut meta = make_meta(vec![(1, NodeStatus::Online), (2, NodeStatus::Online)]);
+    meta.groups.insert(
+      10,
+      GroupMeta {
+        group_id: 10,
+        replicas: vec![ReplicaInfo {
+          node_id: 1,
+          is_leader: true,
+        }],
+        slot_ranges: vec![(0, 100)],
+        config_version: 1,
+      },
+    );
+    let plans = alloc.rebalance_replicas(&meta, 0.4);
+    assert!(!plans.is_empty());
+    assert_eq!(plans[0].source_node, 1);
+    assert_eq!(plans[0].target_node, 2);
+  }
 
-        // Should include nodes 4 and 5 (least loaded)
-        assert!(replicas.contains(&4) || replicas.contains(&5));
-    }
-
-    #[test]
-    fn test_rebalance_under_replicated() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2, 3, 4, 5];
-
-        // Group with only 2 replicas (under-replicated)
-        let mut current_allocation = HashMap::new();
-        current_allocation.insert(100, vec![1, 2]);
-
-        let result = allocator.rebalance(&available_nodes, current_allocation);
-        assert!(result.is_ok());
-
-        let new_allocation = result.unwrap();
-        let replicas = new_allocation.get(&100).unwrap();
-
-        // Should now have 3 replicas
-        assert_eq!(replicas.len(), 3);
-        assert!(replicas.contains(&1));
-        assert!(replicas.contains(&2));
-    }
-
-    #[test]
-    fn test_rebalance_over_replicated() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2, 3, 4, 5];
-
-        // Group with 5 replicas (over-replicated)
-        let mut current_allocation = HashMap::new();
-        current_allocation.insert(100, vec![1, 2, 3, 4, 5]);
-
-        let result = allocator.rebalance(&available_nodes, current_allocation);
-        assert!(result.is_ok());
-
-        let new_allocation = result.unwrap();
-        let replicas = new_allocation.get(&100).unwrap();
-
-        // Should now have exactly 3 replicas
-        assert_eq!(replicas.len(), 3);
-    }
-
-    #[test]
-    fn test_rebalance_node_removal() {
-        let allocator = ReplicaAllocator::new(3);
-
-        // Create allocation with all 5 nodes
-        let mut current_allocation = HashMap::new();
-        current_allocation.insert(100, vec![1, 2, 3]);
-        current_allocation.insert(101, vec![2, 3, 4]);
-        current_allocation.insert(102, vec![3, 4, 5]);
-
-        // Node 5 leaves
-        let available_nodes = vec![1, 2, 3, 4];
-
-        let result = allocator.rebalance(&available_nodes, current_allocation);
-        assert!(result.is_ok());
-
-        let new_allocation = result.unwrap();
-
-        // Group 102 should have a new replica (replacing node 5)
-        let group_102_replicas = new_allocation.get(&102).unwrap();
-        assert_eq!(group_102_replicas.len(), 3);
-        assert!(!group_102_replicas.contains(&5));
-    }
-
-    #[test]
-    fn test_rebalance_empty_nodes() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![];
-        let current_allocation = HashMap::new();
-
-        let result = allocator.rebalance(&available_nodes, current_allocation);
-        assert!(result.is_ok());
-
-        let new_allocation = result.unwrap();
-        assert_eq!(new_allocation.len(), 0);
-    }
-
-    #[test]
-    fn test_multiple_allocations_balance() {
-        let allocator = ReplicaAllocator::new(3);
-        let available_nodes = vec![1, 2, 3, 4, 5];
-        let mut current_allocation = HashMap::new();
-
-        // Allocate 10 groups sequentially
-        for group_id in 0..10 {
-            let replicas = allocator
-                .allocate_replicas(group_id, &available_nodes, &current_allocation)
-                .unwrap();
-            current_allocation.insert(group_id, replicas);
-        }
-
-        // Count load per node
-        let mut node_counts: HashMap<NodeId, usize> = HashMap::new();
-        for replicas in current_allocation.values() {
-            for &replica in replicas {
-                *node_counts.entry(replica).or_insert(0) += 1;
-            }
-        }
-
-        // Each node should have roughly equal load
-        let min_load = *node_counts.values().min().unwrap();
-        let max_load = *node_counts.values().max().unwrap();
-
-        // Load difference should be at most 2 (10 groups * 3 replicas = 30 assignments / 5 nodes = 6 each)
-        assert!(max_load - min_load <= 2);
-    }
+  #[test]
+  fn test_count_groups_on_node() {
+    let mut meta = make_meta(vec![(1, NodeStatus::Online), (2, NodeStatus::Online)]);
+    meta.groups.insert(
+      10,
+      GroupMeta {
+        group_id: 10,
+        replicas: vec![
+          ReplicaInfo {
+            node_id: 1,
+            is_leader: true,
+          },
+          ReplicaInfo {
+            node_id: 2,
+            is_leader: false,
+          },
+        ],
+        slot_ranges: vec![],
+        config_version: 1,
+      },
+    );
+    meta.groups.insert(
+      20,
+      GroupMeta {
+        group_id: 20,
+        replicas: vec![ReplicaInfo {
+          node_id: 1,
+          is_leader: true,
+        }],
+        slot_ranges: vec![],
+        config_version: 1,
+      },
+    );
+    assert_eq!(count_groups_on_node(&meta, 1), 2);
+    assert_eq!(count_groups_on_node(&meta, 2), 1);
+  }
 }

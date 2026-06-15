@@ -1,323 +1,67 @@
 name: CI
 
 on:
+  push:
+    branches: [main, new/main, new/wiqun]
   pull_request:
-    branches: ["main"]
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, new/main, new/wiqun]
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
 
 jobs:
-  # 检测文件变更，判断是否需要运行代码测试
-  changes:
-    name: Detect Changes
+  test-default:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
-    outputs:
-      code: ${{ steps.filter.outputs.code }}
-      docs_only: ${{ steps.filter.outputs.docs_only }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Check for file changes
-        uses: dorny/paths-filter@v3
-        id: filter
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          filters: |
-            docs_only:
-              - '**/*.md'
-              - 'docs/**'
-              - 'LICENSE'
-              - 'CHANGELOG.md'
-              - 'README.md'
-              - '.github/workflows/README.md'
-            code:
-              - 'src/**'
-              - 'benches/**'
-              - 'examples/**'
-              - 'tests/**'
-              - 'proto/**'
-              - 'build.rs'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'deny.toml'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/security.yml'
-              - '.github/workflows/release.yml'
+          components: clippy, rustfmt
 
-  test:
-    name: Test Suite
-    needs: changes
-    runs-on: ${{ matrix.os }}
-    if: needs.changes.outputs.code == 'true'
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
         with:
-          toolchain: ${{ matrix.rust }}
+          tool: cargo-deny
 
-      - name: Install Protocol Buffers Compiler
-        run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          elif [ "${{ runner.os }}" == "macOS" ]; then
-            brew install protobuf
-          fi
+      - name: Check format
+        run: cargo fmt --check
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+      - name: Clippy
+        run: cargo clippy --all-targets
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
+      - name: Test
+        run: cargo test -- --test-threads=1
 
-      - name: Cache target directory
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-target-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-target-${{ matrix.rust }}-
+      - name: Deny
+        run: cargo deny check
 
-      - name: Run tests
-        run: cargo test --all-features --verbose
-
-      - name: Run doc tests
-        run: cargo test --doc --all-features
-
-  clippy:
-    name: Clippy (Linting)
-    needs: changes
+  test-cluster:
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.code == 'true'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: clippy
+          components: clippy, rustfmt
 
-      - name: Install Protocol Buffers Compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - name: Clippy cluster
+        run: cargo clippy --all-targets --features cluster
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-  build:
-    name: Build Check
-    needs: changes
-    runs-on: ubuntu-latest
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Install Protocol Buffers Compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-
-      - name: Check code formatting
-        run: |
-          echo "Checking code formatting with rustfmt..."
-          cargo fmt --all -- --check
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Code is properly formatted"
-          else
-            echo "❌ Code formatting issues found"
-            echo "Please run 'cargo fmt --all' locally to fix formatting"
-            exit 1
-          fi
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build (debug)
-        run: cargo build --all-features
-
-      - name: Build (release)
-        run: cargo build --release --all-features
-
-      - name: Build examples
-        run: cargo build --examples
+      - name: Test cluster
+        run: cargo test --features cluster -- --test-threads=1
 
   bench:
-    name: Benchmark Check
-    needs: changes
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.code == 'true'
+    needs: test-default
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Protocol Buffers Compiler
+      - name: Bench
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Check benchmarks compile
-        run: cargo bench --no-run --all-features
-
-  # 文档检查 - 只在文档变更时运行
-  docs-check:
-    name: Documentation Check
-    needs: changes
-    runs-on: ubuntu-latest
-    if: needs.changes.outputs.docs_only == 'true' && needs.changes.outputs.code == 'false'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Check markdown files
-        run: |
-          echo "📚 Checking documentation files..."
-          find . -name "*.md" -type f | while read file; do
-            echo "✓ $file"
-          done
-          echo "✅ Documentation check completed successfully"
-
-      - name: Verify documentation structure
-        run: |
-          # 检查重要文档是否存在
-          required_docs=("README.md" "LICENSE" "CHANGELOG.md")
-          for doc in "${required_docs[@]}"; do
-            if [ -f "$doc" ]; then
-              echo "✓ $doc exists"
-            else
-              echo "⚠️  $doc not found"
-            fi
-          done
-
-  # CI状态汇总 - 必须总是运行以提供统一的状态检查
-  ci-success:
-    name: CI Success
-    runs-on: ubuntu-latest
-    needs: [changes, test, clippy, build, bench, docs-check]
-    if: always()
-    steps:
-      - name: Check CI status
-        run: |
-          echo "=== CI Pipeline Status Summary ==="
-          echo ""
-          echo "Changes Detection: ${{ needs.changes.result }}"
-          echo "Code Changes: ${{ needs.changes.outputs.code }}"
-          echo "Docs Only: ${{ needs.changes.outputs.docs_only }}"
-          echo ""
-          
-          # 检查changes job - 如果跳过（draft PR）则认为成功
-          if [ "${{ needs.changes.result }}" == "failure" ]; then
-            echo "❌ Changes detection failed"
-            exit 1
-          elif [ "${{ needs.changes.result }}" == "skipped" ]; then
-            echo "⏭️  CI skipped (draft PR or no trigger match)"
-            echo "✅ CI check passed (skipped)"
-            exit 0
-          fi
-          
-          # 如果有代码变更，检查代码相关的jobs
-          if [ "${{ needs.changes.outputs.code }}" == "true" ]; then
-            echo "📊 Code Changes Detected - Checking all code jobs..."
-            
-            failed=0
-            
-            # 检查每个job的结果，只有明确失败才算失败（跳过不算失败）
-            if [ "${{ needs.test.result }}" == "failure" ]; then
-              echo "❌ Tests failed"
-              failed=1
-            fi
-            
-            if [ "${{ needs.clippy.result }}" == "failure" ]; then
-              echo "❌ Clippy failed"
-              failed=1
-            fi
-            
-            if [ "${{ needs.build.result }}" == "failure" ]; then
-              echo "❌ Build failed"
-              failed=1
-            fi
-            
-            if [ "${{ needs.bench.result }}" == "failure" ]; then
-              echo "❌ Benchmark check failed"
-              failed=1
-            fi
-            
-            if [ $failed -eq 1 ]; then
-              echo ""
-              echo "❌ One or more code checks failed"
-              exit 1
-            fi
-            
-            echo "✅ All code checks passed"
-          # 如果只有文档变更，检查文档job
-          elif [ "${{ needs.changes.outputs.docs_only }}" == "true" ]; then
-            echo "📚 Documentation Changes Only - Skipping code checks"
-            
-            if [ "${{ needs.docs-check.result }}" == "failure" ]; then
-              echo "❌ Documentation check failed"
-              exit 1
-            fi
-            
-            echo "✅ Documentation check passed"
-          else
-            echo "ℹ️  No changes detected or mixed changes"
-          fi
-          
-          echo ""
-          echo "🎉 CI pipeline completed successfully!"
+          cargo bench --bench write_bench
+          cargo bench --bench read_bench
+          cargo bench --bench backup_bench

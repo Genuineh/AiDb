@@ -1,169 +1,66 @@
-// Write performance benchmarks for AiDb
+//! Phase 7.6 write benchmarks (criterion).
+//!
+//! Keys use zero-padding (`key_{:08}` / `key_{:03}`) so lex order matches numeric order.
+//! 详设伪代码 `key_{i}` 未补零会在 SST flush 时触发 BlockBuilder 乱序 panic — 实现刻意偏离.
+//!
+//! `write_batch_100_flush` — 详设要求 `write_batch_100` (仅 batch 写), 但无 flush 时长 warmup
+//! 会因 MemTable 版本堆积而卡住; 故以 `*_flush` 扩展名交付 batch+落盘 smoke.
+//!
+//! Smoke:
+//!   cargo bench --bench write_bench
 
-use aidb::{Options, WriteBatch, DB};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::hint::black_box;
-use tempfile::TempDir;
+use std::time::Duration;
 
-fn benchmark_sequential_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sequential_write");
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use tempfile::tempdir;
+use aidb::config::Options;
+use aidb::{WriteBatch, DB};
 
-    for size in [100, 1000, 10000].iter() {
-        group.throughput(Throughput::Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            b.iter(|| {
-                let temp_dir = TempDir::new().unwrap();
-                let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-                for i in 0..size {
-                    let key = format!("key{:08}", i);
-                    let value = format!("value{:08}", i);
-                    db.put(key.as_bytes(), value.as_bytes()).unwrap();
-                }
-
-                black_box(&db);
-            });
-        });
-    }
-
-    group.finish();
+fn bench_options() -> Options {
+  let mut opts = Options::for_testing();
+  // Larger MemTable reduces background flush churn during short smoke runs.
+  opts.memtable_size = 16 * 1024 * 1024;
+  opts
 }
 
-fn benchmark_random_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("random_write");
+fn bench_write_sequential(c: &mut Criterion) {
+  let mut group = c.benchmark_group("write_sequential");
+  group.warm_up_time(Duration::from_secs(1));
+  group.measurement_time(Duration::from_secs(2));
+  group.sample_size(10);
+  group.throughput(Throughput::Elements(1));
 
-    for size in [100, 1000, 10000].iter() {
-        group.throughput(Throughput::Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            b.iter(|| {
-                let temp_dir = TempDir::new().unwrap();
-                let db = DB::open(temp_dir.path(), Options::default()).unwrap();
+  group.bench_function("put_1kb", |b| {
+    let dir = tempdir().unwrap();
+    let db = DB::open(dir.path(), bench_options()).unwrap();
+    let mut i = 0u64;
+    b.iter(|| {
+      let key = format!("key_{:08}", i);
+      let value = black_box(vec![0u8; 1024]);
+      db.put(black_box(key.as_bytes()), black_box(&value))
+        .unwrap();
+      i += 1;
+    });
+  });
 
-                use rand::Rng;
-                let mut rng = rand::rng();
-
-                for _ in 0..size {
-                    let key_num: u32 = rng.random();
-                    let key = format!("key{:08}", key_num);
-                    let value = format!("value{:08}", key_num);
-                    db.put(key.as_bytes(), value.as_bytes()).unwrap();
-                }
-
-                black_box(&db);
-            });
-        });
-    }
-
-    group.finish();
-}
-
-fn benchmark_batch_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("batch_write");
-
-    for batch_size in [10, 100, 1000].iter() {
-        group.throughput(Throughput::Elements(*batch_size as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(batch_size),
-            batch_size,
-            |b, &batch_size| {
-                b.iter(|| {
-                    let temp_dir = TempDir::new().unwrap();
-                    let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-                    let mut batch = WriteBatch::new();
-                    for i in 0..batch_size {
-                        let key = format!("key{:08}", i);
-                        let value = format!("value{:08}", i);
-                        batch.put(key.as_bytes(), value.as_bytes());
-                    }
-
-                    db.write(batch).unwrap();
-
-                    black_box(&db);
-                });
-            },
+  group.bench_function("write_batch_100_flush", |b| {
+    let dir = tempdir().unwrap();
+    let db = DB::open(dir.path(), bench_options()).unwrap();
+    b.iter(|| {
+      let mut batch = WriteBatch::new();
+      for i in 0..100u64 {
+        batch.put(
+          format!("key_{:03}", i).as_bytes(),
+          black_box(vec![0u8; 1024]),
         );
-    }
+      }
+      db.write(black_box(&batch)).unwrap();
+      db.flush().unwrap();
+    });
+  });
 
-    group.finish();
+  group.finish();
 }
 
-fn benchmark_overwrite(c: &mut Criterion) {
-    let mut group = c.benchmark_group("overwrite");
-
-    group.throughput(Throughput::Elements(1000));
-    group.bench_function("overwrite_1000", |b| {
-        // Setup database once for all iterations
-        let temp_dir = TempDir::new().unwrap();
-        let db = DB::open(temp_dir.path(), Options::default()).unwrap();
-
-        // Pre-populate with data
-        for i in 0..1000 {
-            let key = format!("key{:08}", i);
-            let value = format!("initial_value{:08}", i);
-            db.put(key.as_bytes(), value.as_bytes()).unwrap();
-        }
-
-        b.iter(|| {
-            for i in 0..1000 {
-                let key = format!("key{:08}", i);
-                let value = format!("updated_value{:08}", i);
-                db.put(key.as_bytes(), value.as_bytes()).unwrap();
-            }
-            black_box(&db);
-        });
-    });
-
-    group.finish();
-}
-
-fn benchmark_write_with_compression(c: &mut Criterion) {
-    let mut group = c.benchmark_group("write_with_compression");
-
-    // Benchmark with no compression
-    group.bench_function("no_compression", |b| {
-        b.iter(|| {
-            let temp_dir = TempDir::new().unwrap();
-            let opts = Options::default().compression(aidb::config::CompressionType::None);
-            let db = DB::open(temp_dir.path(), opts).unwrap();
-
-            for i in 0..1000 {
-                let key = format!("key{:08}", i);
-                let value = vec![b'x'; 100]; // 100 bytes of repeating data
-                db.put(key.as_bytes(), &value).unwrap();
-            }
-
-            black_box(&db);
-        });
-    });
-
-    // Benchmark with Snappy compression
-    #[cfg(feature = "snappy")]
-    group.bench_function("snappy_compression", |b| {
-        b.iter(|| {
-            let temp_dir = TempDir::new().unwrap();
-            let opts = Options::default().compression(aidb::config::CompressionType::Snappy);
-            let db = DB::open(temp_dir.path(), opts).unwrap();
-
-            for i in 0..1000 {
-                let key = format!("key{:08}", i);
-                let value = vec![b'x'; 100]; // 100 bytes of repeating data
-                db.put(key.as_bytes(), &value).unwrap();
-            }
-
-            black_box(&db);
-        });
-    });
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    benchmark_sequential_write,
-    benchmark_random_write,
-    benchmark_batch_write,
-    benchmark_overwrite,
-    benchmark_write_with_compression
-);
+criterion_group!(benches, bench_write_sequential);
 criterion_main!(benches);

@@ -1,652 +1,473 @@
-//! Configuration options for AiDb storage engine.
+//! DB 配置: 选项不超过 20 个, 保持简单.
 
-/// Cluster configuration for Multi-Raft deployment.
-///
-/// This configuration specifies how data is distributed and replicated across
-/// the cluster using Multi-Raft architecture.
-#[derive(Debug, Clone)]
-pub struct ClusterConfig {
-    /// Total number of Raft groups for data sharding.
-    ///
-    /// This determines how data is partitioned across the cluster. More groups
-    /// allow for better load distribution but increase management overhead.
-    ///
-    /// Recommended: 16384 (same as Redis Cluster)
-    /// Default: 16
-    pub group_count: usize,
-
-    /// Number of replicas for each Raft group.
-    ///
-    /// This includes the leader, so replication_factor=3 means 1 leader + 2 followers.
-    ///
-    /// Default: 3
-    pub replication_factor: usize,
-
-    /// Maximum number of log entries to retain per group.
-    ///
-    /// Older entries are purged during log cleanup.
-    /// Set to 0 to disable automatic log cleanup.
-    ///
-    /// Default: 10000
-    pub max_log_entries: u64,
-
-    /// Maximum log size in bytes before triggering cleanup.
-    ///
-    /// Set to 0 to disable size-based cleanup.
-    ///
-    /// Default: 100MB
-    pub max_log_size_bytes: u64,
+/// 压缩算法
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompressionType {
+  #[default]
+  None,
+  Snap,
+  Lz4,
 }
 
-impl Default for ClusterConfig {
-    fn default() -> Self {
-        Self {
-            group_count: 16,
-            replication_factor: 3,
-            max_log_entries: 10000,
-            max_log_size_bytes: 100 * 1024 * 1024, // 100MB
-        }
-    }
-}
-
-impl ClusterConfig {
-    /// Creates a new ClusterConfig with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the number of Raft groups.
-    pub fn group_count(mut self, count: usize) -> Self {
-        self.group_count = count;
-        self
-    }
-
-    /// Sets the replication factor.
-    pub fn replication_factor(mut self, factor: usize) -> Self {
-        self.replication_factor = factor;
-        self
-    }
-
-    /// Sets the maximum number of log entries to retain.
-    pub fn max_log_entries(mut self, entries: u64) -> Self {
-        self.max_log_entries = entries;
-        self
-    }
-
-    /// Sets the maximum log size in bytes.
-    pub fn max_log_size_bytes(mut self, bytes: u64) -> Self {
-        self.max_log_size_bytes = bytes;
-        self
-    }
-
-    /// Creates a production configuration with recommended settings.
-    ///
-    /// This uses 16384 groups (Redis Cluster compatible) and 3 replicas.
-    pub fn for_production() -> Self {
-        Self {
-            group_count: 16384,
-            replication_factor: 3,
-            max_log_entries: 10000,
-            max_log_size_bytes: 100 * 1024 * 1024, // 100MB
-        }
-    }
-
-    /// Creates a test configuration with minimal settings.
-    pub fn for_testing() -> Self {
-        Self {
-            group_count: 4,
-            replication_factor: 1,
-            max_log_entries: 100,
-            max_log_size_bytes: 1024 * 1024, // 1MB
-        }
-    }
-
-    /// Validates the cluster configuration.
-    pub fn validate(&self) -> crate::Result<()> {
-        if self.group_count == 0 {
-            return Err(crate::Error::invalid_argument("group_count must be > 0"));
-        }
-        if self.replication_factor == 0 {
-            return Err(crate::Error::invalid_argument("replication_factor must be > 0"));
-        }
-        if self.replication_factor > 7 {
-            return Err(crate::Error::invalid_argument(
-                "replication_factor should not exceed 7 for optimal performance",
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// Configuration options for opening a database.
+/// DB 打开选项
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// Create the database if it doesn't exist.
-    /// Default: true
-    pub create_if_missing: bool,
+  // === 基本 ===
+  /// 目录不存在时自动创建
+  pub create_if_missing: bool,
+  /// 目录已存在时报错
+  pub error_if_exists: bool,
+  /// 同时打开的最大文件数 (默认 1000)
+  pub max_open_files: usize,
 
-    /// Error if the database already exists.
-    /// Default: false
-    pub error_if_exists: bool,
+  // === MemTable ===
+  /// MemTable 触发 flush 的字节阈值 (默认 64 MiB)
+  pub memtable_size: usize,
+  /// 最大 MemTable 数量 (达到后冻结当前, 触发 flush)
+  pub max_write_buffer_number: usize,
+  /// 至少需要合并的不可变 MemTable 数 (用于写放大控制)
+  pub min_write_buffer_number_to_merge: usize,
 
-    /// Size threshold for flushing MemTable to SSTable (in bytes).
-    /// Default: 4MB
-    pub memtable_size: usize,
+  // === SSTable ===
+  /// SSTable Data Block 默认大小 (默认 4 KiB)
+  pub block_size: usize,
+  /// Block restart 点间隔 (默认 16)
+  pub block_restart_interval: usize,
+  /// Block cache 容量 (默认 64 MiB)
+  pub block_cache_size: usize,
+  /// 压缩算法 (注意: Snap/Lz4 仅定义占位, 实际未实现, 使用 None)
+  pub compression: CompressionType,
+  /// Bloom Filter 目标假阳性率 (0.0 表示禁用, 默认 0.01)
+  pub bloom_false_positive_rate: f64,
 
-    /// Maximum number of Level 0 files before triggering compaction.
-    /// Default: 4
-    pub level0_compaction_threshold: usize,
+  // === WAL ===
+  /// 是否启用 WAL (禁用后崩溃不保证数据持久)
+  pub use_wal: bool,
+  /// 每次写入 Record 后是否调用 fsync (默认 false; 设为 true 保证每条写 crash-safe)
+  pub sync_wal: bool,
+  /// 遇到 CRC 损坏时返回 Corruption 错误; false 则跳过损坏记录
+  pub strict_wal_recovery: bool,
+  /// WAL 文件超过此字节数时自动轮转 (默认 64 MiB, 0 = 不自动轮转)
+  pub max_wal_size: u64,
 
-    /// Size multiplier between levels.
-    /// Default: 10 (Level N+1 is 10x larger than Level N)
-    pub level_size_multiplier: usize,
-
-    /// Base level size (Level 1 target size in bytes).
-    /// Default: 10MB
-    pub base_level_size: usize,
-
-    /// Maximum number of levels.
-    /// Default: 7 (Level 0 through Level 6)
-    pub max_levels: usize,
-
-    /// Block size for SSTables (in bytes).
-    /// Default: 4KB
-    pub block_size: usize,
-
-    /// Block cache size (in bytes).
-    /// Set to 0 to disable caching.
-    /// Default: 8MB
-    pub block_cache_size: usize,
-
-    /// Enable bloom filter for SSTables.
-    /// Default: true
-    pub use_bloom_filter: bool,
-
-    /// Bloom filter false positive rate.
-    /// Default: 0.01 (1%)
-    pub bloom_filter_fp_rate: f64,
-
-    /// Compression algorithm for SSTables.
-    /// Default: CompressionType::Snappy
-    pub compression: CompressionType,
-
-    /// Enable write-ahead log (WAL).
-    /// Disabling reduces durability but increases performance.
-    /// Default: true
-    pub use_wal: bool,
-
-    /// Sync WAL writes to disk.
-    /// Default: true
-    pub sync_wal: bool,
-
-    /// Number of background compaction threads.
-    /// Default: 1
-    pub compaction_threads: usize,
+  // === Compaction ===
+  /// Level 0 文件数触发 Compaction 的阈值
+  pub level0_compaction_trigger: usize,
+  /// Level 0 文件数超过此值 → 写入 stall, sleep 等待 compaction (默认 trigger * 2)
+  pub level0_slowdown_writes_trigger: usize,
+  /// Level 0 文件数超过此值 → 写入停止, 轮询等待 compaction (默认 trigger * 4)
+  pub level0_stop_writes_trigger: usize,
+  /// Level 1 最大字节数 (默认 256 MiB)
+  pub max_bytes_for_level_base: usize,
+  /// 每层大小倍率 (默认 10)
+  pub max_bytes_for_level_multiplier: usize,
+  /// Compaction 后台线程数 (默认 1, 建议 1-4)
+  pub compaction_threads: usize,
+  /// Subcompaction 分裂阈值 (bytes, 0=禁用, 默认 64MB)
+  pub subcompaction_min_size: u64,
+  /// MANIFEST 文件上限, 超限触发 rotation (默认 64 MiB)
+  pub max_manifest_size: usize,
+  /// LSM 最大层级数 (默认 7, Phase6)
+  pub max_levels: usize,
+  /// 是否启动后台 compaction 线程 (测试可关闭以避免与 drain_compactions 竞态)
+  pub background_compaction: bool,
+  // === 运行时调优 (Phase 2 新增) ===
+  /// Flush 后台线程轮询间隔 (毫秒, 默认 500)
+  pub flush_poll_ms: u64,
+  /// Compaction 后台线程轮询间隔 (毫秒, 默认 500)
+  pub compaction_poll_ms: u64,
+  /// Write stall 循环 sleep 间隔 (毫秒, 默认 10)
+  pub write_stall_poll_ms: u64,
+  /// Slowdown 最大 sleep 时间 (毫秒, 默认 100)
+  pub write_stall_slowdown_max_ms: u64,
+  /// Memtable 槽等待最大迭代次数 (默认 10_000)
+  pub memtable_wait_iters: usize,
+  /// Memtable 槽等待轮询间隔 (毫秒, 默认 1)
+  pub memtable_wait_interval_ms: u64,
+  /// 子压缩最大分裂数 (默认 4)
+  pub max_sub_compactions: usize,
+  /// 子压缩最小分裂数 (默认 2)
+  pub min_sub_compactions: usize,
+  /// Compaction 信号通道容量 (默认 64)
+  pub compaction_channel_size: usize,
 }
 
 impl Default for Options {
-    fn default() -> Self {
-        Self {
-            create_if_missing: true,
-            error_if_exists: false,
-            memtable_size: 4 * 1024 * 1024, // 4MB
-            level0_compaction_threshold: 4,
-            level_size_multiplier: 10,
-            base_level_size: 10 * 1024 * 1024, // 10MB
-            max_levels: 7,
-            block_size: 4 * 1024,              // 4KB
-            block_cache_size: 8 * 1024 * 1024, // 8MB
-            use_bloom_filter: true,
-            bloom_filter_fp_rate: 0.01,
-            compression: CompressionType::Snappy,
-            use_wal: true,
-            sync_wal: true,
-            compaction_threads: 1,
-        }
+  fn default() -> Self {
+    Self {
+      create_if_missing: true,
+      error_if_exists: false,
+      max_open_files: 1000,
+      memtable_size: 64 * 1024 * 1024,
+      max_write_buffer_number: 2,
+      min_write_buffer_number_to_merge: 1,
+      block_size: 4 * 1024,
+      block_restart_interval: 16,
+      block_cache_size: 64 * 1024 * 1024,
+      compression: CompressionType::None,
+      bloom_false_positive_rate: 0.01,
+      use_wal: true,
+      sync_wal: false,
+      strict_wal_recovery: false,
+      max_wal_size: 64 * 1024 * 1024,
+      level0_compaction_trigger: 4,
+      level0_slowdown_writes_trigger: 8,
+      level0_stop_writes_trigger: 16,
+      max_bytes_for_level_base: 256 * 1024 * 1024,
+      max_bytes_for_level_multiplier: 10,
+      compaction_threads: 1,
+      subcompaction_min_size: 64 * 1024 * 1024,
+      max_manifest_size: 64 * 1024 * 1024,
+      max_levels: 7,
+      background_compaction: true,
+      flush_poll_ms: 500,
+      compaction_poll_ms: 500,
+      write_stall_poll_ms: 10,
+      write_stall_slowdown_max_ms: 100,
+      memtable_wait_iters: 10_000,
+      memtable_wait_interval_ms: 1,
+      max_sub_compactions: 4,
+      min_sub_compactions: 2,
+      compaction_channel_size: 64,
     }
-}
-
-/// Compression algorithms supported by AiDb.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum CompressionType {
-    /// No compression.
-    None = 0,
-
-    /// Snappy compression (fast, moderate compression ratio).
-    #[cfg(feature = "snappy")]
-    Snappy = 1,
-
-    /// LZ4 compression (very fast, lower compression ratio).
-    #[cfg(feature = "lz4-compression")]
-    Lz4 = 2,
-}
-
-impl CompressionType {
-    /// Convert from u8
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(CompressionType::None),
-            #[cfg(feature = "snappy")]
-            1 => Some(CompressionType::Snappy),
-            #[cfg(feature = "lz4-compression")]
-            2 => Some(CompressionType::Lz4),
-            _ => None,
-        }
-    }
-}
-
-impl Default for CompressionType {
-    fn default() -> Self {
-        #[cfg(feature = "snappy")]
-        return CompressionType::Snappy;
-
-        #[cfg(not(feature = "snappy"))]
-        CompressionType::None
-    }
+  }
 }
 
 impl Options {
-    /// Creates a new Options with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
+  /// 默认配置
+  pub fn new() -> Self {
+    Self::default()
+  }
 
-    /// Sets whether to create the database if it doesn't exist.
-    pub fn create_if_missing(mut self, value: bool) -> Self {
-        self.create_if_missing = value;
-        self
+  /// 最小配置: 无压缩, 无 Bloom Filter, 小 MemTable, 适合测试
+  pub fn for_testing() -> Self {
+    Self {
+      create_if_missing: true,
+      error_if_exists: false,
+      max_open_files: 100,
+      memtable_size: 1024 * 1024,
+      max_write_buffer_number: 2,
+      min_write_buffer_number_to_merge: 1,
+      block_size: 512,
+      block_restart_interval: 16,
+      block_cache_size: 1024 * 1024,
+      compression: CompressionType::None,
+      bloom_false_positive_rate: 0.0,
+      use_wal: true,
+      sync_wal: false,
+      strict_wal_recovery: true,
+      max_wal_size: 0,
+      level0_compaction_trigger: 2,
+      level0_slowdown_writes_trigger: 4,
+      level0_stop_writes_trigger: 8,
+      max_bytes_for_level_base: 10 * 1024 * 1024,
+      max_bytes_for_level_multiplier: 10,
+      compaction_threads: 1,
+      subcompaction_min_size: 0,
+      max_manifest_size: 1024 * 1024,
+      max_levels: 7,
+      background_compaction: false,
+      flush_poll_ms: 500,
+      compaction_poll_ms: 500,
+      write_stall_poll_ms: 10,
+      write_stall_slowdown_max_ms: 100,
+      memtable_wait_iters: 10_000,
+      memtable_wait_interval_ms: 1,
+      max_sub_compactions: 4,
+      min_sub_compactions: 2,
+      compaction_channel_size: 64,
     }
+  }
 
-    /// Sets whether to error if the database already exists.
-    pub fn error_if_exists(mut self, value: bool) -> Self {
-        self.error_if_exists = value;
-        self
+  /// 高写入吞吐: 大 MemTable + 大 Block + 启用压缩
+  pub fn for_high_write_throughput() -> Self {
+    Self {
+      memtable_size: 256 * 1024 * 1024,
+      max_write_buffer_number: 4,
+      block_size: 16 * 1024,
+      compression: CompressionType::Snap,
+      ..Self::default()
     }
+  }
 
-    /// Sets the MemTable size threshold.
-    pub fn memtable_size(mut self, size: usize) -> Self {
-        self.memtable_size = size;
-        self
+  /// 校验打开 DB 前的参数 (Phase5).
+  pub fn validate(&self) -> crate::error::Result<()> {
+    use crate::error::Error;
+    if self.memtable_size == 0 {
+      return Err(Error::InvalidArgument("memtable_size must be > 0".into()));
     }
+    if self.max_write_buffer_number == 0 {
+      return Err(Error::InvalidArgument(
+        "max_write_buffer_number must be >= 1".into(),
+      ));
+    }
+    if self.block_size < 256 {
+      return Err(Error::InvalidArgument("block_size must be >= 256".into()));
+    }
+    if self.block_restart_interval == 0 {
+      return Err(Error::InvalidArgument(
+        "block_restart_interval must be >= 1".into(),
+      ));
+    }
+    if self.max_levels < 2 {
+      return Err(Error::InvalidArgument("max_levels must be >= 2".into()));
+    }
+    if self.level0_compaction_trigger == 0 {
+      return Err(Error::InvalidArgument(
+        "level0_compaction_trigger must be >= 1".into(),
+      ));
+    }
+    if self.flush_poll_ms == 0 {
+      return Err(Error::InvalidArgument("flush_poll_ms must be > 0".into()));
+    }
+    if self.compaction_poll_ms == 0 {
+      return Err(Error::InvalidArgument(
+        "compaction_poll_ms must be > 0".into(),
+      ));
+    }
+    if self.min_sub_compactions > self.max_sub_compactions {
+      return Err(Error::InvalidArgument(
+        "min_sub_compactions must be <= max_sub_compactions".into(),
+      ));
+    }
+    Ok(())
+  }
 
-    /// Sets the Level 0 compaction threshold.
-    pub fn level0_compaction_threshold(mut self, threshold: usize) -> Self {
-        self.level0_compaction_threshold = threshold;
-        self
+  /// 高读取吞吐: 大 Block Cache + 低假阳性率 + 小 Block
+  pub fn for_high_read_throughput() -> Self {
+    Self {
+      block_cache_size: 512 * 1024 * 1024,
+      bloom_false_positive_rate: 0.001,
+      block_size: 2 * 1024,
+      compression: CompressionType::None,
+      ..Self::default()
     }
+  }
+}
 
-    /// Sets the level size multiplier.
-    pub fn level_size_multiplier(mut self, multiplier: usize) -> Self {
-        self.level_size_multiplier = multiplier;
-        self
-    }
+// ============================================================
+// Cluster 配置 (feature-gated)
+// ============================================================
 
-    /// Sets the base level size (Level 1 target size).
-    pub fn base_level_size(mut self, size: usize) -> Self {
-        self.base_level_size = size;
-        self
-    }
+#[cfg(feature = "cluster")]
+#[derive(Debug, Clone)]
+pub struct ClusterConfig {
+  /// 数据 Group 数量 (默认 256)
+  pub group_count: u64,
+  /// 副本因子 (默认 3)
+  pub replication_factor: u64,
+  /// 单 Group 最大 Raft 日志条目数 (默认 1000)
+  pub max_log_entries: u64,
+  /// 单 Group 最大 Raft 日志字节数 (默认 64 MiB)
+  pub max_log_size_bytes: u64,
+  /// 迁移配置
+  pub migration: MigrationConfig,
+}
 
-    /// Sets the maximum number of levels.
-    pub fn max_levels(mut self, levels: usize) -> Self {
-        self.max_levels = levels;
-        self
-    }
+/// 在线迁移配置
+#[cfg(feature = "cluster")]
+#[derive(Debug, Clone)]
+pub struct MigrationConfig {
+  /// 每批最大迁移 key 数 (默认 1000)
+  pub max_batch_size: usize,
+  /// 进度上报间隔 (key 数, 默认 100)
+  pub progress_report_interval: u64,
+  /// MetaRaft propose 最大重试次数 (默认 3)
+  pub max_retries: u32,
+  /// 重试基础延迟 (毫秒, 默认 1000)
+  pub retry_base_delay_ms: u64,
+  /// 验证采样因子 (默认 1.0)
+  pub verify_sample_factor: f64,
+}
 
-    /// Sets the block size for SSTables.
-    pub fn block_size(mut self, size: usize) -> Self {
-        self.block_size = size;
-        self
+#[cfg(feature = "cluster")]
+impl Default for MigrationConfig {
+  fn default() -> Self {
+    Self {
+      max_batch_size: 1000,
+      progress_report_interval: 100,
+      max_retries: 3,
+      retry_base_delay_ms: 1000,
+      verify_sample_factor: 1.0,
     }
+  }
+}
 
-    /// Sets the block cache size.
-    pub fn block_cache_size(mut self, size: usize) -> Self {
-        self.block_cache_size = size;
-        self
+#[cfg(feature = "cluster")]
+impl Default for ClusterConfig {
+  fn default() -> Self {
+    Self {
+      group_count: 256,
+      replication_factor: 3,
+      max_log_entries: 1000,
+      max_log_size_bytes: 64 * 1024 * 1024,
+      migration: MigrationConfig::default(),
     }
+  }
+}
 
-    /// Enables or disables bloom filters.
-    pub fn use_bloom_filter(mut self, value: bool) -> Self {
-        self.use_bloom_filter = value;
-        self
-    }
+#[cfg(feature = "cluster")]
+impl ClusterConfig {
+  /// 生产配置: 16384 槽, 3 副本
+  pub fn for_production() -> Self {
+    Self::default()
+  }
 
-    /// Sets the bloom filter false positive rate.
-    pub fn bloom_filter_fp_rate(mut self, rate: f64) -> Self {
-        self.bloom_filter_fp_rate = rate;
-        self
+  /// 测试配置: 4 槽, 1 副本
+  pub fn for_testing() -> Self {
+    Self {
+      group_count: 4,
+      replication_factor: 1,
+      max_log_entries: 100,
+      max_log_size_bytes: 1024 * 1024,
+      migration: MigrationConfig::default(),
     }
-
-    /// Sets the compression algorithm.
-    pub fn compression(mut self, compression: CompressionType) -> Self {
-        self.compression = compression;
-        self
-    }
-
-    /// Enables or disables the write-ahead log.
-    pub fn use_wal(mut self, value: bool) -> Self {
-        self.use_wal = value;
-        self
-    }
-
-    /// Enables or disables WAL sync.
-    pub fn sync_wal(mut self, value: bool) -> Self {
-        self.sync_wal = value;
-        self
-    }
-
-    /// Sets the number of background compaction threads.
-    pub fn compaction_threads(mut self, threads: usize) -> Self {
-        self.compaction_threads = threads;
-        self
-    }
-
-    /// Creates a minimal configuration for testing or development.
-    ///
-    /// This uses smaller sizes and disables features that slow down tests.
-    pub fn for_testing() -> Self {
-        Self {
-            create_if_missing: true,
-            error_if_exists: false,
-            memtable_size: 64 * 1024, // 64KB
-            level0_compaction_threshold: 2,
-            level_size_multiplier: 10,
-            base_level_size: 1024 * 1024, // 1MB
-            max_levels: 4,
-            block_size: 1024,              // 1KB
-            block_cache_size: 1024 * 1024, // 1MB
-            use_bloom_filter: false,       // Disable for faster tests
-            bloom_filter_fp_rate: 0.01,
-            compression: CompressionType::None, // Disable for faster tests
-            use_wal: true,
-            sync_wal: false, // Disable for faster tests
-            compaction_threads: 1,
-        }
-    }
-
-    /// Creates a configuration optimized for high write throughput.
-    ///
-    /// This uses larger buffers and less aggressive compaction.
-    pub fn for_high_write_throughput() -> Self {
-        Self {
-            create_if_missing: true,
-            error_if_exists: false,
-            memtable_size: 16 * 1024 * 1024, // 16MB
-            level0_compaction_threshold: 8,  // More files before compaction
-            level_size_multiplier: 10,
-            base_level_size: 100 * 1024 * 1024, // 100MB
-            max_levels: 7,
-            block_size: 16 * 1024,              // 16KB
-            block_cache_size: 16 * 1024 * 1024, // 16MB
-            use_bloom_filter: true,
-            bloom_filter_fp_rate: 0.01,
-            compression: CompressionType::default(),
-            use_wal: true,
-            sync_wal: false, // Trade durability for speed
-            compaction_threads: 2,
-        }
-    }
-
-    /// Creates a configuration optimized for read-heavy workloads.
-    ///
-    /// This uses larger caches and bloom filters.
-    pub fn for_high_read_throughput() -> Self {
-        Self {
-            create_if_missing: true,
-            error_if_exists: false,
-            memtable_size: 4 * 1024 * 1024, // 4MB
-            level0_compaction_threshold: 4,
-            level_size_multiplier: 10,
-            base_level_size: 10 * 1024 * 1024, // 10MB
-            max_levels: 7,
-            block_size: 8 * 1024,               // 8KB
-            block_cache_size: 64 * 1024 * 1024, // 64MB - large cache
-            use_bloom_filter: true,
-            bloom_filter_fp_rate: 0.001, // Lower FP rate
-            compression: CompressionType::default(),
-            use_wal: true,
-            sync_wal: true,
-            compaction_threads: 2,
-        }
-    }
-
-    /// Validates the options and returns an error if any are invalid.
-    pub fn validate(&self) -> crate::Result<()> {
-        if self.memtable_size == 0 {
-            return Err(crate::Error::invalid_argument("memtable_size must be > 0"));
-        }
-        if self.block_size == 0 {
-            return Err(crate::Error::invalid_argument("block_size must be > 0"));
-        }
-        if self.max_levels == 0 {
-            return Err(crate::Error::invalid_argument("max_levels must be > 0"));
-        }
-        if self.bloom_filter_fp_rate <= 0.0 || self.bloom_filter_fp_rate >= 1.0 {
-            return Err(crate::Error::invalid_argument(
-                "bloom_filter_fp_rate must be between 0 and 1",
-            ));
-        }
-        if self.level0_compaction_threshold == 0 {
-            return Err(crate::Error::invalid_argument("level0_compaction_threshold must be > 0"));
-        }
-        if self.level_size_multiplier == 0 {
-            return Err(crate::Error::invalid_argument("level_size_multiplier must be > 0"));
-        }
-        if self.base_level_size == 0 {
-            return Err(crate::Error::invalid_argument("base_level_size must be > 0"));
-        }
-        Ok(())
-    }
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[test]
-    fn test_cluster_config_default() {
-        let config = ClusterConfig::default();
-        assert_eq!(config.group_count, 16);
-        assert_eq!(config.replication_factor, 3);
-        assert_eq!(config.max_log_entries, 10000);
-        assert_eq!(config.max_log_size_bytes, 100 * 1024 * 1024);
-    }
+  #[test]
+  fn default_options_are_sane() {
+    let opts = Options::default();
+    assert!(opts.create_if_missing);
+    assert!(!opts.error_if_exists);
+    assert!(opts.use_wal);
+    assert!(!opts.sync_wal);
+    assert!(!opts.strict_wal_recovery);
+    assert_eq!(opts.memtable_size, 64 * 1024 * 1024);
+    assert_eq!(opts.block_size, 4 * 1024);
+    assert_eq!(opts.block_cache_size, 64 * 1024 * 1024);
+    assert_eq!(opts.max_open_files, 1000);
+    assert_eq!(opts.max_write_buffer_number, 2);
+    assert_eq!(opts.min_write_buffer_number_to_merge, 1);
+    assert_eq!(opts.block_restart_interval, 16);
+    assert_eq!(opts.compression, CompressionType::None);
+    assert!((opts.bloom_false_positive_rate - 0.01).abs() < 1e-6);
+    assert_eq!(opts.level0_compaction_trigger, 4);
+    assert_eq!(opts.max_bytes_for_level_base, 256 * 1024 * 1024);
+    assert_eq!(opts.max_bytes_for_level_multiplier, 10);
+    assert_eq!(opts.compaction_threads, 1);
+    assert_eq!(opts.subcompaction_min_size, 64 * 1024 * 1024);
+    assert_eq!(opts.max_manifest_size, 64 * 1024 * 1024);
+    assert_eq!(opts.max_levels, 7);
+    assert_eq!(opts.flush_poll_ms, 500);
+    assert_eq!(opts.compaction_poll_ms, 500);
+    assert_eq!(opts.write_stall_poll_ms, 10);
+    assert_eq!(opts.write_stall_slowdown_max_ms, 100);
+    assert_eq!(opts.memtable_wait_iters, 10_000);
+    assert_eq!(opts.memtable_wait_interval_ms, 1);
+    assert_eq!(opts.max_sub_compactions, 4);
+    assert_eq!(opts.min_sub_compactions, 2);
+    assert_eq!(opts.compaction_channel_size, 64);
+  }
 
-    #[test]
-    fn test_cluster_config_builder() {
-        let config = ClusterConfig::new()
-            .group_count(16384)
-            .replication_factor(5)
-            .max_log_entries(5000)
-            .max_log_size_bytes(50 * 1024 * 1024);
+  #[test]
+  fn for_testing_uses_small_values() {
+    let opts = Options::for_testing();
+    assert_eq!(opts.memtable_size, 1024 * 1024);
+    assert_eq!(opts.block_size, 512);
+    assert_eq!(opts.block_cache_size, 1024 * 1024);
+    assert_eq!(opts.bloom_false_positive_rate, 0.0);
+    assert!(opts.strict_wal_recovery);
+    assert_eq!(opts.level0_compaction_trigger, 2);
+    assert_eq!(opts.max_bytes_for_level_base, 10 * 1024 * 1024);
+    assert_eq!(opts.max_manifest_size, 1024 * 1024);
+    assert_eq!(opts.max_open_files, 100);
+    assert!(!opts.sync_wal);
+    assert_eq!(opts.flush_poll_ms, 500);
+    assert_eq!(opts.compaction_poll_ms, 500);
+  }
 
-        assert_eq!(config.group_count, 16384);
-        assert_eq!(config.replication_factor, 5);
-        assert_eq!(config.max_log_entries, 5000);
-        assert_eq!(config.max_log_size_bytes, 50 * 1024 * 1024);
-    }
+  #[test]
+  fn for_high_write_throughput_has_large_memtable() {
+    let opts = Options::for_high_write_throughput();
+    assert_eq!(opts.memtable_size, 256 * 1024 * 1024);
+    assert_eq!(opts.compression, CompressionType::Snap);
+    assert_eq!(opts.block_size, 16 * 1024);
+    assert_eq!(opts.max_write_buffer_number, 4);
+    // unchanged from default
+    assert!(opts.create_if_missing);
+    assert_eq!(opts.block_cache_size, 64 * 1024 * 1024);
+  }
 
-    #[test]
-    fn test_cluster_config_for_production() {
-        let config = ClusterConfig::for_production();
-        assert_eq!(config.group_count, 16384);
-        assert_eq!(config.replication_factor, 3);
-        assert!(config.validate().is_ok());
-    }
+  #[test]
+  fn for_high_read_throughput_has_large_cache() {
+    let opts = Options::for_high_read_throughput();
+    assert_eq!(opts.block_cache_size, 512 * 1024 * 1024);
+    assert!((opts.bloom_false_positive_rate - 0.001).abs() < 1e-6);
+    assert_eq!(opts.block_size, 2 * 1024);
+    assert_eq!(opts.compression, CompressionType::None);
+    // unchanged from default
+    assert!(opts.create_if_missing);
+    assert_eq!(opts.memtable_size, 64 * 1024 * 1024);
+  }
 
-    #[test]
-    fn test_cluster_config_for_testing() {
-        let config = ClusterConfig::for_testing();
-        assert_eq!(config.group_count, 4);
-        assert_eq!(config.replication_factor, 1);
-        assert!(config.validate().is_ok());
-    }
+  #[test]
+  fn validate_rejects_zero_memtable_size() {
+    let mut opts = Options::for_testing();
+    opts.memtable_size = 0;
+    assert!(opts.validate().is_err());
+  }
 
-    #[test]
-    fn test_cluster_config_validation() {
-        let mut config = ClusterConfig::default();
-        assert!(config.validate().is_ok());
+  #[test]
+  fn validate_accepts_for_testing() {
+    assert!(Options::for_testing().validate().is_ok());
+  }
 
-        // Invalid group_count
-        config = ClusterConfig::default();
-        config.group_count = 0;
-        assert!(config.validate().is_err());
+  #[test]
+  fn compression_type_default_is_none() {
+    assert_eq!(CompressionType::default(), CompressionType::None);
+  }
 
-        // Invalid replication_factor (zero)
-        config = ClusterConfig::default();
-        config.replication_factor = 0;
-        assert!(config.validate().is_err());
+  #[test]
+  fn compression_type_debug_and_clone() {
+    let c = CompressionType::Snap;
+    let d = c;
+    assert_eq!(format!("{:?}", d), "Snap");
+  }
 
-        // Invalid replication_factor (too high)
-        config = ClusterConfig::default();
-        config.replication_factor = 10;
-        assert!(config.validate().is_err());
-    }
+  #[test]
+  fn validate_rejects_zero_flush_poll_ms() {
+    let mut opts = Options::for_testing();
+    opts.flush_poll_ms = 0;
+    assert!(opts.validate().is_err());
+  }
 
-    #[test]
-    fn test_default_options() {
-        let opts = Options::default();
-        assert!(opts.create_if_missing);
-        assert!(!opts.error_if_exists);
-        assert_eq!(opts.memtable_size, 4 * 1024 * 1024);
-    }
+  #[test]
+  fn validate_rejects_zero_compaction_poll_ms() {
+    let mut opts = Options::for_testing();
+    opts.compaction_poll_ms = 0;
+    assert!(opts.validate().is_err());
+  }
 
-    #[test]
-    fn test_options_builder() {
-        let opts = Options::new()
-            .memtable_size(8 * 1024 * 1024)
-            .block_size(8 * 1024)
-            .use_wal(false);
+  #[test]
+  fn validate_rejects_min_sub_larger_than_max_sub() {
+    let mut opts = Options::for_testing();
+    opts.min_sub_compactions = 5;
+    opts.max_sub_compactions = 3;
+    assert!(opts.validate().is_err());
+  }
 
-        assert_eq!(opts.memtable_size, 8 * 1024 * 1024);
-        assert_eq!(opts.block_size, 8 * 1024);
-        assert!(!opts.use_wal);
-    }
+  #[cfg(feature = "cluster")]
+  #[test]
+  fn cluster_config_defaults() {
+    let cfg = ClusterConfig::default();
+    assert_eq!(cfg.group_count, 256);
+    assert_eq!(cfg.replication_factor, 3);
+    assert_eq!(cfg.max_log_entries, 1000);
+    assert_eq!(cfg.max_log_size_bytes, 64 * 1024 * 1024);
+  }
 
-    #[test]
-    fn test_options_validation() {
-        let mut opts = Options::default();
-        assert!(opts.validate().is_ok());
-
-        opts.memtable_size = 0;
-        assert!(opts.validate().is_err());
-
-        opts.memtable_size = 1024;
-        opts.bloom_filter_fp_rate = 1.5;
-        assert!(opts.validate().is_err());
-    }
-
-    #[test]
-    fn test_for_testing_config() {
-        let opts = Options::for_testing();
-        assert_eq!(opts.memtable_size, 64 * 1024);
-        assert_eq!(opts.block_size, 1024);
-        assert!(!opts.use_bloom_filter);
-        assert_eq!(opts.compression, CompressionType::None);
-        assert!(!opts.sync_wal);
-        assert!(opts.validate().is_ok());
-    }
-
-    #[test]
-    fn test_for_high_write_throughput_config() {
-        let opts = Options::for_high_write_throughput();
-        assert_eq!(opts.memtable_size, 16 * 1024 * 1024);
-        assert_eq!(opts.level0_compaction_threshold, 8);
-        assert!(!opts.sync_wal);
-        assert!(opts.validate().is_ok());
-    }
-
-    #[test]
-    fn test_for_high_read_throughput_config() {
-        let opts = Options::for_high_read_throughput();
-        assert_eq!(opts.block_cache_size, 64 * 1024 * 1024);
-        assert!(opts.use_bloom_filter);
-        assert_eq!(opts.bloom_filter_fp_rate, 0.001);
-        assert!(opts.validate().is_ok());
-    }
-
-    #[test]
-    fn test_all_builder_methods() {
-        let opts = Options::new()
-            .create_if_missing(false)
-            .error_if_exists(true)
-            .memtable_size(1024)
-            .level0_compaction_threshold(5)
-            .level_size_multiplier(8)
-            .base_level_size(2048)
-            .max_levels(5)
-            .block_size(512)
-            .block_cache_size(1024)
-            .use_bloom_filter(false)
-            .bloom_filter_fp_rate(0.05)
-            .compression(CompressionType::None)
-            .use_wal(false)
-            .sync_wal(false)
-            .compaction_threads(4);
-
-        assert!(!opts.create_if_missing);
-        assert!(opts.error_if_exists);
-        assert_eq!(opts.memtable_size, 1024);
-        assert_eq!(opts.level0_compaction_threshold, 5);
-        assert_eq!(opts.level_size_multiplier, 8);
-        assert_eq!(opts.base_level_size, 2048);
-        assert_eq!(opts.max_levels, 5);
-        assert_eq!(opts.block_size, 512);
-        assert_eq!(opts.block_cache_size, 1024);
-        assert!(!opts.use_bloom_filter);
-        assert_eq!(opts.bloom_filter_fp_rate, 0.05);
-        assert_eq!(opts.compression, CompressionType::None);
-        assert!(!opts.use_wal);
-        assert!(!opts.sync_wal);
-        assert_eq!(opts.compaction_threads, 4);
-    }
-
-    #[test]
-    fn test_validation_comprehensive() {
-        let mut opts = Options::default();
-
-        // Valid config
-        assert!(opts.validate().is_ok());
-
-        // Invalid memtable_size
-        opts = Options::default();
-        opts.memtable_size = 0;
-        assert!(opts.validate().is_err());
-
-        // Invalid block_size
-        opts = Options::default();
-        opts.block_size = 0;
-        assert!(opts.validate().is_err());
-
-        // Invalid max_levels
-        opts = Options::default();
-        opts.max_levels = 0;
-        assert!(opts.validate().is_err());
-
-        // Invalid bloom_filter_fp_rate (too low)
-        opts = Options::default();
-        opts.bloom_filter_fp_rate = 0.0;
-        assert!(opts.validate().is_err());
-
-        // Invalid bloom_filter_fp_rate (too high)
-        opts = Options::default();
-        opts.bloom_filter_fp_rate = 1.0;
-        assert!(opts.validate().is_err());
-
-        // Invalid level0_compaction_threshold
-        opts = Options::default();
-        opts.level0_compaction_threshold = 0;
-        assert!(opts.validate().is_err());
-
-        // Invalid level_size_multiplier
-        opts = Options::default();
-        opts.level_size_multiplier = 0;
-        assert!(opts.validate().is_err());
-
-        // Invalid base_level_size
-        opts = Options::default();
-        opts.base_level_size = 0;
-        assert!(opts.validate().is_err());
-    }
+  #[cfg(feature = "cluster")]
+  #[test]
+  fn cluster_config_for_testing() {
+    let cfg = ClusterConfig::for_testing();
+    assert_eq!(cfg.group_count, 4);
+    assert_eq!(cfg.replication_factor, 1);
+    assert_eq!(cfg.max_log_entries, 100);
+    assert_eq!(cfg.max_log_size_bytes, 1024 * 1024);
+  }
 }

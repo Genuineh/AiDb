@@ -2,106 +2,79 @@ syntax = "proto3";
 
 package aidb.raft;
 
-// Raft service for consensus communication
 service RaftService {
-  // Vote RPC - Request vote from other nodes
   rpc Vote(VoteRequest) returns (VoteResponse);
-  
-  // AppendEntries RPC - Append log entries (also used as heartbeat)
   rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
-  
-  // InstallSnapshot RPC - Transfer snapshot to follower
   rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
 }
 
-// Vote request
 message VoteRequest {
-  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
-  
+  uint64 group_id = 1;
   uint64 vote_term = 2;
   uint64 vote_node_id = 3;
   bool vote_committed = 4;
-  
   uint64 last_log_index = 5;
   uint64 last_log_term = 6;
   uint64 last_log_leader_id = 7;
 }
 
-// Vote response
 message VoteResponse {
   uint64 vote_term = 1;
   uint64 vote_node_id = 2;
   bool vote_committed = 3;
-  
   bool vote_granted = 4;
   bool is_in_membership = 5;
 }
 
-// Log entry
 message LogEntry {
   uint64 log_index = 1;
   uint64 log_term = 2;
   uint64 log_leader_id = 3;
-  
   bytes payload = 4;
   bool is_blank = 5;
   bool is_membership = 6;
 }
 
-// AppendEntries request
 message AppendEntriesRequest {
-  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
-  
+  uint64 group_id = 1;
   uint64 vote_term = 2;
   uint64 vote_node_id = 3;
   bool vote_committed = 4;
-  
   optional uint64 prev_log_index = 5;
   optional uint64 prev_log_term = 6;
   optional uint64 prev_log_leader_id = 7;
-  
   repeated LogEntry entries = 8;
-  
   optional uint64 leader_commit_index = 9;
   optional uint64 leader_commit_term = 10;
   optional uint64 leader_commit_leader_id = 11;
 }
 
-// AppendEntries response
 message AppendEntriesResponse {
   uint64 vote_term = 1;
   uint64 vote_node_id = 2;
   bool vote_committed = 3;
-  
   bool success = 4;
-  
   optional uint64 conflict_index = 5;
   optional uint64 conflict_term = 6;
 }
 
-// InstallSnapshot request
 message InstallSnapshotRequest {
-  uint64 group_id = 1;  // Raft group identifier for Multi-Raft
-  
+  uint64 group_id = 1;
   uint64 vote_term = 2;
   uint64 vote_node_id = 3;
   bool vote_committed = 4;
-  
   SnapshotMeta meta = 5;
   bytes snapshot_data = 6;
 }
 
-// Snapshot metadata
 message SnapshotMeta {
   optional uint64 last_log_index = 1;
   optional uint64 last_log_term = 2;
   optional uint64 last_log_leader_id = 3;
-  
   bytes last_membership = 4;
   string snapshot_id = 5;
 }
 
-// InstallSnapshot response
 message InstallSnapshotResponse {
   uint64 vote_term = 1;
   uint64 vote_node_id = 2;
