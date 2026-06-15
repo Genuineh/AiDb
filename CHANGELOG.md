@@ -223,7 +223,6 @@
 - `keys.rs`: `meta_cluster_meta_key()`, `meta_slot_table_key()`, `meta_migration_state_key()`, `meta_range_start/end`; 与 `\x00raft/` 同 namespace
 - Storage 集成: `OpenRaftStorage::new(db, gid, meta_state)`, `apply_meta_entry` — `kv_pairs` + `last_applied` 同 WriteBatch 原子持久化; `group_id==0` 时 snapshot 扫描/安装 `\x00meta_raft/*`, 安装后 `MetaStateMachine::reload_from_db()`
 - MetaRaftNode: 组合 `OpenRaftNode` + `MetaStateMachine`; `new_with_storage`; `initialize` 幂等 (仅 Raft membership); propose 前置校验; `get_cluster_meta`/`get_slot_table`/`get_migration_state` getters; 4 tracing spans
-- 测试: L1 — `meta_state_machine` 20 用例 (含 format_version corruption, slot_ranges rebuild after commit/cancel, cancel restores slots, version increment); L2 — 9 集成测试 (3-node 初始化/跨集群复制/leader failover/slot migration Raft propose/DB 崩溃恢复/Meta snapshot roundtrip); `meta-acceptance.json` 7 项验收
 
 ### Changed
 
@@ -280,8 +279,7 @@
 ### Added
 
 - Phase 7.6 criterion benchmarks: `benches/write_bench.rs` (`put_1kb` 补零 key `key_{:08}`, `write_batch_100_flush`), `benches/read_bench.rs` (随机 get, 范围 scan); 详设 §3.4「随机写入」与纯 `write_batch_100`(无 flush) 未纳入 7.6
-- `WIQUN_BENCH_PRELOAD` 环境变量可覆盖 read_bench 预填充规模 (默认 **10_000**); preload 使用 WriteBatch 分块 (500 keys/batch)
-- 验收: `bench-acceptance.json` (bench smoke + snapshot/cache 回归)
+- `AIDB_BENCH_PRELOAD` 环境变量可覆盖 read_bench 预填充规模 (默认 **10_000**); preload 使用 WriteBatch 分块 (500 keys/batch)
 - P1 测试加固: `tests/modules/db/p1.rs` (flush/并发/WriteBatch/WAL 损坏/背压等); compaction picker 专项; `test_concurrent_writes_during_compaction`
 - DB 跨模块 dataflow: `tests/modules/db/dataflow.rs` (put/get/flush/delete span 树 + event 链); `tests/engine/dataflow.rs` (put→flush→get 生命周期)
 - `Snapshot::iter` / `scan`; `WALManager::append` span 名 `wal_write`
@@ -290,7 +288,7 @@
 
 - **M1 单机 LSM 存储引擎完成** (Phase 1–7.6)
 - `Options::default()` / `Options::for_testing()` 默认 `sync_wal: false` (强持久写需显式 `sync_wal = true`; crash 测试已单独开启)
-- read_bench 默认 preload 10_000 keys (原 100_000); 大规模可通过 `WIQUN_BENCH_PRELOAD` 覆盖
+- read_bench 默认 preload 10_000 keys (原 100_000); 大规模可通过 `AIDB_BENCH_PRELOAD` 覆盖
 - `max_write_buffer_number` flush 背压: Immutable 达上限时阻塞写入并驱动 flush
 - `DBIterator` snapshot 边界 MVCC: 新版本 delete 不再误吞旧版本 put
 - `db_flush` / `db_flush_sst` span 分层
@@ -301,7 +299,6 @@
 
 - Snapshot (Phase7.5): `tests/snapshot.rs`, `tests/modules/snapshot/` — MVCC get (basic / flush / compaction 弱化语义 / sequence 边界), 并发 (4 用例, 1 `#[ignore]` 压测)
 - 可观测性: `DB::snapshot` 增加 `#[instrument(name = "db_snapshot")]` + span 字段 `sequence`; `tests/modules/snapshot/dataflow.rs`
-- 验收: `snapshot-acceptance.json` (硬性 7 + 补充 3 + 并发 4; 含 cache/bloom 回归)
 
 ### Changed
 
@@ -317,7 +314,6 @@
 - DB 运维 API: `cache_stats`, `reset_cache_stats`, `clear_cache`, `block_cache_size`, `block_cache_capacity`
 - 公共导出: `BlockCache`, `CacheStats` (`lib.rs`)
 - 可观测性: span `cache_get` / `cache_insert` / `cache_evict`; DEBUG `cache.hit` / `cache.miss` / `cache.insert` / `cache.evict`
-- 测试: `tests/cache.rs`, `tests/modules/cache/` (14 用例); `tests/modules/sstable/cache.rs` (6); `tests/modules/db/cache.rs` (3); 验收 `cache-acceptance.json`
 
 ### Changed
 
@@ -332,7 +328,6 @@
 - SSTable 集成: `SSTableBuilder` 写入 Meta Block + Meta Index `"bloom"`; `SSTableReader::get` fast path; `bloom_false_positive_rate = 0.0` 禁用
 - flush / compaction 传参: `set_expected_keys`; compaction 两遍 merge 精确计数后写盘
 - 可观测性: span `bloom_build` / `bloom_check`; DEBUG `bloom.build`; decode 失败 WARN 降级
-- 测试: `tests/filter.rs`, `tests/modules/sstable/bloom.rs`; 验收 `bloom-acceptance.json`
 
 ### Changed
 
@@ -354,7 +349,6 @@
 - 模块测试: `tests/compaction.rs`, `tests/modules/compaction/` (`cargo test --test compaction -- --test-threads=1`)
 - 引擎集成: `tests/engine/compaction.rs` — CI ~800 keys; `#[ignore]` 10000 keys 压测 (`cargo test --test engine compaction`)
 - Open 迁移: `tests/modules/db/bootstrap_migration.rs` (无 CURRENT → bootstrap → MANIFEST reopen; `cargo test --test db bootstrap`)
-- 随机 / 回归: `tests/proptest/`、`tests/regression/` (入口 `proptest.rs` / `regression.rs`); 验收 `compaction-acceptance.json`
 
 ### Changed
 

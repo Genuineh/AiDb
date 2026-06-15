@@ -262,15 +262,15 @@ pub use leader_watcher::LeaderChangeWatcher;
 - [ ] **Step 3: Build and run unit tests**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -10
-cd /root/code/dev/AiDb && cargo test --features cluster leader_watcher -- --test-threads=1 2>&1 | tail -10
+cd aidb && cargo build --features cluster 2>&1 | tail -10
+cd aidb && cargo test --features cluster leader_watcher -- --test-threads=1 2>&1 | tail -10
 ```
 Expected: builds, unit tests pass (2 simple struct tests)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /root/code/dev/AiDb && git add src/cluster/leader_watcher.rs src/cluster/mod.rs
+cd aidb && git add src/cluster/leader_watcher.rs src/cluster/mod.rs
 git commit -m "feat: add LeaderChangeWatcher module"
 ```
 
@@ -425,14 +425,14 @@ async fn test_watcher_populates_cache_on_first_tick() {
 - [ ] **Step 3: Run integration tests**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster --test multi_raft modules::multi_raft::leader_watcher -- --test-threads=1 2>&1 | tail -20
+cd aidb && cargo test --features cluster --test multi_raft modules::multi_raft::leader_watcher -- --test-threads=1 2>&1 | tail -20
 ```
 Expected: both tests PASS
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /root/code/dev/AiDb && git add tests/modules/multi_raft/
+cd aidb && git add tests/modules/multi_raft/
 git commit -m "test: add LeaderChangeWatcher integration tests"
 ```
 
@@ -518,14 +518,14 @@ With:
 - [ ] **Step 4: Build and verify**
 
 ```bash
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -10
 ```
 Expected: builds successfully
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add src/main.rs
+cd aikv && git add src/main.rs
 git commit -m "feat: expose Raft election timeout as CLI args"
 ```
 
@@ -589,14 +589,14 @@ Add after the Gossip startup block (the `start_background_refresh` call ending a
 - [ ] **Step 4: Build and verify**
 
 ```bash
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -10
 ```
 Expected: builds successfully
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add src/main.rs
+cd aikv && git add src/main.rs
 git commit -m "feat: integrate LeaderChangeWatcher into cluster init"
 ```
 
@@ -702,14 +702,14 @@ The catch-all remains:
 - [ ] **Step 3: Build and verify**
 
 ```bash
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -10
 ```
 Expected: builds successfully
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add src/cluster/commands.rs
+cd aikv && git add src/cluster/commands.rs
 git commit -m "feat: show migrating/importing state in CLUSTER SLOTS"
 ```
 
@@ -777,14 +777,14 @@ To:
 - [ ] **Step 3: Build and verify**
 
 ```bash
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -10
 ```
 Expected: builds successfully
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add src/cluster/commands.rs
+cd aikv && git add src/cluster/commands.rs
 git commit -m "feat: add cluster_slots_migrating count to CLUSTER INFO"
 ```
 
@@ -885,14 +885,14 @@ Update the `format!` on the next line to use `flags` instead of the old inline e
 - [ ] **Step 4: Build and verify**
 
 ```bash
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -10
 ```
 Expected: builds successfully
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add src/cluster/commands.rs
+cd aikv && git add src/cluster/commands.rs
 git commit -m "feat: add migrating/importing flags to CLUSTER NODES"
 ```
 
@@ -903,38 +903,38 @@ git commit -m "feat: add migrating/importing flags to CLUSTER NODES"
 - [ ] **Step 1: AiDb full test suite**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster 2>&1 | tail -20
+cd aidb && cargo test --features cluster 2>&1 | tail -20
 ```
 Expected: all tests pass
 
 - [ ] **Step 2: AiKv full test suite**
 
 ```bash
-cd /root/code/dev/AiKv && cargo test --features cluster -- --test-threads=1 2>&1 | tail -20
+cd aikv && cargo test --features cluster -- --test-threads=1 2>&1 | tail -20
 ```
 Expected: all tests pass
 
 - [ ] **Step 3: Cluster E2E tests**
 
 ```bash
-cd /root/code/dev/AiKv/e2e && for t in test_cluster_formation.sh test_cluster_failover.sh test_cluster_slots.sh test_cluster_routing.sh test_cluster_data_consistency.sh; do echo "=== $t ===" && bash "$t" && echo "PASS" || echo "FAIL"; done
+cd aikv/e2e && for t in test_cluster_formation.sh test_cluster_failover.sh test_cluster_slots.sh test_cluster_routing.sh test_cluster_data_consistency.sh; do echo "=== $t ===" && bash "$t" && echo "PASS" || echo "FAIL"; done
 ```
 Expected: all E2E tests pass
 
 - [ ] **Step 4: Code quality checks**
 
 ```bash
-cd /root/code/dev/AiDb && RUSTFLAGS='-D warnings' cargo clippy --features cluster --all-targets 2>&1 | tail -10
-cd /root/code/dev/AiKv && RUSTFLAGS='-D warnings' cargo clippy --features cluster --all-targets 2>&1 | tail -10
-cd /root/code/dev/AiDb && cargo fmt --check
-cd /root/code/dev/AiKv && cargo fmt --check
+cd aidb && RUSTFLAGS='-D warnings' cargo clippy --features cluster --all-targets 2>&1 | tail -10
+cd aikv && RUSTFLAGS='-D warnings' cargo clippy --features cluster --all-targets 2>&1 | tail -10
+cd aidb && cargo fmt --check
+cd aikv && cargo fmt --check
 ```
 
 - [ ] **Step 5: Commit final verification**
 
 ```bash
-cd /root/code/dev/AiDb && git status
-cd /root/code/dev/AiKv && git status
+cd aidb && git status
+cd aikv && git status
 # If clean, no commit needed. If changes, commit with:
 # git commit -m "chore: final verification - all tests pass, clippy clean"
 ```
@@ -989,14 +989,14 @@ fi
 - [ ] **Step 2: Run the enhanced E2E test**
 
 ```bash
-cd /root/code/dev/AiKv/e2e && bash test_cluster_failover.sh
+cd aikv/e2e && bash test_cluster_failover.sh
 ```
 Expected: PASS
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /root/code/dev/AiKv && git add e2e/test_cluster_failover.sh
+cd aikv && git add e2e/test_cluster_failover.sh
 git commit -m "test: enhance E2E failover with leader kill + data verify"
 ```
 

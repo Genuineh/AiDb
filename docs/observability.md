@@ -1,6 +1,6 @@
 # AiDb 可观测性
 
-DB 侧独立可观测性文档。完整规范见 [`WiQunTools/docs/aikv-inventory/08-observability.md`](../WiQunTools/docs/aikv-inventory/08-observability.md).
+AiDb 侧 tracing 与 Prometheus 指标说明.
 
 ---
 
@@ -52,11 +52,7 @@ AiDb ──(OTLP/gRPC)──> OTel Collector ──> Jaeger / Tempo
 AiDb ──(HTTP /metrics)──> Prometheus ──> Grafana
 ```
 
-启动监控栈:
-```bash
-cd WiQunTools/docker
-docker-compose up -d
-```
+启动监控栈 (Prometheus / Grafana / OTel Collector) 按你的环境自行部署; 指标端点默认 `:9191/metrics`.
 
 ---
 
@@ -146,16 +142,16 @@ docker-compose up -d
 
 | Metric | 类型 | 标签 | Feature |
 |--------|------|------|---------|
-| `wiqun_puts_total` | Counter | — | `monitoring` |
-| `wiqun_gets_total` | Counter | `hit` | `monitoring` |
-| `wiqun_deletes_total` | Counter | — | `monitoring` |
-| `wiqun_wal_bytes` | Counter | — | `monitoring` |
-| `wiqun_sstable_count` | Gauge | `level` | `monitoring` |
-| `wiqun_compaction_count` | Counter | `level` | `monitoring` |
-| `wiqun_bloom_false_positives` | Counter | — | `monitoring` |
-| `wiqun_cache_hit_rate` | Gauge | — | `monitoring` |
-| `wiqun_memtable_size` | Gauge | — | `monitoring` |
-| `wiqun_snapshot_count` | Gauge | — | `monitoring` |
+| `aidb_puts_total` | Counter | — | `monitoring` |
+| `aidb_gets_total` | Counter | `hit` | `monitoring` |
+| `aidb_deletes_total` | Counter | — | `monitoring` |
+| `aidb_wal_bytes` | Counter | — | `monitoring` |
+| `aidb_sstable_count` | Gauge | `level` | `monitoring` |
+| `aidb_compaction_count` | Counter | `level` | `monitoring` |
+| `aidb_bloom_false_positives` | Counter | — | `monitoring` |
+| `aidb_cache_hit_rate` | Gauge | — | `monitoring` |
+| `aidb_memtable_size` | Gauge | — | `monitoring` |
+| `aidb_snapshot_count` | Gauge | — | `monitoring` |
 
 ### 已知缺口
 
@@ -174,12 +170,12 @@ docker-compose up -d
 
 | 面板 | 指标 | 告警阈值建议 |
 |------|------|------------|
-| 写入吞吐 | `rate(wiqun_puts_total[1m])` | < 基线 50% → 告警 |
-| 读取延迟 P99 | `histogram_quantile(0.99, wiqun_get_duration)` | > 100ms → 告警 |
-| WAL 写入延迟 | `wiqun_wal_sync_duration` | > 10ms → 告警 |
-| Compaction 积压 | `wiqun_level0_sstable_count` | > 4 → 告警 |
-| Bloom 假阳性率 | `rate(wiqun_bloom_false_positives[5m])` | > 100/s → 关注 |
-| 缓存命中率 | `wiqun_cache_hit_rate` | < 80% → 告警 |
+| 写入吞吐 | `rate(aidb_puts_total[1m])` | < 基线 50% → 告警 |
+| 读取延迟 P99 | `histogram_quantile(0.99, aidb_get_duration)` | > 100ms → 告警 |
+| WAL 写入延迟 | `aidb_wal_sync_duration` | > 10ms → 告警 |
+| Compaction 积压 | `aidb_level0_sstable_count` | > 4 → 告警 |
+| Bloom 假阳性率 | `rate(aidb_bloom_false_positives[5m])` | > 100/s → 关注 |
+| 缓存命中率 | `aidb_cache_hit_rate` | < 80% → 告警 |
 
 ### 常见故障排查
 

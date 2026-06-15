@@ -69,7 +69,7 @@ fn test_pick_level0_trivial_move_single_file() {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --lib engine::compaction::picker::tests -- --test-threads=1 2>&1 | head -30
+cd aidb && cargo test --lib engine::compaction::picker::tests -- --test-threads=1 2>&1 | head -30
 ```
 
 Expected: compilation fails because `is_trivial_move` field doesn't exist yet.
@@ -160,7 +160,7 @@ fn pick_level0(&self, levels: &[Vec<Arc<SSTableReader>>]) -> Option<CompactionTa
 - [ ] **Step 6: Run tests to verify they pass**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --lib engine::compaction::picker::tests -- --test-threads=1
+cd aidb && cargo test --lib engine::compaction::picker::tests -- --test-threads=1
 ```
 
 Expected: all existing tests pass + 3 new tests pass.
@@ -168,7 +168,7 @@ Expected: all existing tests pass + 3 new tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /root/code/dev/AiDb && git add src/engine/compaction/picker.rs docs/superpowers/specs/2026-05-29-trivial-move-design.md && git commit -m "feat: add trivial move detection to CompactionPicker
+cd aidb && git add src/engine/compaction/picker.rs docs/superpowers/specs/2026-05-29-trivial-move-design.md && git commit -m "feat: add trivial move detection to CompactionPicker
 
 Add is_trivial_move field to CompactionTask. pick_level_n() returns
 trivial move when the seed file has no overlapping files in the target
@@ -231,7 +231,7 @@ fn test_trivial_move_promotes_file_without_rewrite() {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction::test_trivial_move_promotes_file_without_rewrite -- --test-threads=1 2>&1 | head -30
+cd aidb && cargo test --test engine compaction::test_trivial_move_promotes_file_without_rewrite -- --test-threads=1 2>&1 | head -30
 ```
 
 Expected: fails (probably with assertion error or panic from the picker now returning trival-move tasks that `run_compaction_once` doesn't handle).
@@ -321,7 +321,7 @@ Then in the existing compaction path, the old file deletion loop at lines 744-75
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction::test_trivial_move_promotes_file_without_rewrite -- --test-threads=1
+cd aidb && cargo test --test engine compaction::test_trivial_move_promotes_file_without_rewrite -- --test-threads=1
 ```
 
 Expected: PASS.
@@ -329,7 +329,7 @@ Expected: PASS.
 - [ ] **Step 5: Run full compaction test suite**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction -- --test-threads=1
+cd aidb && cargo test --test engine compaction -- --test-threads=1
 ```
 
 Expected: all existing compaction tests still pass + new test passes.
@@ -337,7 +337,7 @@ Expected: all existing compaction tests still pass + new test passes.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /root/code/dev/AiDb && git add src/engine/db/inner.rs tests/engine/compaction.rs && git commit -m "feat: implement trivial move fast path in compaction
+cd aidb && git add src/engine/db/inner.rs tests/engine/compaction.rs && git commit -m "feat: implement trivial move fast path in compaction
 
 When CompactionTask.is_trivial_move is true, skip the full merge-dedup-
 rewrite pipeline. Instead, rename the SST file to the target level and
@@ -355,7 +355,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 1: Run all tests**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine -- --test-threads=1 && cargo test --lib -- --test-threads=1
+cd aidb && cargo test --test engine -- --test-threads=1 && cargo test --lib -- --test-threads=1
 ```
 
 Expected: all passing.
@@ -363,7 +363,7 @@ Expected: all passing.
 - [ ] **Step 2: Run clippy and fmt**
 
 ```bash
-cd /root/code/dev/AiDb && RUSTFLAGS='-D warnings' cargo clippy --all-targets 2>&1 && cargo fmt --check
+cd aidb && RUSTFLAGS='-D warnings' cargo clippy --all-targets 2>&1 && cargo fmt --check
 ```
 
 Expected: clean.
@@ -371,11 +371,11 @@ Expected: clean.
 - [ ] **Step 3: Commit any fixes**
 
 ```bash
-cd /root/code/dev/AiDb && git add -u && git commit -m "chore: fix clippy/fmt after trivial move" 2>/dev/null || echo "nothing to fix"
+cd aidb && git add -u && git commit -m "chore: fix clippy/fmt after trivial move" 2>/dev/null || echo "nothing to fix"
 ```
 
 - [ ] **Step 4: Final sign-off**
 
 ```bash
-cd /root/code/dev/AiDb && git log --oneline -5
+cd aidb && git log --oneline -5
 ```

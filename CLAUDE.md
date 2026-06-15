@@ -23,7 +23,6 @@ cargo fmt --check               # 格式检查
 ./install-hooks.sh              # 安装 pre-commit (推送前)
 cargo test --test regression    # 回归测试 (已修 bug 复现)
 cargo llvm-cov --html           # 覆盖率报告
-python3 WiQunTools/scripts/acceptance.py <映射文件>  # 验收 (JSON 映射)
 ```
 
 ## 验证工作流
@@ -34,15 +33,10 @@ python3 WiQunTools/scripts/acceptance.py <映射文件>  # 验收 (JSON 映射)
 2. **覆盖率** → `cargo llvm-cov --html --summary-only` (目标 ≥ 80%)
 3. **回归检查** → `cargo test --test regression` (已有 bug 不复现)
 4. **代码质量** → `RUSTFLAGS='-D warnings' cargo clippy --all-targets` + `cargo fmt --check`
-5. **验收报告** → `python3 WiQunTools/scripts/acceptance.py 映射文件.json`
 
-验收映射文件 (示例):
+示例:
 
 ```bash
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/wal-acceptance.json
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/memtable-acceptance.json
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/sstable-acceptance.json
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/compaction-acceptance.json
 cargo test --test wal
 cargo test --test memtable -- --test-threads=1
 cargo test --test sstable -- --test-threads=1
@@ -72,6 +66,6 @@ cargo test --test regression -- --test-threads=1
 
 ## 设计文档
 
-- 模块规格: `WiQunTools/docs/aidb-inventory/`
+- 模块规格: `/docs/aidb-inventory/`
 - 可观测性: `docs/observability.md`
 - 回归测试: `tests/regression/` (含 bloom 长期统计回归)

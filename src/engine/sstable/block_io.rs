@@ -16,7 +16,7 @@ use super::BLOCK_TRAILER_SIZE;
 pub const COMPRESSION_NONE: u8 = 0;
 
 fn skip_checksum() -> bool {
-  std::env::var("WIQUN_SKIP_CHECKSUM").ok().as_deref() == Some("1")
+  std::env::var("AIDB_SKIP_CHECKSUM").ok().as_deref() == Some("1")
 }
 
 pub fn write_block<W: Write>(

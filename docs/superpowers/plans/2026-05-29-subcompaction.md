@@ -130,7 +130,7 @@ Simplest: just don't push entries that are past range_end. That's what the check
 - [ ] **Step 3: Build and test**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build 2>&1
+cd aidb && cargo build 2>&1
 ```
 
 ---
@@ -314,14 +314,14 @@ fn test_subcompaction_large_job() {
 - [ ] **Step 4: Build, test, iterate**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build 2>&1 | tail -10
+cd aidb && cargo build 2>&1 | tail -10
 cargo test --test engine compaction -- --test-threads=1 2>&1 | tail -20
 ```
 
 - [ ] **Step 5: Clippy + fmt + full test**
 
 ```bash
-cd /root/code/dev/AiDb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
+cd aidb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
 cargo test --test engine --test db --test sstable --test cache -- --test-threads=1 2>&1 | tail -5
 ```
 

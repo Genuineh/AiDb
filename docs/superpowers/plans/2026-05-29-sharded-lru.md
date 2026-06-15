@@ -19,8 +19,8 @@
 - [ ] **Step 1: Understand current code and tests**
 
 Read these files:
-- `/root/code/dev/AiDb/src/engine/cache/block_cache.rs` — current single-shard cache
-- `/root/code/dev/AiDb/tests/modules/cache/block_cache.rs` — existing tests
+- `aidb/src/engine/cache/block_cache.rs` — current single-shard cache
+- `aidb/tests/modules/cache/block_cache.rs` — existing tests
 
 Note which tests rely on exact LRU eviction order (they'll need adaptation for sharding):
 - `test_cache_lru_eviction` — depends on 3 keys in 100-byte cache triggering LRU eviction
@@ -112,7 +112,7 @@ For tests that don't depend on LRU order (basic ops, disabled, large value, conc
 - [ ] **Step 4: Run tests and iterate**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test cache -- --test-threads=1
+cd aidb && cargo test --test cache -- --test-threads=1
 ```
 
 Fix any failures:
@@ -124,19 +124,19 @@ Fix any failures:
 - [ ] **Step 5: Run full test suite**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test sstable cache --test db cache --test cache -- --test-threads=1
+cd aidb && cargo test --test sstable cache --test db cache --test cache -- --test-threads=1
 ```
 
 - [ ] **Step 6: Clippy + fmt**
 
 ```bash
-cd /root/code/dev/AiDb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
+cd aidb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /root/code/dev/AiDb && git add src/engine/cache/block_cache.rs tests/modules/cache/block_cache.rs docs/superpowers/specs/2026-05-29-sharded-lru-design.md docs/superpowers/plans/2026-05-29-sharded-lru.md && git commit -m "feat: sharded LRU block cache
+cd aidb && git add src/engine/cache/block_cache.rs tests/modules/cache/block_cache.rs docs/superpowers/specs/2026-05-29-sharded-lru-design.md docs/superpowers/plans/2026-05-29-sharded-lru.md && git commit -m "feat: sharded LRU block cache
 
 Split single-shard BlockCache into 16 independent shards to reduce lock
 contention. Each shard has its own Mutex + HashMap + VecDeque, routed by

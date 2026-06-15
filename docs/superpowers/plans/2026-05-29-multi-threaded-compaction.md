@@ -137,7 +137,7 @@ fn maybe_trigger_compaction(&self) {
 - [ ] **Step 7: Build and verify**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build 2>&1
+cd aidb && cargo build 2>&1
 ```
 
 Fix any compilation errors.
@@ -145,7 +145,7 @@ Fix any compilation errors.
 - [ ] **Step 8: Run existing tests (single-threaded baseline)**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction -- --test-threads=1
+cd aidb && cargo test --test engine compaction -- --test-threads=1
 ```
 
 Expected: all pass (default `compaction_threads = 1`, no behavior change).
@@ -307,7 +307,7 @@ The most concise approach: keep the existing `run_compaction_once` structure, ju
 - [ ] **Step 3: Verify tests still pass**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction -- --test-threads=1
+cd aidb && cargo test --test engine compaction -- --test-threads=1
 ```
 
 Expected: all pass.
@@ -350,19 +350,19 @@ fn test_compaction_threads_2() {
 
 Run:
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction::test_compaction_threads_2 -- --test-threads=1
+cd aidb && cargo test --test engine compaction::test_compaction_threads_2 -- --test-threads=1
 ```
 
 - [ ] **Step 5: Run full compaction test suite**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --test engine compaction -- --test-threads=1
+cd aidb && cargo test --test engine compaction -- --test-threads=1
 ```
 
 - [ ] **Step 6: Clippy + fmt + commit**
 
 ```bash
-cd /root/code/dev/AiDb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
+cd aidb && RUSTFLAGS='-D warnings' cargo clippy --all-targets && cargo fmt --check
 ```
 
 Commit:

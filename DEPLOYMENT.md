@@ -99,7 +99,7 @@ Options {
 
 集群模式需要 `--features cluster` 构建.
 
-详见 AiKv [DEPLOYMENT.md](https://github.com/GO-Zheng/AiKv/blob/main/DEPLOYMENT.md) 了解完整集群部署方案.
+详见 [aikv/DEPLOYMENT.md](../aikv/DEPLOYMENT.md) 了解完整集群部署方案.
 
 ## 备份
 
@@ -158,10 +158,10 @@ curl localhost:9191/metrics
 
 ### OpenTelemetry
 
-设置环境变量 `WIQUN_OTLP_ENDPOINT` 启用 OTLP 导出:
+设置环境变量 `AIDB_OTLP_ENDPOINT` 启用 OTLP 导出:
 
 ```bash
-export WIQUN_OTLP_ENDPOINT=http://collector:4317
+export AIDB_OTLP_ENDPOINT=http://collector:4317
 ```
 
 ### JSON 日志
@@ -169,5 +169,5 @@ export WIQUN_OTLP_ENDPOINT=http://collector:4317
 默认输出 JSON 格式, 可切换为人类可读:
 
 ```bash
-export WIQUN_JSON_LOG=false
+export AIDB_JSON_LOG=false
 ```

@@ -314,7 +314,7 @@ git commit -m "test: update tests for data_port_offset field and cport"
 - Modify: `AiDb/CLAUDE.md`
 - Modify: `AiKv/DEPLOYMENT.md`
 - Modify: `AiKv/e2e/utils.sh`
-- Modify: `WiQunTools/TODO.md`
+- Modify: 待办列表
 
 - [ ] **Step 1: Update `AiKv/CLAUDE.md`**
 
@@ -373,7 +373,7 @@ Keep as-is since E2E uses the default offset. Add a note after it:
 # Use --cluster-data-port-offset to change the data-plane offset (default 10000).
 ```
 
-- [ ] **Step 5: Update `WiQunTools/TODO.md`**
+- [ ] **Step 5: Update 待办列表**
 
 Mark the `rpc_port + 10000` item as completed. Replace the section with:
 
@@ -401,6 +401,6 @@ Expected: All pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add AiKv/CLAUDE.md AiDb/CLAUDE.md AiKv/DEPLOYMENT.md AiKv/e2e/utils.sh WiQunTools/TODO.md
+git add aikv/CLAUDE.md aidb/CLAUDE.md aikv/DEPLOYMENT.md aikv/e2e/utils.sh
 git commit -m "docs: update documentation for configurable data port offset"
 ```

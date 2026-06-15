@@ -44,7 +44,6 @@ cargo llvm-cov --html               # 覆盖率报告 (目标 ≥ 80%)
 cargo build --features cluster
 cargo test --features cluster --test raft -- --test-threads=1
 RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster -- -D warnings
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/raft-acceptance.json
 
 # 可观测性 (monitoring feature)
 cargo build --features monitoring
@@ -69,35 +68,8 @@ cargo run --example backup
 | 2 覆盖率 | `cargo llvm-cov --html --summary-only` | ≥ 80% |
 | 3 回归检查 | `cargo test --test regression` | 已修 bug 不复现 |
 | 4 代码质量 | `RUSTFLAGS='-D warnings' cargo clippy --all-targets` + `cargo fmt --check` | 零警告 |
-| 5 验收报告 | `python3 WiQunTools/scripts/acceptance.py <映射文件>` | 全部通过 |
 
-验收映射文件位于 `WiQunTools/scripts/` 目录, 命名 `{模块}-acceptance.json`.
 所有验证命令可重复运行.
-
-## 验收系统
-
-验收脚本 `WiQunTools/scripts/acceptance.py` 读取 JSON 映射文件, 逐功能核对测试结果.
-
-```bash
-# WAL 模块验收
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/wal-acceptance.json
-
-# MemTable 模块验收
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/memtable-acceptance.json
-# tracing 可观测性测试需串行:
-cargo test --test memtable -- --test-threads=1
-
-# Bloom Filter / Block Cache (Phase7)
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/bloom-acceptance.json
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/cache-acceptance.json
-
-# Phase 12 Raft (AiDb cluster feature)
-python3 WiQunTools/scripts/acceptance.py WiQunTools/scripts/raft-acceptance.json
-```
-
-映射文件支持两种类型:
-- `features`: 功能 + 测试名列表, 自动跑 `cargo test` 核对
-- `checks`: 任意命令检查, 逐条执行看退出码
 
 ## 共享测试基础设施
 

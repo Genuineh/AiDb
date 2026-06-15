@@ -731,14 +731,14 @@ cfg values (or RaftNodeConfig::default()) instead of hardcoded
 
 ```bash
 # AiDb
-cd /root/code/dev/AiDb
+cd aidb
 cargo build --features cluster
 RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster
 cargo test --features cluster
 cargo fmt --check
 
 # AiKv
-cd /root/code/dev/AiKv
+cd aikv
 cargo build --features cluster
 RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster
 cargo test --features cluster

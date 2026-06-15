@@ -1,4 +1,4 @@
-//! DB P1 测试: flush 边界, 并发, WriteBatch 细分, 背压 (roadmap / db-acceptance P1)
+//! DB P1 测试: flush 边界, 并发, WriteBatch 细分, 背压
 
 use std::sync::Arc;
 use std::thread;

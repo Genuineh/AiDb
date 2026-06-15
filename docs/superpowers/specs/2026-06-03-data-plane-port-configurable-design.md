@@ -228,7 +228,7 @@ let cport = match mgr.router.get_node_addr(*nid) {
 - [ ] `AiDb/CLAUDE.md` — 同上
 - [ ] `AiKv/DEPLOYMENT.md` — 新增 `--cluster-data-port-offset` 参数说明
 - [ ] `AiKv/e2e/utils.sh` — 注释中端口约定更新
-- [ ] `WiQunTools/TODO.md` — 移除已完成项
+- [ ] 更新待办列表 — 移除已完成项
 
 ### 性能影响
 

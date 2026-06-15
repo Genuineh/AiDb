@@ -4,13 +4,10 @@
 //! Every 1000 keys calls `db.flush()` during setup (avoids immutable MemTable backlog stall).
 //!
 //! Environment:
-//!   WIQUN_BENCH_PRELOAD — override preload size (e.g. 100_000 for larger read working set)
+//!   AIDB_BENCH_PRELOAD — override preload size (e.g. 100_000 for larger read working set)
 //!
 //! Smoke:
 //!   cargo bench --bench read_bench
-//!
-//! Acceptance:
-//!   python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/bench-acceptance.json
 
 use std::time::Duration;
 
@@ -25,7 +22,7 @@ const DEFAULT_PRELOAD_KEYS: u64 = 10_000;
 const VALUE_1KB: [u8; 1024] = [0u8; 1024];
 
 fn preload_keys() -> u64 {
-  std::env::var("WIQUN_BENCH_PRELOAD")
+  std::env::var("AIDB_BENCH_PRELOAD")
     .ok()
     .and_then(|s| s.parse().ok())
     .unwrap_or(DEFAULT_PRELOAD_KEYS)

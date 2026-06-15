@@ -87,7 +87,6 @@ cargo build --features monitoring
 | 回归 | `cargo test --test regression` |
 | 随机测试 | `PROPTEST_CASES=100 cargo test --test proptest` |
 | 基准 | `cargo bench` |
-| 验收 | `python3 WiQunTools/scripts/acceptance.py <acceptance.json>` |
 
 ## 性能基准
 
@@ -96,11 +95,14 @@ cargo build --features monitoring
 - **顺序写入**: `write_bench` — 1KB value 随机 key, WriteBatch 批量提交
 - **随机读取**: `read_bench` — 10000 keys 预填充, 随机 get 延迟
 
-可通过 `WIQUN_BENCH_PRELOAD` 环境变量调整 read_bench 预填充规模.
+可通过 `AIDB_BENCH_PRELOAD` 环境变量调整 read_bench 预填充规模.
 
 ## 设计文档
 
-详见 [WiQunTools](https://github.com/GO-Zheng/WiQunTools) 仓库下 `docs/aidb-inventory/`.
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DESIGN.md](DESIGN.md)
+- [docs/observability.md](docs/observability.md)
+- [docs/superpowers/](docs/superpowers/)
 
 ## 许可
 
