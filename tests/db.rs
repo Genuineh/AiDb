@@ -3,5 +3,5 @@
 mod common;
 
 mod modules {
-  pub mod db;
+    pub mod db;
 }

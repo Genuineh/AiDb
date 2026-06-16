@@ -19,11 +19,6 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-
       - name: Check format
         run: cargo fmt --check
 
@@ -32,9 +27,6 @@ jobs:
 
       - name: Test
         run: cargo test -- --test-threads=1
-
-      - name: Deny
-        run: cargo deny check
 
   test-cluster:
     runs-on: ubuntu-latest

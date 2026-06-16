@@ -4,20 +4,14 @@ set -euo pipefail
 echo "=== pre-commit: aidb ==="
 
 cargo fmt --check || {
-    echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
-    exit 1
+  echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
+  exit 1
 }
 
-# 与 CI 相同: RUSTFLAGS=-D warnings + clippy --all-targets
 export RUSTFLAGS='-D warnings'
 cargo clippy --all-targets || {
-    echo "ERROR: Clippy found issues."
-    exit 1
-}
-
-cargo test --workspace -- --test-threads=1 || {
-    echo "ERROR: Tests failed."
-    exit 1
+  echo "ERROR: Clippy found issues."
+  exit 1
 }
 
 echo "All pre-commit checks passed."

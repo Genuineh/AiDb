@@ -3,5 +3,5 @@
 mod common;
 
 mod modules {
-  pub mod compaction;
+    pub mod compaction;
 }

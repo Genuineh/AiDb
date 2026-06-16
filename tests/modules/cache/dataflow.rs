@@ -1,46 +1,46 @@
 //! Block Cache 模块级 dataflow — hit/miss span / event
 
-use bytes::Bytes;
 use aidb::engine::cache::{BlockCache, CacheKey};
+use bytes::Bytes;
 
 use crate::common::dataflow::capture_spans_under_lock;
 use crate::common::observability::{capture_events_under_lock, tracing_test_lock};
 
 #[test]
 fn test_cache_observability() {
-  let _lock = tracing_test_lock();
-  let cache = BlockCache::new(4096);
-  let key = CacheKey {
-    file_number: 1,
-    offset: 128,
-  };
-  cache.insert(key.clone(), Bytes::from_static(b"block-data"));
+    let _lock = tracing_test_lock();
+    let cache = BlockCache::new(4096);
+    let key = CacheKey {
+        file_number: 1,
+        offset: 128,
+    };
+    cache.insert(key.clone(), Bytes::from_static(b"block-data"));
 
-  let miss_caps = capture_spans_under_lock(|| {
-    assert!(cache
-      .get(CacheKey {
-        file_number: 2,
-        offset: 0,
-      })
-      .is_none());
-  });
-  assert!(!miss_caps.spans_named("cache_get").is_empty());
+    let miss_caps = capture_spans_under_lock(|| {
+        assert!(cache
+            .get(CacheKey {
+                file_number: 2,
+                offset: 0,
+            })
+            .is_none());
+    });
+    assert!(!miss_caps.spans_named("cache_get").is_empty());
 
-  let hit_caps = capture_spans_under_lock(|| {
-    assert_eq!(
-      cache.get(key.clone()).unwrap(),
-      Bytes::from_static(b"block-data")
+    let hit_caps = capture_spans_under_lock(|| {
+        assert_eq!(
+            cache.get(key.clone()).unwrap(),
+            Bytes::from_static(b"block-data")
+        );
+    });
+    assert!(!hit_caps.spans_named("cache_get").is_empty());
+
+    let events = capture_events_under_lock(|| {
+        cache.reset_stats();
+        let _ = cache.get(key.clone());
+        let _ = cache.get(key);
+    });
+    assert!(
+        events.iter().any(|e| e.contains("cache.hit")),
+        "missing cache.hit event, got: {events:?}"
     );
-  });
-  assert!(!hit_caps.spans_named("cache_get").is_empty());
-
-  let events = capture_events_under_lock(|| {
-    cache.reset_stats();
-    let _ = cache.get(key.clone());
-    let _ = cache.get(key);
-  });
-  assert!(
-    events.iter().any(|e| e.contains("cache.hit")),
-    "missing cache.hit event, got: {events:?}"
-  );
 }

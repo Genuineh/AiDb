@@ -1,51 +1,51 @@
 //! 随机 put/delete/flush/compact/writebatch 与线性模型一致.
 
-use proptest::prelude::*;
-use std::sync::Arc;
-use tempfile::tempdir;
 use aidb::config::Options;
 use aidb::WriteBatch;
 use aidb::DB;
+use proptest::prelude::*;
+use std::sync::Arc;
+use tempfile::tempdir;
 
 fn test_opts() -> Options {
-  let mut o = Options::for_testing();
-  o.memtable_size = 512;
-  o.level0_compaction_trigger = 2;
-  o.sync_wal = false;
-  o
+    let mut o = Options::for_testing();
+    o.memtable_size = 512;
+    o.level0_compaction_trigger = 2;
+    o.sync_wal = false;
+    o
 }
 
 #[derive(Debug, Clone)]
 enum Op {
-  Put(u8, u8),
-  PutBatch(Vec<(u8, u8)>),
-  Delete(u8),
-  Flush,
-  Compact,
+    Put(u8, u8),
+    PutBatch(Vec<(u8, u8)>),
+    Delete(u8),
+    Flush,
+    Compact,
 }
 
 fn apply_model(model: &mut std::collections::BTreeMap<u8, Option<Vec<u8>>>, op: &Op) {
-  match op {
-    Op::Put(k, v) => {
-      model.insert(*k, Some(vec![*v]));
+    match op {
+        Op::Put(k, v) => {
+            model.insert(*k, Some(vec![*v]));
+        }
+        Op::PutBatch(kvs) => {
+            for (k, v) in kvs {
+                model.insert(*k, Some(vec![*v]));
+            }
+        }
+        Op::Delete(k) => {
+            model.insert(*k, None);
+        }
+        Op::Flush | Op::Compact => {}
     }
-    Op::PutBatch(kvs) => {
-      for (k, v) in kvs {
-        model.insert(*k, Some(vec![*v]));
-      }
-    }
-    Op::Delete(k) => {
-      model.insert(*k, None);
-    }
-    Op::Flush | Op::Compact => {}
-  }
 }
 
 fn model_get(model: &std::collections::BTreeMap<u8, Option<Vec<u8>>>, k: u8) -> Option<Vec<u8>> {
-  match model.get(&k) {
-    Some(Some(v)) => Some(v.clone()),
-    _ => None,
-  }
+    match model.get(&k) {
+        Some(Some(v)) => Some(v.clone()),
+        _ => None,
+    }
 }
 
 proptest! {

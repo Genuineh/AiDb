@@ -9,39 +9,39 @@ use std::sync::Arc;
 pub(crate) struct InternalKeyBytes(pub Arc<[u8]>);
 
 impl InternalKeyBytes {
-  pub(crate) fn from_slice(bytes: &[u8]) -> Self {
-    Self(Arc::from(bytes))
-  }
+    pub(crate) fn from_slice(bytes: &[u8]) -> Self {
+        Self(Arc::from(bytes))
+    }
 }
 
 impl AsRef<[u8]> for InternalKeyBytes {
-  fn as_ref(&self) -> &[u8] {
-    &self.0
-  }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl Borrow<[u8]> for InternalKeyBytes {
-  fn borrow(&self) -> &[u8] {
-    &self.0
-  }
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl PartialEq for InternalKeyBytes {
-  fn eq(&self, other: &Self) -> bool {
-    self.cmp(other) == Ordering::Equal
-  }
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
 }
 
 impl Eq for InternalKeyBytes {}
 
 impl PartialOrd for InternalKeyBytes {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-    Some(self.cmp(other))
-  }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for InternalKeyBytes {
-  fn cmp(&self, other: &Self) -> Ordering {
-    compare_internal_key(self.as_ref(), other.as_ref())
-  }
+    fn cmp(&self, other: &Self) -> Ordering {
+        compare_internal_key(self.as_ref(), other.as_ref())
+    }
 }

@@ -2,12 +2,12 @@
 
 pub mod leader_watcher;
 pub mod lifecycle_manager;
-#[cfg(feature = "monitoring")]
-pub mod metrics;
 pub mod membership_coordinator;
 pub mod meta_raft_node;
 pub mod meta_state_machine;
 pub mod meta_types;
+#[cfg(feature = "monitoring")]
+pub mod metrics;
 pub mod multi_raft_node;
 pub mod network;
 pub mod node;
@@ -24,22 +24,22 @@ pub use membership_coordinator::MembershipCoordinator;
 pub use meta_raft_node::MetaRaftNode;
 pub use meta_state_machine::{ApplyOutput, MetaStateMachine};
 pub use meta_types::{
-  default_slot_table, ClusterMeta, GroupMeta, MetaRequest, NodeInfo, NodeRole, NodeStatus,
-  ReplicaInfo, SlotMigrationState, SlotStatus, SlotTable, METARAFT_GROUP_ID, SLOT_COUNT,
+    default_slot_table, ClusterMeta, GroupMeta, MetaRequest, NodeInfo, NodeRole, NodeStatus,
+    ReplicaInfo, SlotMigrationState, SlotStatus, SlotTable, METARAFT_GROUP_ID, SLOT_COUNT,
 };
 pub use multi_raft_node::MultiRaftNode;
 pub use network::{
-  RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
+    RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
 };
 pub use node::OpenRaftNode;
 pub use replica_allocator::ReplicaAllocator;
 pub use router::{crc16, extract_hash_tag, key_to_slot, Router};
 pub use sharded_storage::{AggregateStats, ShardedStorage, StorageStats};
 pub use slot_migration::{
-  MigrationPhase, MigrationProgress, SlotMigrationExecutor, SlotMigrationManager,
+    MigrationPhase, MigrationProgress, SlotMigrationExecutor, SlotMigrationManager,
 };
 pub use storage::{OpenRaftStorage, DEFAULT_GROUP_ID};
 pub use types::{
-  ClusterError, LogEntry, NodeId, RaftNodeConfig, Request, Response, ThinWriteBatch, ThinWriteOp,
-  TypeConfig,
+    ClusterError, LogEntry, NodeId, RaftNodeConfig, Request, Response, ThinWriteBatch, ThinWriteOp,
+    TypeConfig,
 };

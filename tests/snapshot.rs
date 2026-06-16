@@ -7,5 +7,5 @@
 mod common;
 
 mod modules {
-  pub mod snapshot;
+    pub mod snapshot;
 }
