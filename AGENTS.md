@@ -1,68 +1,45 @@
 # AiDb — AI 助手指南
 
-LSM-Tree 嵌入式 KV 引擎 (Rust lib crate, v0.14.x). 核心路径零可选依赖; `cluster` / `monitoring` / `backup` 通过 feature 启用.
+## 项目是什么
+
+**AiDb** 是用 Rust 实现的 **嵌入式 LSM-Tree KV 存储引擎** (lib crate).
+
+- **单机**: WAL → MemTable → SSTable → Leveled Compaction; `put/get/delete/scan`、MVCC Snapshot、WriteBatch、备份恢复.
+- **集群** (`cluster` feature): **MetaRaft** 管元数据 + **Multi-Raft** 管数据; **16384 slot** (CRC16, 与 Redis Cluster 槽模型一致); 成员变更与 slot 迁移.
+- **生态**: 存储与共识层; **AiKv** 在其上实现 Redis RESP / Cluster 协议 (AiKv 通过 `path = "../aidb"` 依赖本库).
+
+核心路径尽量 **零可选依赖**; 集群、监控、备份等通过 Cargo feature 按需启用.
 
 ## 架构要点
 
-- **引擎**: WAL → MemTable → SSTable → Leveled Compaction → Bloom / Block Cache
-- **集群** (`cluster` feature): MetaRaft 控制平面 + Multi-Raft 数据平面; gRPC (`proto/raft.proto`, `build.rs` + checked-in `src/cluster/aidb.raft.rs`)
-- **错误**: `thiserror` 枚举; 引擎同步 API, 异步调用方用 `spawn_blocking`
-- **目录**: `src/engine/` 核心, `src/cluster/` 集群, `src/backup/` 备份
+- LSM 写路径: 顺序 WAL + MemTable flush + 后台 Compaction; 读路径: MemTable → SSTable, Bloom Filter + Block Cache 控放大.
+- 纯 Rust 实现; 对外 API 精简, 实现细节 `pub(crate)` 隔离.
+- 集群: OpenRaft 共识 + gRPC (`proto/raft.proto`, `build.rs` 生成, 需 protoc); MetaRaft 与 MultiRaft 分离 (控制面低频 / 数据面高吞吐).
+- Slot 路由与 per-Group 独立 DB; Redis Cluster **协议语义** 由 AiKv 实现, AiDb 提供 slot 与 Multi-Raft 存储.
+- 公共 API **同步**; async 调用方 (AiKv) 用 `spawn_blocking` 包装.
+- 改 WAL / SSTable / Manifest / Compaction 或 **proto** 视为高风险, 需充分测试.
 
 ## 开发与 CI
 
-详见 [`.github/README.md`](.github/README.md). 摘要:
+流程见 [`.github/README.md`](.github/README.md).
 
 ```bash
-./install-hooks.sh                 # pre-commit: fmt + clippy (默认 + cluster, 需 protoc)
-cargo fmt && cargo fmt --check     # Rust 4 空格 (rustfmt.toml / .editorconfig)
+./install-hooks.sh
 export RUSTFLAGS='-D warnings'
+cargo fmt --check
 cargo clippy --all-targets
-cargo clippy --all-targets --features cluster   # 需 protobuf-compiler
+cargo clippy --all-targets --features cluster   # 需 protoc
 cargo test -- --test-threads=1
 cargo test --features cluster -- --test-threads=1
 ```
 
-- 工具链: `rust-toolchain.toml` (stable + clippy/rustfmt)
-- CI: `test-default` / `test-cluster` / `bench`; 安全: `security.yml` (audit + deny)
-- pre-commit **不跑** test; 测试在 CI
-
-## 模块验证 (改代码后)
-
-1. 功能: `cargo test --test <name>` (见 [`tests/README.md`](tests/README.md))
-2. 回归: `cargo test --test regression`
-3. 质量: `RUSTFLAGS='-D warnings' cargo clippy --all-targets` + `cargo fmt --check`
-4. 覆盖率 (可选): `cargo llvm-cov --html --summary-only` (目标 ≥ 80%)
-
-常用:
-
-```bash
-cargo test --test wal -- --test-threads=1
-cargo test --test engine -- --test-threads=1
-cargo test --test raft --features cluster -- --test-threads=1
-PROPTEST_CASES=100 cargo test --test proptest -- --test-threads=1
-```
-
-## 编码约束
-
-1. 生产代码禁止 `unwrap()` / `expect()` (`#[cfg(test)]` 除外)
-2. 每个 `unsafe` 块需 `// SAFETY:` 说明
-3. 单文件 ≤ 800 行, 单函数 ≤ 50 行, 嵌套 ≤ 4 层
-4. TDD: 先测后实现 (RED → GREEN → REFACTOR)
-
 ## 已知限制
 
-- **OpenRaft**: 快照/日志 API 随上游演进, 升级需适配
-- **数据面端口**: MultiRaft gRPC 默认 `rpc_port + 10000`; AiKv 侧用 `--cluster-data-port-offset` 配置, 需满足 `rpc_port ≤ 65535 - offset`
+- OpenRaft / 快照 API 随上游演进, 升级需适配.
+- MultiRaft 数据面 gRPC 端口: `rpc_port + offset`; offset 由 AiKv `--cluster-data-port-offset` 配置 (默认 10000).
 
-## 文档索引
+## 进一步阅读
 
-| 文档 | 用途 |
-|------|------|
-| [README.md](README.md) | 产品概览与快速开始 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程与测试矩阵 |
-| [DESIGN.md](DESIGN.md) | 设计决策 |
-| [docs/observability.md](docs/observability.md) | 可观测性约定 |
-| [docs/superpowers/](docs/superpowers/) | 功能设计与计划 |
-| [tests/README.md](tests/README.md) | 测试分层说明 |
-| [.github/README.md](.github/README.md) | CI / hook 流程 |
+- [README.md](README.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [.github/README.md](.github/README.md)
