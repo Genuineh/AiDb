@@ -101,8 +101,7 @@ cargo build --features monitoring
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [DESIGN.md](DESIGN.md)
-- [docs/observability.md](docs/observability.md)
-- [docs/superpowers/](docs/superpowers/)
+- [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## 许可
 
