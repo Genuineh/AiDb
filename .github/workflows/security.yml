@@ -1,5 +1,9 @@
 name: Security Audit
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, new/main, new/wiqun]

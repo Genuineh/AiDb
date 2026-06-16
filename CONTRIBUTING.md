@@ -23,10 +23,17 @@ src/
 
 仓库根目录 [`rust-toolchain.toml`](rust-toolchain.toml) 固定 **stable** 并含 `clippy` / `rustfmt`, 与 GitHub Actions 一致. 首次进入目录执行 `rustup show` 确认已自动切换.
 
-推送前安装 pre-commit (与 CI 同套检查):
+推送前安装 pre-commit (与 CI 同套检查: fmt + 默认/cluster clippy; 不含 test):
 
 ```bash
-./install-hooks.sh
+./install-hooks.sh   # 软链 hooks/pre-commit → .git/hooks/pre-commit
+```
+
+cluster clippy 需要本机已安装 `protoc` (与 CI `test-cluster` job 一致):
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install -y protobuf-compiler
 ```
 
 ## 构建与测试

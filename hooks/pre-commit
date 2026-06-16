@@ -14,4 +14,13 @@ cargo clippy --all-targets || {
   exit 1
 }
 
+if ! command -v protoc >/dev/null 2>&1; then
+  echo "ERROR: protoc required for cluster clippy (same as CI). Install protobuf-compiler."
+  exit 1
+fi
+cargo clippy --all-targets --features cluster || {
+  echo "ERROR: Cluster clippy found issues."
+  exit 1
+}
+
 echo "All pre-commit checks passed."
