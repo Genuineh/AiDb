@@ -1,0 +1,83 @@
+# 开发与 CI
+
+push/PR 到 `main`、`new/main`、`new/wiqun` 时, 本地 pre-commit 与 GitHub Actions 一起构成质量门禁.
+
+## 总览
+
+```mermaid
+flowchart TB
+    subgraph local [本地]
+        RT[rust-toolchain / editorconfig / rustfmt]
+        HOOK[install-hooks.sh → pre-commit]
+        RT --> HOOK
+    end
+
+    subgraph remote [GitHub]
+        CI[ci.yml]
+        SEC[security.yml]
+    end
+
+    HOOK -->|push| CI
+    HOOK -->|push| SEC
+```
+
+| 层级 | 做什么 | 何时失败 |
+|------|--------|----------|
+| 格式/工具链 | 4 空格, stable + clippy/rustfmt | 编辑 / `cargo fmt` |
+| pre-commit | fmt + clippy (不含 test) | `git commit` |
+| CI | 测试 (+ bench) | push / PR |
+| Security | audit + deny | push / PR / 每日定时 |
+
+## 本地流程
+
+```mermaid
+flowchart LR
+    A[clone] --> B[./install-hooks.sh]
+    B --> C[改代码]
+    C --> D[git commit]
+    D --> E[pre-commit: fmt + clippy]
+    E --> F[git push]
+```
+
+1. 进入仓库 → `rust-toolchain.toml` 自动切 stable.
+2. `./install-hooks.sh` 安装 pre-commit (可选, 推荐).
+3. `git commit` 前: `cargo fmt --check` → clippy 默认 → clippy `--features cluster` (需本机 `protoc`).
+4. 测试在 CI 跑, hook 不跑 `cargo test`.
+
+## CI 流程
+
+```mermaid
+flowchart LR
+    push[push/PR] --> TD[test-default]
+    push --> TC[test-cluster]
+    TD --> B[bench]
+```
+
+| Job | 说明 |
+|-----|------|
+| `test-default` | fmt → clippy (默认) → test |
+| `test-cluster` | clippy + test (`--features cluster`, 需 protoc) |
+| `bench` | 基准测试 (依赖 test-default 通过) |
+
+同一分支新 push 会 cancel 未完成的旧 run (`concurrency`).
+
+## 安全扫描
+
+```mermaid
+flowchart LR
+    push[push/PR/定时] --> A[audit]
+    push --> D[deny]
+```
+
+`security.yml`: `cargo audit` (CVE) + `cargo deny check` (许可证/依赖策略, 见 `deny.toml`). 与 CI 并行, 互不阻塞.
+
+## 相关文件
+
+| 文件 | 作用 |
+|------|------|
+| `.editorconfig` / `rustfmt.toml` | 格式 (Rust 4 空格) |
+| `rust-toolchain.toml` | 工具链 |
+| `deny.toml` | deny 策略 |
+| `hooks/pre-commit` | 本地 hook |
+| `workflows/ci.yml` | 主 CI |
+| `workflows/security.yml` | 安全扫描 |
