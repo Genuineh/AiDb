@@ -19,6 +19,17 @@
 - 公共 API **同步**; async 调用方 (AiKv) 用 `spawn_blocking` 包装.
 - 改 WAL / SSTable / Manifest / Compaction 或 **proto** 视为高风险, 需充分测试.
 
+## 技术栈与参考
+
+| 领域 | 本项目 | 可参考 (设计/实现, 非直接依赖) |
+|------|--------|--------------------------------|
+| **LSM-Tree** | 自研引擎: WAL、SkipMap MemTable、SSTable、Leveled Compaction、Bloom、Block Cache | LevelDB / RocksDB 文档与格式思路; 教学向可看 mini-lsm |
+| **Raft 共识** | **OpenRaft** 0.9 (`cluster` feature) | TinyKV、etcd/raft 的 Raft 流程与测试组织 |
+| **Multi-Raft** | MetaRaft (元数据) + MultiRaft (按 slot/Group 多 Raft + LifecycleManager); 在线 slot 迁移 | TiKV raftstore、TinyKV 的 Multi-Raft / Region 生命周期思路 (本项目为 **slot**, 非 TiKV Region 分裂) |
+| **节点 RPC** | **tonic** + **prost**, `proto/raft.proto` (Vote / AppendEntries / InstallSnapshot) | gRPC 惯例; 协议与 OpenRaft 类型对齐 |
+
+Redis 数据结构编码、RESP、轻量 Gossip 在 **AiKv** 侧; 见 AiKv `AGENTS.md`.
+
 ## 开发与 CI
 
 流程见 [`.github/README.md`](.github/README.md).
