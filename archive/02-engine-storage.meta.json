@@ -1,0 +1,11 @@
+{
+  "sessionId": "ec8da8e9-772f-49bb-b0e3-8efbec2f3f56",
+  "projectId": "root-code-database",
+  "progressStep": "02",
+  "slug": "engine-storage",
+  "repo": "aidb",
+  "jsonl": "/root/.cursor/projects/root-code-database/agent-transcripts/ec8da8e9-772f-49bb-b0e3-8efbec2f3f56/ec8da8e9-772f-49bb-b0e3-8efbec2f3f56.jsonl",
+  "plainMd": "/root/code/database/aidb/archive/02-engine-storage.md",
+  "toolsMd": "/root/code/database/aidb/archive/tools/02-engine-storage-with-tools.md",
+  "exportedAt": "2026-06-17T10:33:24Z"
+}

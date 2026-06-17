@@ -38,6 +38,26 @@
 
 <!-- 按 ISSUE-NNN 倒序追加 -->
 
+### ISSUE-004: inventory 称 compaction 不保护 Snapshot
+
+- **状态**: closed
+- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`
+- **相关 src**: `src/engine/compaction/job.rs`, `src/engine/db/snapshot.rs`, `src/engine/db/inner.rs` (`run_compaction_once`)
+- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/05-compaction.md`, `08-snapshot.md` — 「不保护 / 弱化语义 / 预留分支」
+- **现象**: 当前 `SnapshotList::min_snapshot_sequence` → `CompactionJob::with_snapshot_threshold`, dedup 时 `snapshot_protected` 保留旧版本
+- **影响**: 旧 inventory 设计决策已过时; 代码无 bug. `engine-storage.md` 已写现行保护语义
+- **下一步**: 已关闭 (doc-only)
+
+### ISSUE-003: inventory 仍写 Block 压缩未实现
+
+- **状态**: closed
+- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`
+- **相关 src**: `src/engine/sstable/block_io.rs`, `Cargo.toml` feature `compression`
+- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/03-sstable.md` — `known_limitation`
+- **现象**: inventory 称 Snap/LZ4 未接线; 源码在 `compression` feature 下已实现读写
+- **影响**: 旧 inventory limitation 已过时; 代码无 bug. `engine-storage.md` 已写 feature gate
+- **下一步**: 已关闭 (doc-only)
+
 ### ISSUE-002: 大 WriteBatch 与 max_wal_size 轮转交互
 
 - **状态**: open
