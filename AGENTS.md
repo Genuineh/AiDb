@@ -32,7 +32,7 @@ Redis 数据结构编码、RESP、轻量 Gossip 在 **AiKv** 侧; 见 AiKv `AGEN
 
 ## 开发与 CI
 
-流程见 [`.github/README.md`](.github/README.md).
+贡献流程与完整测试矩阵见 [CONTRIBUTING.md](CONTRIBUTING.md). CI 流程见 [`.github/README.md`](.github/README.md).
 
 ```bash
 ./install-hooks.sh
