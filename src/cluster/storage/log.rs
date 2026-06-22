@@ -258,14 +258,6 @@ impl OpenRaftStorage {
         }
     }
 
-    pub(crate) fn persist_last_applied(&self, log_id: &LogId<NodeId>) -> Result<()> {
-        let data =
-            rmp_serde::to_vec(log_id).map_err(|e| ClusterError::Serialization(e.to_string()))?;
-        self.db.put(&last_applied_key(self.group_id), &data)?;
-        self.state.write().last_applied = Some(*log_id);
-        Ok(())
-    }
-
     pub(crate) fn load_membership(
         &self,
     ) -> std::result::Result<openraft::StoredMembership<NodeId, openraft::BasicNode>, Error> {
@@ -274,15 +266,6 @@ impl OpenRaftStorage {
                 .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string()))),
             None => Ok(openraft::StoredMembership::default()),
         }
-    }
-
-    pub(crate) fn persist_membership(
-        &self,
-        stored: &openraft::StoredMembership<NodeId, openraft::BasicNode>,
-    ) -> Result<()> {
-        let data =
-            bincode::serialize(stored).map_err(|e| ClusterError::Serialization(e.to_string()))?;
-        self.db.put(&membership_key(self.group_id), &data)
     }
 }
 

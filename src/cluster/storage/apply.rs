@@ -3,7 +3,7 @@
 use openraft::{Entry, EntryPayload, LogId, MessageSummary};
 
 use crate::cluster::meta_types::{MetaRequest, METARAFT_GROUP_ID};
-use crate::cluster::storage::keys::{last_applied_key, sm_key};
+use crate::cluster::storage::keys::{last_applied_key, membership_key, sm_key};
 use crate::cluster::types::{
     ClusterError, Request, Response, ThinWriteBatch, ThinWriteOp, TypeConfig,
 };
@@ -16,15 +16,9 @@ use crate::cluster::storage::log::map_db_err;
 impl OpenRaftStorage {
     pub(crate) fn apply_batch_to_sm(&self, batch: &ThinWriteBatch) -> Result<()> {
         let mut db_batch = WriteBatch::new();
-        for op in &batch.ops {
-            match op {
-                ThinWriteOp::Put { key, value } => {
-                    db_batch.put(sm_key(self.group_id, key), value.clone());
-                }
-                ThinWriteOp::Delete { key } => {
-                    db_batch.delete(sm_key(self.group_id, key));
-                }
-            }
+        self.append_thin_batch_to_db_batch(&mut db_batch, batch);
+        if db_batch.is_empty() {
+            return Ok(());
         }
         self.db
             .write(&db_batch)
@@ -33,12 +27,13 @@ impl OpenRaftStorage {
     }
 
     pub(crate) fn apply_put_conditional(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let sm = sm_key(self.group_id, &key);
-        if self.db.get(&sm)?.is_some() {
+        let mut batch = WriteBatch::new();
+        self.append_put_conditional_to_batch(&mut batch, &key, &value)?;
+        if batch.is_empty() {
             return Ok(());
         }
         self.db
-            .put(&sm, &value)
+            .write(&batch)
             .map_err(|e| Error::Cluster(map_db_err(e)))?;
         Ok(())
     }
@@ -80,27 +75,135 @@ impl OpenRaftStorage {
                     {
                         self.apply_meta_entry(meta_req, &entry.log_id)?
                     }
-                    _ => self.apply_request(request)?,
+                    _ => self.apply_data_entry_atomic(request, &entry.log_id)?,
                 },
                 EntryPayload::Membership(m) => {
-                    let stored = openraft::StoredMembership::new(Some(entry.log_id), m.clone());
-                    self.persist_membership(&stored)?;
+                    self.apply_membership_entry_atomic(m, &entry.log_id)?
+                }
+                EntryPayload::Blank => {
+                    self.persist_last_applied_atomic(&entry.log_id)?;
                     Response::Ok
                 }
-                EntryPayload::Blank => Response::Ok,
             };
 
-            if !matches!(
-              (&entry.payload, self.group_id),
-              (EntryPayload::Normal(Request::Meta(_)), METARAFT_GROUP_ID) if self.meta_state.is_some()
-            ) {
-                self.persist_last_applied(&entry.log_id)?;
-            }
             last_applied = Some(entry.log_id);
             responses.push(response);
         }
 
         Ok(responses)
+    }
+
+    fn append_thin_batch_to_db_batch(&self, batch: &mut WriteBatch, thin: &ThinWriteBatch) {
+        for op in &thin.ops {
+            match op {
+                ThinWriteOp::Put { key, value } => {
+                    batch.put(sm_key(self.group_id, key), value.clone());
+                }
+                ThinWriteOp::Delete { key } => {
+                    batch.delete(sm_key(self.group_id, key));
+                }
+            }
+        }
+    }
+
+    fn append_put_conditional_to_batch(
+        &self,
+        batch: &mut WriteBatch,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<()> {
+        let sm = sm_key(self.group_id, key);
+        if self.db.get(&sm)?.is_some() {
+            return Ok(());
+        }
+        batch.put(sm, value.to_vec());
+        Ok(())
+    }
+
+    fn append_request_to_batch(
+        &self,
+        batch: &mut WriteBatch,
+        request: &Request,
+    ) -> Result<Response> {
+        match request {
+            Request::Meta(_) => Ok(Response::Error("meta request on non-meta storage".into())),
+            Request::PutConditional { key, value } => {
+                self.append_put_conditional_to_batch(batch, key, value)?;
+                Ok(Response::Ok)
+            }
+            Request::Put { key, value } => {
+                batch.put(sm_key(self.group_id, key), value.clone());
+                Ok(Response::Ok)
+            }
+            Request::Delete { key } => {
+                batch.delete(sm_key(self.group_id, key));
+                Ok(Response::Ok)
+            }
+            Request::WriteBatch(wb) => {
+                self.append_thin_batch_to_db_batch(batch, wb);
+                Ok(Response::Ok)
+            }
+        }
+    }
+
+    fn serialize_last_applied(log_id: &LogId<crate::cluster::types::NodeId>) -> Result<Vec<u8>> {
+        rmp_serde::to_vec(log_id)
+            .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
+    }
+
+    fn persist_last_applied_atomic(
+        &self,
+        log_id: &LogId<crate::cluster::types::NodeId>,
+    ) -> Result<()> {
+        let mut batch = WriteBatch::new();
+        batch.put(
+            last_applied_key(self.group_id),
+            Self::serialize_last_applied(log_id)?,
+        );
+        self.db
+            .write(&batch)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?;
+        self.state.write().last_applied = Some(*log_id);
+        Ok(())
+    }
+
+    fn apply_data_entry_atomic(
+        &self,
+        request: &Request,
+        log_id: &LogId<crate::cluster::types::NodeId>,
+    ) -> Result<Response> {
+        let mut batch = WriteBatch::new();
+        let response = self.append_request_to_batch(&mut batch, request)?;
+        batch.put(
+            last_applied_key(self.group_id),
+            Self::serialize_last_applied(log_id)?,
+        );
+        self.db
+            .write(&batch)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?;
+        self.state.write().last_applied = Some(*log_id);
+        Ok(response)
+    }
+
+    fn apply_membership_entry_atomic(
+        &self,
+        membership: &openraft::Membership<crate::cluster::types::NodeId, openraft::BasicNode>,
+        log_id: &LogId<crate::cluster::types::NodeId>,
+    ) -> Result<Response> {
+        let stored = openraft::StoredMembership::new(Some(*log_id), membership.clone());
+        let data = bincode::serialize(&stored)
+            .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
+        let mut batch = WriteBatch::new();
+        batch.put(membership_key(self.group_id), data);
+        batch.put(
+            last_applied_key(self.group_id),
+            Self::serialize_last_applied(log_id)?,
+        );
+        self.db
+            .write(&batch)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?;
+        self.state.write().last_applied = Some(*log_id);
+        Ok(Response::Ok)
     }
 
     fn apply_meta_entry(
@@ -119,40 +222,15 @@ impl OpenRaftStorage {
             }
             Err(e) => Response::Error(e.to_string()),
         };
-        let la = rmp_serde::to_vec(log_id)
-            .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-        batch.put(last_applied_key(self.group_id), la);
+        batch.put(
+            last_applied_key(self.group_id),
+            Self::serialize_last_applied(log_id)?,
+        );
         self.db
             .write(&batch)
             .map_err(|e| Error::Cluster(map_db_err(e)))?;
         self.state.write().last_applied = Some(*log_id);
         Ok(response)
-    }
-
-    fn apply_request(&self, request: &Request) -> Result<Response> {
-        match request {
-            Request::Meta(_) => Ok(Response::Error("meta request on non-meta storage".into())),
-            Request::PutConditional { key, value } => {
-                self.apply_put_conditional(key.clone(), value.clone())?;
-                Ok(Response::Ok)
-            }
-            Request::Put { key, value } => {
-                let mut batch = ThinWriteBatch::new();
-                batch.put(key.clone(), value.clone());
-                self.apply_batch_to_sm(&batch)?;
-                Ok(Response::Ok)
-            }
-            Request::Delete { key } => {
-                let mut batch = ThinWriteBatch::new();
-                batch.delete(key.clone());
-                self.apply_batch_to_sm(&batch)?;
-                Ok(Response::Ok)
-            }
-            Request::WriteBatch(batch) => {
-                self.apply_batch_to_sm(batch)?;
-                Ok(Response::Ok)
-            }
-        }
     }
 
     pub fn get_state_machine_value(&self, user_key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -226,6 +304,26 @@ mod tests {
             storage.db.get(&sm_key(DEFAULT_GROUP_ID, b"k")).unwrap(),
             Some(b"v1".to_vec())
         );
+    }
+
+    #[test]
+    fn test_append_request_to_batch_includes_sm_only() {
+        let (storage, _dir) = test_storage();
+        let mut batch = WriteBatch::new();
+        storage
+            .append_request_to_batch(
+                &mut batch,
+                &Request::Put {
+                    key: b"k".to_vec(),
+                    value: b"v".to_vec(),
+                },
+            )
+            .unwrap();
+        assert_eq!(batch.len(), 1);
+        assert!(batch
+            .operations
+            .iter()
+            .all(|op| matches!(op, crate::engine::db::WriteOp::Put { .. })));
     }
 
     #[test]
@@ -317,5 +415,12 @@ mod tests {
         let loaded = storage.load_membership().unwrap();
         assert_eq!(loaded.log_id().map(|id| id.index), Some(1));
         assert_eq!(loaded.membership().get_joint_config().len(), 1);
+        assert_eq!(
+            storage
+                .read_last_applied_from_db()
+                .unwrap()
+                .map(|id| id.index),
+            Some(1)
+        );
     }
 }

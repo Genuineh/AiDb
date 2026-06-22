@@ -1,3 +1,4 @@
+mod group_apply_batch;
 mod harness;
 mod integration;
 #[cfg(feature = "monitoring")]

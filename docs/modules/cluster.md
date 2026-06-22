@@ -81,7 +81,7 @@ flowchart TB
 ```
 
 - 数据 Group 的用户 key 在 apply 时写入 `sm_key(group_id, user_key)` (`storage/apply.rs`)
-- Meta apply 原子写三 meta key + `last_applied` (`apply_meta_entry`)
+- Meta / 数据 Group apply 均单 WriteBatch 原子写 SM (或 meta/membership keys) + `last_applied` (`apply_meta_entry`, `apply_data_entry_atomic`)
 
 ## 关键 invariant (勿破坏)
 
@@ -111,6 +111,8 @@ sequenceDiagram
   MSM-->>ORN: ApplyOutput kv_pairs
   Note over ORN: 单 WriteBatch 写 meta keys + last_applied
 ```
+
+数据 Group apply 同样逐 entry 单 WriteBatch (SM ops + last_applied), 见 `apply_data_entry_atomic`.
 
 ### 单 key 写入 (数据 Group)
 
@@ -241,7 +243,3 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 - **slot 级 ASK**: Migrating 期间整 slot ASK (非 per-key 追踪)
 - **`get_ttl_from_group`**: 恒 `None`; 迁移 verify 仅比对 value
 - **`ShardedStorage` stats**: `StorageStats` 字段预留, 未全量接线 engine 指标
-
-## 待核实
-
-- 见 [ISSUES.md](../../ISSUES.md#issue-005--数据-group-apply-仍逐-entry-写-last_applied) — 数据 Group apply 逐 entry 写 `last_applied`, 与 inventory 原子 batch 目标不一致

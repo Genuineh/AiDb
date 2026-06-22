@@ -173,14 +173,16 @@
 
 ### ISSUE-005: 数据 Group apply 仍逐 entry 写 last_applied
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/cluster.md`
 - **相关 src**: `src/cluster/storage/apply.rs` (`apply_entries_internal`)
 - **旧文档**: `WiQunTools/docs/wiqun-db-inventory/09-raft.md` — ⚠️ 数据 Group 原子 WriteBatch 待统一
 - **oldmain 代码**: `raft_storage.rs` 同为逐 entry apply (与现码同类)
 - **现象**: Meta 分支已单 WriteBatch 原子 (apply_meta_entry); 数据 Group 每条 entry 单独 `persist_last_applied` + SM 写入
 - **影响**: 崩溃窗口与 inventory 警告一致; module 待核实一行
-- **下一步**: 需写测试复现 / 评估是否合并 batch
+- **修复**: 数据 Group / Membership / Blank 逐 entry 单 WriteBatch (SM ops + last_applied); 对齐 `apply_meta_entry`
+- **回归**: `tests/modules/cluster/group_apply_batch.rs`, `src/cluster/storage/apply.rs` unit tests
+- **下一步**: 已关闭
 
 ### ISSUE-004: inventory 称 compaction 不保护 Snapshot
 

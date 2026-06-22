@@ -10,6 +10,7 @@
 ### Fixed
 
 - **WriteBatch / WAL 边界 (ISSUE-001, ISSUE-002)**: batch 写入前预检空间并在必要时先 rotate; 写入期间禁用 `max_wal_size` auto-rotate; 允许单文件临时超过 `max_wal_size`. 回归: `tests/modules/wal/write_batch_boundary.rs`, `tests/engine/wal_write_batch_boundary.rs`.
+- **数据 Group apply 原子 WriteBatch (ISSUE-005)**: `apply_data_entry_atomic` / `apply_membership_entry_atomic` 将 SM ops (或 membership) 与 `last_applied` 合并为单次 `DB::write`, 对齐 Meta `apply_meta_entry`. 回归: `tests/modules/cluster/group_apply_batch.rs`.
 
 ## [0.14.10] - 2026-06-10
 
