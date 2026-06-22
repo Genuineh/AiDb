@@ -94,6 +94,8 @@ cargo test --features cluster -- --test-threads=1
 | **L3** | `PROPTEST_CASES=100 cargo test --test proptest -- --test-threads=1` | 随机操作 + 引擎不变式 |
 | **L4** | `cargo test --test regression -- --test-threads=1` | 已修 bug 固化 |
 
+L4 示例: WAL WriteBatch 边界 → `cargo test --test wal write_batch_boundary -- --test-threads=1` (见 `tests/modules/wal/write_batch_boundary.rs`).
+
 ### L1 模块入口
 
 ```bash
