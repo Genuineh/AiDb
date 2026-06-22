@@ -223,7 +223,6 @@ LSM flush 后 SST 不可变; `Checkpoint::create` 在 flush + pin SST 后 link/c
 
 ## 已知限制 (根文档摘要)
 
-- WriteBatch 写入期间 WAL 可能 mid-batch rotate — 见 [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-writebatch-可能跨-wal-文件边界).
 - 数据 Group apply 逐 entry 写 `last_applied` — 见 [ISSUES.md#ISSUE-005](ISSUES.md#issue-005--数据-group-apply-仍逐-entry-写-last_applied).
 
 ## 待核实

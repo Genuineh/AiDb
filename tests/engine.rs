@@ -15,6 +15,9 @@ mod scenarios;
 #[path = "engine/crash_recovery.rs"]
 mod crash_recovery;
 
+#[path = "engine/wal_write_batch_boundary.rs"]
+mod wal_write_batch_boundary;
+
 #[path = "engine/compaction.rs"]
 mod compaction;
 

@@ -185,6 +185,29 @@ impl Writer {
         Ok(self.file.metadata()?.len())
     }
 
+    /// 估算一条 Record 落盘字节数 (含 block padding), 以及写入后的 block_offset.
+    pub(crate) fn estimated_record_disk_bytes(data: &[u8], block_offset: usize) -> (u64, usize) {
+        let max_payload = BLOCK_SIZE - HEADER_SIZE;
+        let total = data.len();
+        let mut offset = 0;
+        let mut block_off = block_offset;
+        let mut disk = 0u64;
+
+        while offset < total {
+            if block_off + HEADER_SIZE >= BLOCK_SIZE {
+                disk += (BLOCK_SIZE - block_off) as u64;
+                block_off = 0;
+            }
+            let block_avail = BLOCK_SIZE - block_off - HEADER_SIZE;
+            let max_chunk = max_payload.min(Self::MAX_RECORD_DATA);
+            let chunk_size = (total - offset).min(max_chunk).min(block_avail);
+            disk += (HEADER_SIZE + chunk_size) as u64;
+            block_off += HEADER_SIZE + chunk_size;
+            offset += chunk_size;
+        }
+        (disk, block_off)
+    }
+
     /// 获取底层文件句柄 (用于 Reader)
     pub fn file(&self) -> &std::fs::File {
         &self.file

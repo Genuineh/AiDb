@@ -266,4 +266,4 @@ cargo test --test regression -- --test-threads=1
 
 ## 待核实
 
-- 无. WAL/WriteBatch 疑点见 [engine.md](engine.md) 与 [ISSUES.md](../../ISSUES.md#issue-001-writebatch-可能跨-wal-文件边界).
+- 无.

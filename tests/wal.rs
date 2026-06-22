@@ -9,3 +9,5 @@ mod common;
 pub mod dataflow;
 #[path = "modules/wal/function.rs"]
 pub mod function;
+#[path = "modules/wal/write_batch_boundary.rs"]
+pub mod write_batch_boundary;

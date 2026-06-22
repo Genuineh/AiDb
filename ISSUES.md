@@ -204,20 +204,24 @@
 
 ### ISSUE-002: 大 WriteBatch 与 max_wal_size 轮转交互
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 1 / 章节 `docs/modules/engine.md` (步 2)
 - **相关 src**: `src/engine/db/inner.rs` (`DB::write`), `src/engine/wal/manager.rs` (`append` → `rotate`)
 - **旧文档**: `WiQunTools/docs/wiqun-db-inventory/01-wal.md` — batch 超 `max_wal_size` 时禁止 rotate
 - **现象**: inventory 规定大 batch 可临时超过文件上限且写入期间禁止 rotate; 当前 `append` 每条后检查 `max_wal_size` 并可能 rotate, 无 batch 临界区
-- **影响**: 与 ISSUE-001 同源; 文档暂勿写 inventory 的 batch 轮转豁免, 或标注待核实
-- **下一步**: 步 3 对照 oldmain; 需写测试复现
+- **影响**: 与 ISSUE-001 同源
+- **修复**: `ensure_space_for_batch` 预 rotate; `append_in_batch` 写入期间禁用 auto-rotate
+- **回归**: `tests/modules/wal/write_batch_boundary.rs`
+- **下一步**: 已关闭
 
 ### ISSUE-001: WriteBatch 可能跨 WAL 文件边界
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 1 / 章节 `docs/modules/engine.md` (步 2)
 - **相关 src**: `src/engine/db/inner.rs` (`DB::write`), `src/engine/wal/manager.rs` (`append` → `rotate`)
 - **旧文档**: `WiQunTools/docs/wiqun-db-inventory/01-wal.md` — 「Batch 不跨 WAL 文件」
-- **现象**: `write()` 循环 `wal.append()`; `append` 在 `size >= max_wal_size` 时自动 `rotate`, batch 中途可切文件. recover 按文件内 batch 边界 rollback, 跨文件 batch 语义未定义
-- **影响**: 若可复现, 可能是崩溃恢复边界 bug; module 待核实一行引用
-- **下一步**: 步 3 对照 oldmain + 写测试复现
+- **现象**: `write()` 循环 `wal.append()`; `append` 在 `size >= max_wal_size` 时自动 `rotate`, batch 中途可切文件. recover 按**文件**独立追踪 batch 边界, 跨文件 batch 语义未定义
+- **影响**: 崩溃恢复可能部分 replay batch (已修复)
+- **修复**: 同 ISSUE-002 — batch 预检空间 + `append_in_batch` 禁用 mid-batch rotate
+- **回归**: `tests/modules/wal/write_batch_boundary.rs`, `tests/engine/wal_write_batch_boundary.rs`
+- **下一步**: 已关闭

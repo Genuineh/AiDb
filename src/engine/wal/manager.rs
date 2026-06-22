@@ -128,24 +128,83 @@ impl WALManager {
         &self.path
     }
 
+    /// 估算多条 WalEntry 编码连续落盘的总字节数.
+    pub(crate) fn estimated_batch_disk_bytes(&self, encoded_entries: &[Vec<u8>]) -> u64 {
+        let mut block_off = self.writer.block_offset();
+        let mut total = 0u64;
+        for data in encoded_entries {
+            let (bytes, new_off) = Writer::estimated_record_disk_bytes(data, block_off);
+            total += bytes;
+            block_off = new_off;
+        }
+        total
+    }
+
+    /// WriteBatch 写入前: 当前文件剩余空间不足则 rotate.
+    /// batch 大于 max_wal_size 时不预 rotate (允许单文件临时超限).
+    pub(crate) fn ensure_space_for_batch(&mut self, batch_bytes: u64, next_sequence: u64) -> Result<()> {
+        let max = self.options.max_wal_size;
+        if max == 0 || batch_bytes > max {
+            return Ok(());
+        }
+        let current = self.writer.file_size()?;
+        let remaining = max.saturating_sub(current);
+        if batch_bytes > remaining {
+            self.rotate(next_sequence)?;
+        }
+        Ok(())
+    }
+
     /// 追加一条编码后的 WalEntry 到当前活跃 WAL
     #[tracing::instrument(name = "wal_write", skip(self, data))]
     pub fn append(&mut self, data: &[u8]) -> Result<()> {
+        self.append_record(data)?;
+        self.maybe_auto_rotate()?;
+        Ok(())
+    }
+
+    /// 追加 WalEntry, 不触发 max_wal_size 自动轮转 (WriteBatch 临界区).
+    pub(crate) fn append_in_batch(&mut self, data: &[u8]) -> Result<()> {
+        self.append_record(data)
+    }
+
+    fn append_record(&mut self, data: &[u8]) -> Result<()> {
         self.writer.write_record(RecordType::Full, data)?;
 
         #[cfg(feature = "monitoring")]
         crate::metrics::WAL_SIZE.set(self.writer.file_size().unwrap_or(0) as f64);
 
-        // 自动轮转: 文件大小超过阈值时触发
+        Ok(())
+    }
+
+    /// WriteBatch 原子写入 WAL: 预检空间 + 写入期间不 auto-rotate.
+    pub(crate) fn append_encoded_write_batch(
+        &mut self,
+        encoded_entries: &[Vec<u8>],
+        base_seq: u64,
+    ) -> Result<()> {
+        if encoded_entries.is_empty() {
+            return Ok(());
+        }
+        let batch_bytes = self.estimated_batch_disk_bytes(encoded_entries);
+        self.ensure_space_for_batch(batch_bytes, base_seq)?;
+        for (i, data) in encoded_entries.iter().enumerate() {
+            self.append_in_batch(data)?;
+            if i > 0 {
+                self.note_appended_sequence(base_seq + (i - 1) as u64);
+            }
+        }
+        Ok(())
+    }
+
+    fn maybe_auto_rotate(&mut self) -> Result<()> {
         if self.options.max_wal_size > 0 {
             if let Ok(size) = self.writer.file_size() {
                 if size >= self.options.max_wal_size {
-                    // 传入的 next_sequence 由调用方维护, 这里用当前 max_seq + 1
                     self.rotate(self.max_seq.wrapping_add(1))?;
                 }
             }
         }
-
         Ok(())
     }
 

@@ -187,7 +187,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 | 测试集 | 覆盖 |
 |--------|------|
-| `tests/wal` | Record 格式, recover, BatchStart rollback, LOCK, cleanup |
+| `tests/wal` | Record 格式, recover, BatchStart rollback, LOCK, cleanup, **WriteBatch/WAL rotate 边界** |
 | `tests/memtable` | InternalKey, put/delete/get, freeze |
 | `tests/pipeline/wal_memtable` | recover → replay 管线 |
 | `tests/db` | DB 模块 (wal_corruption, bootstrap 等) |
@@ -203,5 +203,4 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#issue-001-writebatch-可能跨-wal-文件边界) — WriteBatch 写入期间 WAL 可能 mid-batch rotate.
-- 见 [ISSUES.md](../../ISSUES.md#issue-002-大-writebatch-与-max_wal_size-轮转交互) — 大 batch 与 `max_wal_size` 轮转规格待核实.
+- 无.

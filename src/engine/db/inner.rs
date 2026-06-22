@@ -521,13 +521,12 @@ impl DB {
                 key: vec![],
                 value: Some((n as u32).to_le_bytes().to_vec()),
             };
-            wal.append(&batch_start.encode())?;
+            let mut encoded: Vec<Vec<u8>> = Vec::with_capacity(1 + batch.operations.len());
+            encoded.push(batch_start.encode());
             for (i, op) in batch.operations.iter().enumerate() {
-                let seq = base + i as u64;
-                let encoded = wal_entry_for_op(op, seq)?.encode();
-                wal.append(&encoded)?;
-                wal.note_appended_sequence(seq);
+                encoded.push(wal_entry_for_op(op, base + i as u64)?.encode());
             }
+            wal.append_encoded_write_batch(&encoded, base)?;
             if self.options.sync_wal {
                 wal.sync()?;
             }
