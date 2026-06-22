@@ -53,4 +53,5 @@ cargo test --features cluster -- --test-threads=1
 
 - [README.md](README.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/README.md](docs/README.md) — 按域 WHEN 与 modules 导航
 - [.github/README.md](.github/README.md)
