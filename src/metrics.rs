@@ -200,9 +200,37 @@ pub fn record_operation(op: &str) {
     OPERATIONS_TOTAL.with_label_values(&[op]).inc();
 }
 
+/// aikv OTel histogram 双写 hook (C2: aidb 无独立 OTLP 出口).
+#[cfg(feature = "monitoring")]
+#[derive(Default, Clone, Copy)]
+pub struct OtelHistogramHooks {
+    pub operation_duration: Option<fn(&str, f64)>,
+    pub flush_duration: Option<fn(f64)>,
+    pub compaction_duration: Option<fn(&str, f64)>,
+    pub backup_duration: Option<fn(f64)>,
+}
+
+#[cfg(feature = "monitoring")]
+static OTEL_HISTOGRAM_HOOKS: std::sync::OnceLock<OtelHistogramHooks> = std::sync::OnceLock::new();
+
+#[cfg(feature = "monitoring")]
+pub fn set_otel_histogram_hooks(hooks: OtelHistogramHooks) {
+    let _ = OTEL_HISTOGRAM_HOOKS.set(hooks);
+}
+
+#[cfg(feature = "monitoring")]
+fn invoke_op_duration(op: &str, secs: f64) {
+    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
+        if let Some(h) = hooks.operation_duration {
+            h(op, secs);
+        }
+    }
+}
+
 #[cfg(feature = "monitoring")]
 pub fn record_operation_duration(op: &str, secs: f64) {
     OPERATION_DURATION.with_label_values(&[op]).observe(secs);
+    invoke_op_duration(op, secs);
 }
 
 #[cfg(feature = "monitoring")]
@@ -213,6 +241,11 @@ pub fn record_flush() {
 #[cfg(feature = "monitoring")]
 pub fn record_flush_duration(secs: f64) {
     FLUSH_DURATION.observe(secs);
+    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
+        if let Some(h) = hooks.flush_duration {
+            h(secs);
+        }
+    }
 }
 
 #[cfg(feature = "monitoring")]
@@ -262,6 +295,11 @@ pub fn record_compaction_duration(phase: &str, secs: f64) {
     COMPACTION_DURATION
         .with_label_values(&[phase])
         .observe(secs);
+    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
+        if let Some(h) = hooks.compaction_duration {
+            h(phase, secs);
+        }
+    }
 }
 
 /// freeze 时: 将字节数计入 frozen, active 置 0 (新 active 由 Engine 创建后再 set)
@@ -278,6 +316,11 @@ pub fn record_backup_create(size_bytes: u64, duration_secs: f64) {
     BACKUP_TOTAL.with_label_values(&["create"]).inc();
     BACKUP_SIZE_BYTES.set(size_bytes as i64);
     BACKUP_DURATION_SECONDS.observe(duration_secs);
+    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
+        if let Some(h) = hooks.backup_duration {
+            h(duration_secs);
+        }
+    }
 }
 
 #[cfg(feature = "monitoring")]

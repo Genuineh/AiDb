@@ -12,6 +12,7 @@ description: AiDb observability — centralized Prometheus metrics (monitoring f
 - 查 tracing span / event 命名, 跨 module 定位埋点
 - **不覆盖**: 各 module 内 span 实现细节 → [engine.md](engine.md) / [engine-storage.md](engine-storage.md) / [cluster.md](cluster.md) / [backup.md](backup.md)
 - **不覆盖**: HTTP `/metrics`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)
+- **监控栈部署**: AiFactory [`monitor/README.md`](../../../AiFactory/monitor/README.md) (115 中心 + worker Alloy)
 - **构建**: `monitoring` feature 启用 `aidb::metrics`; 默认 **不** 启用
 
 ## 代码地图
