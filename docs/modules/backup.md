@@ -1,5 +1,7 @@
 ---
 name: aidb-backup
+depends_on:
+  - aidb-engine-storage
 description: AiDb full backup and restore — BackupManager, RecoveryManager, BackupStorage, RetentionPolicy, manifest checksums. Use when changing src/backup/*, debugging backup/restore or retention policy, integrating BackupManager with DB, or understanding Checkpoint-based snapshot packaging.
 ---
 

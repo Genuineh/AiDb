@@ -1,4 +1,5 @@
 //! 引擎黑盒: 经 `DB` 公共 API 的场景测试
+//! @component aidb-engine
 //!
 //! ```bash
 //! cargo test --test engine -- --test-threads=1

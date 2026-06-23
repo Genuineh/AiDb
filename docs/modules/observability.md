@@ -1,5 +1,7 @@
 ---
 name: aidb-observability
+depends_on:
+  - aidb-engine
 description: AiDb observability — centralized Prometheus metrics (monitoring feature), tracing span index, metrics::init and register_into for embedders. Use when changing src/metrics.rs or cluster/metrics.rs, wiring aidb_* counters in aikv, or debugging Prometheus/tracing for engine and Raft paths.
 ---
 

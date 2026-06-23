@@ -1,5 +1,7 @@
 ---
 name: aidb-engine-storage
+depends_on:
+  - aidb-engine
 description: AiDb LSM persistence layer — SSTable layout, leveled compaction, Bloom filter, block cache, directory checkpoint. Use when changing src/engine/{sstable,compaction,filter,cache,checkpoint}, debugging flush/compaction/read amplification, MANIFEST/VersionSet, or Checkpoint::create.
 ---
 

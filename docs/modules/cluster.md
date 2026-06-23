@@ -1,5 +1,7 @@
 ---
 name: aidb-cluster
+depends_on:
+  - aidb-engine
 description: AiDb distributed cluster — MetaRaft control plane, Multi-Raft data groups, CRC16 slot Router, OpenRaftStorage on LSM DB, gRPC, slot migration, membership. Use when changing src/cluster/*, debugging Raft/MetaRaft, group lifecycle, slot routing, or integrating aikv storage/cluster.
 ---
 
