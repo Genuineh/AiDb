@@ -59,7 +59,8 @@ sudo apt-get install -y protobuf-compiler
 | pre-commit | fmt + clippy (默认 + cluster) | `git commit` |
 | CI `test-default` | fmt → clippy → test (默认 feature) | push / PR |
 | CI `test-cluster` | clippy + test (`--features cluster`, 装 protoc) | push / PR |
-| CI `bench` | `write_bench` / `read_bench` / `backup_bench` | `test-default` 通过后 |
+| CI `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) | `test-default` 通过后 |
+| CI `bench` | `write_bench` / `read_bench` / `backup_bench` (criterion) | `test-default` 通过后 |
 | Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |
 
 Security ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.
@@ -75,6 +76,12 @@ cargo clippy --all-targets
 cargo clippy --all-targets --features cluster   # 需 protoc
 cargo test -- --test-threads=1
 cargo test --features cluster -- --test-threads=1
+```
+
+慢测与压测 (与 CI `test-slow` 一致):
+
+```bash
+cargo test -- --ignored --test-threads=1
 ```
 
 与 [AGENTS.md](AGENTS.md) 速查块相同; job 细节见 [.github/README.md](.github/README.md).
@@ -158,6 +165,25 @@ cargo bench --bench backup_bench
 
 CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构建与验证](DEPLOYMENT.md#构建与验证).
 
+### `#[ignore]` 慢测与压测
+
+默认 `cargo test` **跳过** 带 `#[ignore]` 的用例; CI `test-slow` job 通过 `--ignored` 运行全部. 新增慢/压测须使用统一 reason 前缀:
+
+| 前缀 | 含义 | 示例 |
+|------|------|------|
+| `slow:` | 真实等待或长时间 hold (秒~分钟) | snapshot 长 hold + 大量写入 |
+| `stress:` | 大数据集、高吞吐 | 10K compaction、1M bloom 采样 |
+
+写法: `#[ignore = "slow: …"]` 或 `#[ignore = "stress: …"]`. **禁止** 裸 `#[ignore]`.
+
+| 测试 | 标签 | test target | CI job |
+|------|------|-------------|--------|
+| `test_snapshot_long_hold_heavy_write` | slow | `snapshot` | `test-slow` |
+| `test_large_dataset_compaction_stress_10000` | stress | `engine` | `test-slow` |
+| `test_bloom_stress` | stress | `regression` | `test-slow` |
+
+> **与 bench 区分**: `cargo bench` (criterion) 在 `bench` job; 上表为 integration test 的 `#[ignore]` 用例.
+
 ### 示例
 
 | 示例 | 命令 |
@@ -172,7 +198,7 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
-3. **修 bug**: 同一 PR 在 `tests/regression/` 添加复现测试 (见下节).
+3. **修 bug (必带回归测)**: 见下节; `docs:` / doc-only 关闭 ISSUE 可豁免.
 4. **用户面向变更**: 更新 [CHANGELOG.md](CHANGELOG.md) 对应版本或 `[Unreleased]`.
 5. **PR**: CI + Security 须绿; 相关文档一并更新.
 
@@ -182,7 +208,8 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 - [ ] clippy 默认 + cluster 无警告 (`RUSTFLAGS='-D warnings'`)
 - [ ] `cargo test -- --test-threads=1` 通过
 - [ ] 若改 cluster: `cargo test --features cluster -- --test-threads=1` 通过
-- [ ] 若修 bug: `cargo test --test regression -- --test-threads=1` 含新用例
+- [ ] 若修 bug: 回归测已添加且 `cargo test --test regression -- --test-threads=1` 含新用例 (或见下节放置决策)
+- [ ] 若改 slow/stress 用例: `cargo test -- --ignored --test-threads=1` 通过
 - [ ] 用户面向 API/行为变更已写 CHANGELOG
 - [ ] 模块文档或根文档已更新 (若适用)
 
@@ -197,17 +224,31 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 
 用法与模式速查见 [`tests/common/mod.rs`](tests/common/mod.rs) 模块注释.
 
-## 回归测试规范
+## 回归测试 (必带)
 
-入口: [`tests/regression.rs`](tests/regression.rs) → `tests/regression/`.
+所有 **bugfix PR** (`fix:`、修 ISSUE、行为修正) **必须** 在同一 PR 内附带可复现回归测. **豁免**: 纯文档变更 (`docs:`) 或 doc-only 关闭 ISSUE.
+
+入口: [`tests/regression.rs`](tests/regression.rs) → `tests/regression/` (L4). 跨模块引擎级 bug 也可放在 L2 `tests/engine/` (见放置决策).
 
 | 规则 | 说明 |
 |------|------|
-| 命名 | 描述性 `test_*` (如 `test_bloom_fpr_*`); 注释写明 bug 现象与修复 |
-| 每次修复 | 同一 PR 添加复现测试 |
+| 同一 PR | 测试与修复同 PR; 建议先红后绿 |
+| 命名 | 描述性 `test_*`; 注释写明 bug 现象、期望行为与 ISSUE (若有) |
+| `@component` | entry 文件加 `//! @component aidb-{domain}` (与 testviz B2-v1 一致) |
 | 运行 | `cargo test --test regression -- --test-threads=1` |
 
-现有场景: `empty_value_compaction`, `bloom` (长期 FPR 统计).
+### 放置决策
+
+| 场景 | 落点 |
+|------|------|
+| 单模块 WAL/MemTable 等 | L1 `tests/modules/{mod}/` |
+| `DB::open` 崩溃恢复/compaction | L2 `tests/engine/` |
+| 已修 bug 长期固化 | **优先** L4 `tests/regression/` 新文件 + `regression.rs` 挂载 |
+| 随机不变式 | L3 `tests/proptest/` |
+
+示例 (B1.2): ISSUE-001/002 WAL WriteBatch → [`tests/modules/wal/write_batch_boundary.rs`](tests/modules/wal/write_batch_boundary.rs), [`tests/engine/wal_write_batch_boundary.rs`](tests/engine/wal_write_batch_boundary.rs).
+
+现有 L4 场景: `empty_value_compaction`, `bloom` (长期 FPR 统计).
 
 ## 相关文档
 

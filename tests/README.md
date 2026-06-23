@@ -59,3 +59,25 @@ cargo test --features cluster --test raft -- --test-threads=1
 cargo test --features cluster raft_storage -- --test-threads=1
 cargo test --features cluster raft_3nodes -- --test-threads=1
 ```
+
+## 回归测 (L4, 必带)
+
+bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-必带).
+
+| 场景 | 落点 |
+|------|------|
+| 单模块 | L1 `tests/modules/{mod}/` |
+| DB 级崩溃恢复 | L2 `tests/engine/` |
+| 已修 bug 固化 | L4 `tests/regression/` + `regression.rs` 挂载 |
+
+## 慢测与压测 (`#[ignore]`)
+
+前缀: `slow:` / `stress:`. 详见 [CONTRIBUTING.md](../CONTRIBUTING.md#ignore-慢测与压测).
+
+| 测试 | 标签 | test target | CI job |
+|------|------|-------------|--------|
+| `test_snapshot_long_hold_heavy_write` | slow | `snapshot` | `test-slow` |
+| `test_large_dataset_compaction_stress_10000` | stress | `engine` | `test-slow` |
+| `test_bloom_stress` | stress | `regression` | `test-slow` |
+
+本地: `cargo test -- --ignored --test-threads=1`

@@ -204,7 +204,7 @@ fn test_bloom_false_positive_counter() {
 // Test 4: 压力测试 (#[ignore])
 // ---------------------------------------------------------------------------
 #[test]
-#[ignore]
+#[ignore = "stress: 1M keys bloom FPR sampling"]
 fn test_bloom_stress() {
     const NUM_KEYS: usize = 1_000_000;
     const FPR: f64 = 0.01;

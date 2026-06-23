@@ -50,6 +50,7 @@ flowchart LR
 flowchart LR
     push[push/PR] --> TD[test-default]
     push --> TC[test-cluster]
+    TD --> TSL[test-slow]
     TD --> B[bench]
 ```
 
@@ -57,7 +58,8 @@ flowchart LR
 |-----|------|
 | `test-default` | fmt → clippy (默认) → test |
 | `test-cluster` | clippy + test (`--features cluster`, 需 protoc) |
-| `bench` | 基准测试 (依赖 test-default 通过) |
+| `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) |
+| `bench` | criterion 基准测试 (依赖 test-default 通过) |
 
 同一分支新 push 会 cancel 未完成的旧 run (`concurrency`).
 

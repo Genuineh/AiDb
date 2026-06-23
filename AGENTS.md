@@ -44,6 +44,14 @@ cargo test -- --test-threads=1
 cargo test --features cluster -- --test-threads=1
 ```
 
+慢测与压测 (CI: `test-slow`):
+
+```bash
+cargo test -- --ignored --test-threads=1
+```
+
+修 bug **必带** 回归测: 见 [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带).
+
 ## 已知限制
 
 - OpenRaft / 快照 API 随上游演进, 升级需适配.

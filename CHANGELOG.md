@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **B1.1 + B1.4**: CONTRIBUTING 回归测必带规范; `slow:`/`stress:` 标签; 新增 CI `test-slow` job (`cargo test -- --ignored`).
+
 ### Fixed
 
 - **WriteBatch / WAL 边界 (ISSUE-001, ISSUE-002)**: batch 写入前预检空间并在必要时先 rotate; 写入期间禁用 `max_wal_size` auto-rotate; 允许单文件临时超过 `max_wal_size`. 回归: `tests/modules/wal/write_batch_boundary.rs`, `tests/engine/wal_write_batch_boundary.rs`.
