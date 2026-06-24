@@ -14,6 +14,25 @@ use opentelemetry::KeyValue;
 static METRICS: OnceLock<Arc<OtelMetrics>> = OnceLock::new();
 
 #[cfg(feature = "monitoring")]
+const ATTR_OP: &str = "aidb.operation.name";
+#[cfg(feature = "monitoring")]
+const ATTR_COMPACTION_PHASE: &str = "aidb.compaction.phase";
+#[cfg(feature = "monitoring")]
+const ATTR_MEMTABLE_STATE: &str = "aidb.memtable.state";
+#[cfg(feature = "monitoring")]
+const ATTR_SSTABLE_LEVEL: &str = "aidb.sstable.level";
+#[cfg(feature = "monitoring")]
+const ATTR_BACKUP_OP: &str = "aidb.backup.operation";
+#[cfg(feature = "monitoring")]
+const ATTR_RAFT_RPC_TYPE: &str = "aidb.raft.rpc.type";
+#[cfg(feature = "monitoring")]
+const ATTR_RAFT_DIRECTION: &str = "aidb.raft.rpc.direction";
+#[cfg(feature = "monitoring")]
+const ATTR_DB_SYSTEM: &str = "db.system";
+#[cfg(feature = "monitoring")]
+const ATTR_DB_OPERATION: &str = "db.operation.name";
+
+#[cfg(feature = "monitoring")]
 struct OtelMetrics {
     wal_size_bytes: Gauge<f64>,
     memtable_size_bytes: Gauge<f64>,
@@ -21,6 +40,8 @@ struct OtelMetrics {
     sstable_size_bytes: Gauge<f64>,
     operations_total: Counter<u64>,
     operation_duration_seconds: Histogram<f64>,
+    db_client_operations: Counter<u64>,
+    db_client_operation_duration: Histogram<f64>,
     flush_duration_seconds: Histogram<f64>,
     block_cache_size_bytes: Gauge<f64>,
     block_cache_hits_total: Counter<u64>,
@@ -47,26 +68,45 @@ impl OtelMetrics {
             wal_size_bytes: meter
                 .f64_gauge("aidb_wal_size_bytes")
                 .with_description("WAL 文件总大小")
+                .with_unit("By")
                 .build(),
             memtable_size_bytes: meter
                 .f64_gauge("aidb_memtable_size_bytes")
                 .with_description("MemTable 近似大小 (user_key+value 字节)")
+                .with_unit("By")
                 .build(),
             sstable_count: meter
                 .f64_gauge("aidb_sstable_count")
                 .with_description("各层 SSTable 文件数量")
+                .with_unit("1")
                 .build(),
             sstable_size_bytes: meter
                 .f64_gauge("aidb_sstable_size_bytes")
                 .with_description("各层 SSTable 文件总大小")
+                .with_unit("By")
                 .build(),
             operations_total: meter
                 .u64_counter("aidb_operations_total")
                 .with_description("DB 操作总数")
+                .with_unit("1")
                 .build(),
             operation_duration_seconds: meter
                 .f64_histogram("aidb_operation_duration_seconds")
                 .with_description("DB 操作耗时")
+                .with_unit("s")
+                .with_boundaries(vec![
+                    0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0,
+                ])
+                .build(),
+            db_client_operations: meter
+                .u64_counter("db.client.operations")
+                .with_description("DB client operations (OTel semconv)")
+                .with_unit("{operation}")
+                .build(),
+            db_client_operation_duration: meter
+                .f64_histogram("db.client.operation.duration")
+                .with_description("DB client operation duration (OTel semconv)")
+                .with_unit("s")
                 .with_boundaries(vec![
                     0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0,
                 ])
@@ -74,67 +114,82 @@ impl OtelMetrics {
             flush_duration_seconds: meter
                 .f64_histogram("aidb_flush_duration_seconds")
                 .with_description("MemTable flush 耗时")
+                .with_unit("s")
                 .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0])
                 .build(),
             block_cache_size_bytes: meter
                 .f64_gauge("aidb_block_cache_size_bytes")
                 .with_description("Block Cache 当前大小")
+                .with_unit("By")
                 .build(),
             block_cache_hits_total: meter
                 .u64_counter("aidb_block_cache_hits_total")
                 .with_description("Block Cache 命中次数")
+                .with_unit("1")
                 .build(),
             block_cache_misses_total: meter
                 .u64_counter("aidb_block_cache_misses_total")
                 .with_description("Block Cache 未命中次数")
+                .with_unit("1")
                 .build(),
             bloom_false_positive_total: meter
                 .u64_counter("aidb_bloom_false_positive_total")
                 .with_description("Bloom Filter 假阳性次数")
+                .with_unit("1")
                 .build(),
             flush_total: meter
                 .u64_counter("aidb_flush_total")
                 .with_description("MemTable flush 次数")
+                .with_unit("1")
                 .build(),
             sequence: meter
                 .f64_gauge("aidb_sequence")
                 .with_description("当前 DB sequence")
+                .with_unit("1")
                 .build(),
             total_key_count: meter
                 .f64_gauge("aidb_total_key_count")
                 .with_description("近似存活 key 数")
+                .with_unit("1")
                 .build(),
             compaction_total: meter
                 .u64_counter("aidb_compaction_total")
                 .with_description("Compaction 次数")
+                .with_unit("1")
                 .build(),
             compaction_duration_seconds: meter
                 .f64_histogram("aidb_compaction_duration_seconds")
                 .with_description("Compaction 各阶段耗时")
+                .with_unit("s")
                 .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0])
                 .build(),
             backup_total: meter
                 .u64_counter("aidb_backup_total")
                 .with_description("备份操作计数")
+                .with_unit("1")
                 .build(),
             backup_size_bytes: meter
                 .f64_gauge("aidb_backup_size_bytes")
                 .with_description("备份文件总大小（字节）")
+                .with_unit("By")
                 .build(),
             backup_duration_seconds: meter
                 .f64_histogram("aidb_backup_duration_seconds")
                 .with_description("备份操作耗时（秒）")
+                .with_unit("s")
                 .with_boundaries(vec![0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0])
                 .build(),
             #[cfg(feature = "cluster")]
             raft_rpc_total: meter
                 .u64_counter("aidb_raft_rpc_total")
                 .with_description("Raft RPC 调用次数")
+                .with_unit("1")
                 .build(),
             #[cfg(feature = "cluster")]
             raft_log_entries_total: meter
                 .u64_counter("aidb_raft_log_entries_total")
                 .with_description("Raft 日志条目累计数")
+                .with_unit("1")
                 .build(),
         }
     }
@@ -143,6 +198,19 @@ impl OtelMetrics {
 #[cfg(feature = "monitoring")]
 fn metrics() -> Option<&'static Arc<OtelMetrics>> {
     METRICS.get()
+}
+
+#[cfg(feature = "monitoring")]
+fn db_client_attrs(op: &str) -> [KeyValue; 2] {
+    [
+        kv_static(ATTR_DB_SYSTEM, "aidb"),
+        kv_static(ATTR_DB_OPERATION, op),
+    ]
+}
+
+#[cfg(feature = "monitoring")]
+fn kv_static(label: &str, value: impl Into<String>) -> KeyValue {
+    KeyValue::new(label.to_string(), value.into())
 }
 
 #[cfg(feature = "monitoring")]
@@ -177,14 +245,18 @@ pub fn set_wal_size(bytes: u64) {
 #[cfg(feature = "monitoring")]
 pub fn record_operation(op: &str) {
     if let Some(m) = metrics() {
-        m.operations_total.add(1, &[kv("op", op)]);
+        m.operations_total.add(1, &[kv(ATTR_OP, op)]);
+        m.db_client_operations.add(1, &db_client_attrs(op));
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_operation_duration(op: &str, secs: f64) {
     if let Some(m) = metrics() {
-        m.operation_duration_seconds.record(secs, &[kv("op", op)]);
+        m.operation_duration_seconds
+            .record(secs, &[kv(ATTR_OP, op)]);
+        m.db_client_operation_duration
+            .record(secs, &db_client_attrs(op));
     }
 }
 
@@ -248,14 +320,14 @@ pub fn set_total_key_count(count: usize) {
 pub fn memtable_set_active(bytes: usize) {
     if let Some(m) = metrics() {
         m.memtable_size_bytes
-            .record(bytes as f64, &[kv("state", "active")]);
+            .record(bytes as f64, &[kv(ATTR_MEMTABLE_STATE, "active")]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_compaction(phase: &str) {
     if let Some(m) = metrics() {
-        m.compaction_total.add(1, &[kv("type", phase)]);
+        m.compaction_total.add(1, &[kv(ATTR_COMPACTION_PHASE, phase)]);
     }
 }
 
@@ -263,7 +335,7 @@ pub fn record_compaction(phase: &str) {
 pub fn record_compaction_duration(phase: &str, secs: f64) {
     if let Some(m) = metrics() {
         m.compaction_duration_seconds
-            .record(secs, &[kv("phase", phase)]);
+            .record(secs, &[kv(ATTR_COMPACTION_PHASE, phase)]);
     }
 }
 
@@ -271,16 +343,16 @@ pub fn record_compaction_duration(phase: &str, secs: f64) {
 pub fn memtable_on_freeze(frozen_bytes: usize) {
     if let Some(m) = metrics() {
         m.memtable_size_bytes
-            .record(frozen_bytes as f64, &[kv("state", "frozen")]);
+            .record(frozen_bytes as f64, &[kv(ATTR_MEMTABLE_STATE, "frozen")]);
         m.memtable_size_bytes
-            .record(0.0, &[kv("state", "active")]);
+            .record(0.0, &[kv(ATTR_MEMTABLE_STATE, "active")]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn set_sstable_level(level: &str, count: i64, size_bytes: i64) {
     if let Some(m) = metrics() {
-        let attrs = [kv("level", level)];
+        let attrs = [kv(ATTR_SSTABLE_LEVEL, level)];
         m.sstable_count.record(count as f64, &attrs);
         m.sstable_size_bytes.record(size_bytes as f64, &attrs);
     }
@@ -289,7 +361,7 @@ pub fn set_sstable_level(level: &str, count: i64, size_bytes: i64) {
 #[cfg(feature = "monitoring")]
 pub fn record_backup_create(size_bytes: u64, duration_secs: f64) {
     if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv("op", "create")]);
+        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "create")]);
         m.backup_size_bytes.record(size_bytes as f64, &[]);
         m.backup_duration_seconds.record(duration_secs, &[]);
     }
@@ -298,14 +370,14 @@ pub fn record_backup_create(size_bytes: u64, duration_secs: f64) {
 #[cfg(feature = "monitoring")]
 pub fn record_backup_delete() {
     if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv("op", "delete")]);
+        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "delete")]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_backup_restore() {
     if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv("op", "restore")]);
+        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "restore")]);
     }
 }
 
@@ -314,7 +386,10 @@ pub fn record_raft_rpc(rpc_type: &str, direction: &str) {
     if let Some(m) = metrics() {
         m.raft_rpc_total.add(
             1,
-            &[kv("type", rpc_type), kv("direction", direction)],
+            &[
+                kv(ATTR_RAFT_RPC_TYPE, rpc_type),
+                kv(ATTR_RAFT_DIRECTION, direction),
+            ],
         );
     }
 }

@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **OTel semconv (monitoring)**: 指标 label 命名空间化 (`aidb.operation.name`, `aidb.compaction.phase` 等); compaction counter/histogram 统一 label (ISSUE-017); 全部 instrument 声明 `with_unit()`.
+
+### Added
+
+- **OTel semconv (monitoring)**: 双写 `db.client.operations` / `db.client.operation.duration` (与 `aidb_*` 并存).
+
 ### Added
 
 - **B1.1 + B1.4**: CONTRIBUTING 回归测必带规范; `slow:`/`stress:` 标签; 新增 CI `test-slow` job (`cargo test -- --ignored`).

@@ -93,6 +93,9 @@ fn test_db_operation_and_flush_duration_histograms() {
     assert!(
         testutil::histogram_count(&exporter, "aidb_operation_duration_seconds") > op_before
     );
+    assert!(
+        testutil::counter_sum(&exporter, "db.client.operations") >= 1
+    );
 
     db.get(b"k").unwrap();
     assert!(

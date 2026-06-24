@@ -70,11 +70,13 @@ flowchart LR
 | 指标 | 类型 | labels | 主要触发 |
 |------|------|--------|----------|
 | `aidb_wal_size_bytes` | Gauge | — | `wal/manager.rs` |
-| `aidb_memtable_size_bytes` | IntGaugeVec | `state=active\|frozen` | `memtable/table.rs` |
-| `aidb_sstable_count` | IntGaugeVec | `level` | `db/inner.rs` `update_sstable_metrics` |
-| `aidb_sstable_size_bytes` | IntGaugeVec | `level` | 同上 |
-| `aidb_operations_total` | CounterVec | `op` | `db/inner.rs` |
-| `aidb_operation_duration_seconds` | HistogramVec | `op` | put/get/delete/write_batch |
+| `aidb_memtable_size_bytes` | IntGaugeVec | `aidb.memtable.state=active\|frozen` | `memtable/table.rs` |
+| `aidb_sstable_count` | IntGaugeVec | `aidb.sstable.level` | `db/inner.rs` `update_sstable_metrics` |
+| `aidb_sstable_size_bytes` | IntGaugeVec | `aidb.sstable.level` | 同上 |
+| `aidb_operations_total` | CounterVec | `aidb.operation.name` | `db/inner.rs` |
+| `aidb_operation_duration_seconds` | HistogramVec | `aidb.operation.name` | put/get/delete/write_batch |
+| `db.client.operations` | Counter | `db.system`, `db.operation.name` | 与 `aidb_operations_total` 双写 |
+| `db.client.operation.duration` | Histogram | `db.system`, `db.operation.name` | 与 `aidb_operation_duration_seconds` 双写 |
 | `aidb_flush_total` | Counter | — | flush 完成 |
 | `aidb_flush_duration_seconds` | Histogram | — | flush 路径 |
 | `aidb_block_cache_size_bytes` | Gauge | — | `block_cache.rs` |
@@ -83,13 +85,13 @@ flowchart LR
 | `aidb_bloom_false_positive_total` | Counter | — | `filter/bloom.rs` |
 | `aidb_sequence` | IntGauge | — | open / allocate |
 | `aidb_total_key_count` | IntGauge | — | put/delete 后 |
-| `aidb_compaction_total` | CounterVec | **`type`** | pick/run/apply |
-| `aidb_compaction_duration_seconds` | HistogramVec | **`phase`** | pick/run/apply |
-| `aidb_backup_total` | CounterVec | `op=create\|delete\|restore` | `backup/*` |
+| `aidb_compaction_total` | Counter | **`aidb.compaction.phase`** | pick/run/apply |
+| `aidb_compaction_duration_seconds` | HistogramVec | **`aidb.compaction.phase`** | pick/run/apply |
+| `aidb_backup_total` | CounterVec | `aidb.backup.operation=create\|delete\|restore` | `backup/*` |
 | `aidb_backup_size_bytes` | IntGauge | — | create |
 | `aidb_backup_duration_seconds` | Histogram | — | create |
 
-**`aidb_operations_total` / `operation_duration` 的 `op`**: `put`, `get`, `delete`, `write_batch`, `snapshot`, `stall_stop`, `stall_slowdown`. **`scan` / `close` 无 counter** (见 ISSUE-018).
+**`aidb_operations_total` / `operation_duration` 的 `aidb.operation.name`**: `put`, `get`, `delete`, `write_batch`, `snapshot`, `stall_stop`, `stall_slowdown`. PromQL label: `aidb_operation_name`. **`scan` / `close` 无 counter** (见 ISSUE-018).
 
 **命中率**: 无 `cache_hit_rate` gauge; 用 PromQL `rate(hits)/(rate(hits)+rate(misses))`.
 
@@ -97,7 +99,7 @@ flowchart LR
 
 | 指标 | labels | 触发 |
 |------|--------|------|
-| `aidb_raft_rpc_total` | `type`=vote/append_entries/install_snapshot, `direction`=incoming/outgoing | `cluster/network.rs` |
+| `aidb_raft_rpc_total` | `aidb.raft.rpc.type`=vote/append_entries/install_snapshot, `aidb.raft.rpc.direction`=incoming/outgoing | `cluster/network.rs` |
 | `aidb_raft_log_entries_total` | — | AppendEntries 入站 entry 数 |
 
 ## Tracing 索引 (按域)
@@ -196,7 +198,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 - **无内置 HTTP / OTLP / JSON log 开关** — 嵌入方 (aikv) 负责 export 与 `/health` (ISSUE-014)
 - **旧 observability 稿大量指标名/span 名已过时** — 以 `metrics.rs` 为准 (ISSUE-015)
 - **未实现**: `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等 (ISSUE-016)
-- **compaction counter label `type` vs histogram label `phase`** — 同值不同名 (ISSUE-017)
+- **compaction counter/histogram** — label `aidb.compaction.phase` (pick/run/apply); PromQL: `aidb_compaction_phase`
 - **`scan`/`close` 无 `operations_total`** (ISSUE-018)
 - **无进程级 memory/disk 指标** — oldmain `monitoring` 模块已移除
 

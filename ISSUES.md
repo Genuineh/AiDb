@@ -50,12 +50,12 @@
 
 ### ISSUE-017: compaction 指标 counter/histogram label 名不一致
 
-- **状态**: doc-only
+- **状态**: fixed (2026-06-24)
 - **发现于**: PROGRESS 步 2 / 章节 `docs/modules/observability.md`
-- **相关 src**: `src/metrics.rs` (`COMPACTION_TOTAL`, `COMPACTION_DURATION`)
-- **现象**: `aidb_compaction_total` label 为 `type`; `aidb_compaction_duration_seconds` label 为 `phase`; 值均为 pick/run/apply
-- **影响**: 文档如实写两 label 名; PromQL 勿混用
-- **下一步**: 已关闭 (doc-only)
+- **相关 src**: `src/metrics.rs`
+- **现象**: counter 曾用 `type`, histogram 用 `phase`
+- **修复**: 统一为 `aidb.compaction.phase` (PromQL: `aidb_compaction_phase`)
+- **下一步**: 已关闭
 
 ### ISSUE-016: 旧设计若干 Prometheus 系列未实现
 
