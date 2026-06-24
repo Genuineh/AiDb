@@ -240,7 +240,7 @@ Checkpoint::verify_openable(dest, Options::default())?;
 | flag | 说明 |
 |------|------|
 | `compression` | 启用 Snap/LZ4 block 压缩; `default = ["backup"]` **不含**, 需显式 `--features compression` |
-| `monitoring` | Prometheus: bloom FP, SST/compaction 指标 |
+| `monitoring` | OTel: bloom FP, SST/compaction 指标 |
 
 ### 环境变量
 

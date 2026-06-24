@@ -14,7 +14,7 @@ description: AiDb full backup and restore — BackupManager, RecoveryManager, Ba
 - **不覆盖**: `Checkpoint::create` 内部 (pin / link-copy / compaction 互斥) → [engine-storage.md](engine-storage.md)
 - **不覆盖**: slot 迁移文件 checkpoint → [cluster.md](cluster.md)
 - **不覆盖**: AiKv `BGSAVE` (直调 `Checkpoint`, 不用 `BackupManager`) → aikv [commands-extended.md](../../../aikv/docs/modules/commands-extended.md)
-- **不覆盖**: `aidb_backup_*` Prometheus 注册与 HTTP 暴露 → [observability.md](observability.md) (步 10)
+- **不覆盖**: `aidb_backup_*` OTel 指标 → [observability.md](observability.md) (步 10)
 - **构建**: 默认启用 `backup` feature; 关则整个 `backup` mod 不存在
 
 ## 代码地图

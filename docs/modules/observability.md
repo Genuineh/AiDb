@@ -2,18 +2,18 @@
 name: aidb-observability
 depends_on:
   - aidb-engine
-description: AiDb observability — centralized Prometheus metrics (monitoring feature), tracing span index, metrics::init and register_into for embedders. Use when changing src/metrics.rs or cluster/metrics.rs, wiring aidb_* counters in aikv, or debugging Prometheus/tracing for engine and Raft paths.
+description: AiDb observability — OTel metrics (monitoring feature), tracing span index, metrics::init for embedders. Use when changing src/metrics.rs or cluster/metrics.rs, wiring aidb_* counters in aikv, or debugging OTLP/tracing for engine and Raft paths.
 ---
 
 # AiDb Observability (可观测性)
 
 ## 何时读本文
 
-- 改 `src/metrics.rs`、`src/cluster/metrics.rs` 或排查 `aidb_*` Prometheus 指标
-- 在 **嵌入方** (aikv) 注册 aidb 指标、理解 `register_into` 与 scrape 边界
+- 改 `src/metrics.rs`、`src/cluster/metrics.rs` 或排查 `aidb_*` OTel 指标
+- 在 **嵌入方** (aikv) 初始化 global `MeterProvider` 后调用 `metrics::init()`
 - 查 tracing span / event 命名, 跨 module 定位埋点
 - **不覆盖**: 各 module 内 span 实现细节 → [engine.md](engine.md) / [engine-storage.md](engine-storage.md) / [cluster.md](cluster.md) / [backup.md](backup.md)
-- **不覆盖**: HTTP `/metrics`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)
+- **不覆盖**: HTTP `/health`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)
 - **监控栈部署**: AiFactory [`monitor/README.md`](../../../AiFactory/monitor/README.md) (115 中心 + worker Alloy)
 - **构建**: `monitoring` feature 启用 `aidb::metrics`; 默认 **不** 启用
 
@@ -21,49 +21,51 @@ description: AiDb observability — centralized Prometheus metrics (monitoring f
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
-| `src/metrics.rs` | 引擎 Prometheus 系列 + `init` / `register_into` / `record_*` | `DB::open` → `init()` |
+| `src/metrics.rs` | 引擎 OTel instruments + `init` / `init_otel` / `record_*` | `DB::open` → `init()` |
 | `src/cluster/metrics.rs` | Raft RPC / log 计数 | `cluster/network.rs` |
 | `src/lib.rs` | `#[cfg(monitoring)] pub mod metrics` | 无 monitoring 则无模块 |
 | `tests/common/observability.rs` | `EventCatcher`、tracing 测试锁 | 跨模块 tracing 验收 |
-| `tests/modules/metrics/prometheus.rs` | cache/bloom/DB histogram 接线 | `--test metrics` |
-| `tests/modules/cluster/metrics.rs` | Raft 指标 register + gather | cluster 测试套件 |
+| `tests/modules/metrics/prometheus.rs` | cache/bloom/DB histogram 接线 (InMemory exporter) | `--test metrics` |
+| `tests/modules/cluster/metrics.rs` | Raft 指标 init + 导出验证 | cluster 测试套件 |
 
-**嵌入方**: `aikv/src/server/metrics.rs` 在 `Metrics::new()` 内调用 `aidb::metrics::register_into(&registry)?`, 与 `aikv_*` 共用 Registry 后由 HTTP 暴露.
+**嵌入方**: aikv `otel.rs` 在设置 global `MeterProvider` 后调用 `aidb::metrics::init()`; 与 `aikv_*` 共用 OTLP 管道, 经 Collector → Prom remote write 查询.
 
-## 架构: 双轨 + 嵌入
+## 架构: OTel + 嵌入
 
 ```mermaid
 flowchart LR
   subgraph lib [aidb 库]
     T[tracing spans/events]
-    M[metrics.rs LazyLock]
-    R[register_into]
+    M[metrics.rs OtelMetrics]
+    I[init / init_otel]
   end
   subgraph embed [嵌入方 aikv]
-    REG[prometheus::Registry]
-    HTTP[GET /metrics]
+    MP[global MeterProvider]
+    OTLP[OTLP :4317]
   end
   T --> T
-  M --> R
-  R --> REG
-  REG --> HTTP
+  M --> I
+  I --> MP
+  MP --> OTLP
 ```
 
 要点:
 
 - **Tracing**: 始终编译 (`tracing` crate); 与 `monitoring` feature **无关**
-- **Prometheus**: 仅 `monitoring` feature; `record_*` 在引擎热路径自动调用
-- **aidb 无内置 HTTP scrape 端点**; `opentelemetry` / `tracing-opentelemetry` 在 `Cargo.toml` 列为 `monitoring` 依赖, 但 **aidb/src 无 OTel Layer 接线** (见 ISSUE-014)
+- **OTel Metrics**: 仅 `monitoring` feature; `record_*` 在引擎热路径自动调用
+- **aidb 无内置 HTTP/OTLP 出口**; 嵌入方设置 global `MeterProvider` 并调用 `init()` 后, 指标经 aikv OTLP 导出
 
 ## 生命周期
 
-1. **`DB::open`** (`monitoring`): `metrics::init()` (幂等触摸所有 `LazyLock`) + `set_sequence`
-2. **运行时**: put/get/flush/compaction/backup 等路径调 `record_*` 或直接 `Gauge::set`
-3. **嵌入方启动**: `Registry::new()` → `aidb::metrics::register_into(&registry)?` → encode 暴露
+1. **`DB::open`** (`monitoring`): `metrics::init()` (幂等; 需嵌入方已设 global `MeterProvider`) + `set_sequence`
+2. **运行时**: put/get/flush/compaction/backup 等路径调 `record_*` 或直接 gauge `record`
+3. **嵌入方启动**: aikv `create_otel_tracer` 设置 `MeterProvider` → `aidb::metrics::init()` → OTLP export
 
-`register_into` 在 `monitoring` + `cluster` 时链式注册 `cluster/metrics.rs`.
+`init()` 在 `monitoring` + `cluster` 时链式初始化 `cluster/metrics.rs` 计数器.
 
-## Prometheus 指标 (`metrics.rs`)
+## Prometheus 指标名 (`metrics.rs`)
+
+> 指标 **名** 与 PromQL 查询前缀不变; 生产经 OTLP remote write 写入 Prometheus, 非进程内 registry / HTTP scrape.
 
 | 指标 | 类型 | labels | 主要触发 |
 |------|------|--------|----------|
@@ -132,25 +134,23 @@ cargo build --features monitoring
 cargo test --test metrics --features monitoring -- --test-threads=1
 ```
 
-### 注册到自定义 Registry
+### 绑定 OTel Meter (嵌入方)
 
 ```rust
-let registry = prometheus::Registry::new();
-aidb::metrics::register_into(&registry)?;
-// prometheus::Encoder::gather → HTTP 或文件
+// aikv 已在 otel.rs 内完成; 自定义嵌入方示例:
+opentelemetry::global::set_meter_provider(provider);
+aidb::metrics::init(); // 或 init_otel(meter) 显式传入
 ```
-
-aikv 已在 `Metrics::new()` 内完成上述步骤.
 
 ### 读取指标值 (测试)
 
 ```rust
-aidb::metrics::init();
-// 操作后:
-assert!(aidb::metrics::OPERATIONS_TOTAL.with_label_values(&["put"]).get() > 0);
+use aidb::metrics::testutil;
+let exporter = testutil::init_in_memory();
+// 操作后从 InMemoryMetricExporter 断言 counter/gauge
 ```
 
-或 `tests/common/observability.rs` 的 `assert_gauge_eq` / `assert_counter_eq`.
+或 `tests/common/observability.rs` 的 tracing 辅助.
 
 ### 验证 tracing event
 
@@ -166,15 +166,15 @@ let events = capture_events_under_lock(|| { /* 被测操作 */ });
 
 1. 确认编译启用了 `monitoring` feature
 2. 确认 `DB::open` 已执行 (`init()` 在 open 内)
-3. 确认嵌入方调用了 `register_into` 且 scrape 的 Registry 为同一实例
+3. 确认嵌入方已设 global `MeterProvider` 且 `aidb::metrics::init()` 在 export 前调用
 4. 对 gauge (如 `sstable_count`): 确认发生过 flush/compaction 触发 `update_sstable_metrics`
 
 ## 配置与 feature flags
 
 | 项 | 位置 | 说明 |
 |----|------|------|
-| `monitoring` | `Cargo.toml` | `prometheus`, `opentelemetry*`, `tracing-opentelemetry`; 导出 `aidb::metrics` |
-| `cluster` | 与 `monitoring` 叠加 | `register_into` 额外注册 `aidb_raft_*` |
+| `monitoring` | `Cargo.toml` | `opentelemetry*`, `tracing-opentelemetry`; 导出 `aidb::metrics` |
+| `cluster` | 与 `monitoring` 叠加 | `init()` 额外初始化 `aidb_raft_*` |
 | 无 `monitoring` | — | 无 `aidb::metrics` mod; `cluster::metrics::record_*` 为 no-op stub |
 
 ## 测试
@@ -189,11 +189,11 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 | `test_block_cache_prometheus_counters_and_size` | hit/miss/size |
 | `test_bloom_false_positive_prometheus_counter` | 与内部 atomic 一致 |
 | `test_db_operation_and_flush_duration_histograms` | put/get/flush 有样本 |
-| `test_raft_metrics_register_and_record` | gather 后 counter 值 |
+| `test_raft_metrics_register_and_record` | InMemory exporter 后 counter 值 |
 
 ## 已知限制
 
-- **无内置 HTTP / OTel / JSON log 开关** — 嵌入方 (aikv) 负责 (ISSUE-014)
+- **无内置 HTTP / OTLP / JSON log 开关** — 嵌入方 (aikv) 负责 export 与 `/health` (ISSUE-014)
 - **旧 observability 稿大量指标名/span 名已过时** — 以 `metrics.rs` 为准 (ISSUE-015)
 - **未实现**: `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等 (ISSUE-016)
 - **compaction counter label `type` vs histogram label `phase`** — 同值不同名 (ISSUE-017)

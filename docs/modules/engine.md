@@ -176,7 +176,7 @@ assert_eq!(snap.get(b"k")?, Some(b"old".to_vec()));
 
 SSTable / compaction / cache 字段见 [engine-storage.md](engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.
 
-Feature: `monitoring` 启用 WAL/MemTable/DB span 与 Prometheus 指标 → [observability.md](observability.md).
+Feature: `monitoring` 启用 WAL/MemTable/DB span 与 OTel 指标 → [observability.md](observability.md).
 
 ## 测试
 
