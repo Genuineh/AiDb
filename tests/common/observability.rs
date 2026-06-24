@@ -1,8 +1,7 @@
 //! 可观测性验证工具
 //!
 //! 提供跨模块共享的 tracing/metrics 测试辅助函数.
-//! 各模块测试可通过 EventCatcher 捕获 tracing events,
-//! 通过 prometheus::Counter::get() 直接读取指标值.
+//! 各模块测试可通过 EventCatcher 捕获 tracing events.
 //!
 //! 使用方式:
 //!   use crate::common::observability::EventCatcher;
@@ -174,22 +173,4 @@ pub fn init_test_subscriber(catcher: EventCatcher) -> tracing::subscriber::Defau
         .with(catcher)
         .with(tracing_subscriber::filter::EnvFilter::new("debug"))
         .set_default()
-}
-
-/// 验证 prometheus Counter 值.
-/// 仅当 `monitoring` feature 启用时有效.
-#[cfg(feature = "monitoring")]
-pub fn assert_counter_eq(counter: &prometheus::Counter, expected: u64) {
-    let val = counter.get() as u64;
-    assert_eq!(val, expected, "counter expected {expected}, got {val}");
-}
-
-/// 验证 prometheus Gauge 值.
-#[cfg(feature = "monitoring")]
-pub fn assert_gauge_eq(gauge: &prometheus::Gauge, expected: f64) {
-    let val = gauge.get();
-    assert!(
-        (val - expected).abs() < f64::EPSILON,
-        "gauge expected {expected}, got {val}"
-    );
 }

@@ -1230,13 +1230,8 @@ fn update_sstable_metrics(_sstables: &[Vec<Arc<SSTableReader>>]) {
     #[cfg(feature = "monitoring")]
     for (level, readers) in _sstables.iter().enumerate() {
         let label = level.to_string();
-        crate::metrics::SSTABLE_COUNT
-            .with_label_values(&[&label])
-            .set(readers.len() as i64);
         let total: u64 = readers.iter().map(|r| r.file_size()).sum();
-        crate::metrics::SSTABLE_SIZE_BYTES
-            .with_label_values(&[&label])
-            .set(total as i64);
+        crate::metrics::set_sstable_level(&label, readers.len() as i64, total as i64);
     }
 }
 

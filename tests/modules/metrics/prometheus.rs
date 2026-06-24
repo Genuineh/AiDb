@@ -1,17 +1,12 @@
-//! Prometheus 指标 wiring 验证
+//! OTel 指标 wiring 验证
 
 use aidb::config::Options;
 use aidb::engine::cache::{BlockCache, CacheKey};
 use aidb::engine::filter::bloom::bloom_false_positive_count;
-use aidb::metrics::{
-    self, BLOCK_CACHE_HITS_TOTAL, BLOCK_CACHE_MISSES_TOTAL, BLOCK_CACHE_SIZE_BYTES,
-    BLOOM_FALSE_POSITIVE_TOTAL, FLUSH_DURATION, OPERATION_DURATION,
-};
+use aidb::metrics::testutil;
 use aidb::DB;
 use bytes::Bytes;
 use tempfile::tempdir;
-
-use crate::common::observability::assert_gauge_eq;
 
 fn cache_key(file_number: u64, offset: u64) -> CacheKey {
     CacheKey {
@@ -21,30 +16,42 @@ fn cache_key(file_number: u64, offset: u64) -> CacheKey {
 }
 
 #[test]
-fn test_block_cache_prometheus_counters_and_size() {
-    metrics::init();
+fn test_block_cache_otel_counters_and_size() {
+    let exporter = testutil::init_in_memory();
     let cache = BlockCache::new(1024);
     let k = cache_key(1, 0);
 
-    let hits_before = BLOCK_CACHE_HITS_TOTAL.get();
-    let misses_before = BLOCK_CACHE_MISSES_TOTAL.get();
+    let hits_before = testutil::counter_sum(&exporter, "aidb_block_cache_hits_total");
+    let misses_before = testutil::counter_sum(&exporter, "aidb_block_cache_misses_total");
 
     cache.insert(k.clone(), Bytes::from_static(b"hello"));
-    assert_gauge_eq(&BLOCK_CACHE_SIZE_BYTES, cache.size() as f64);
+    assert!(
+        (testutil::gauge_value(&exporter, "aidb_block_cache_size_bytes") - cache.size() as f64)
+            .abs()
+            < f64::EPSILON
+    );
 
     cache.get(k.clone());
-    assert_eq!(BLOCK_CACHE_HITS_TOTAL.get(), hits_before + 1);
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aidb_block_cache_hits_total"),
+        hits_before + 1
+    );
 
     cache.get(cache_key(2, 0));
-    assert_eq!(BLOCK_CACHE_MISSES_TOTAL.get(), misses_before + 1);
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aidb_block_cache_misses_total"),
+        misses_before + 1
+    );
 
     cache.clear();
-    assert_gauge_eq(&BLOCK_CACHE_SIZE_BYTES, 0.0);
+    assert!(
+        testutil::gauge_value(&exporter, "aidb_block_cache_size_bytes").abs() < f64::EPSILON
+    );
 }
 
 #[test]
-fn test_bloom_false_positive_prometheus_counter() {
-    metrics::init();
+fn test_bloom_false_positive_otel_counter() {
+    let exporter = testutil::init_in_memory();
     let dir = tempdir().unwrap();
     let mut opts = Options::for_testing();
     opts.bloom_false_positive_rate = 0.01;
@@ -57,54 +64,45 @@ fn test_bloom_false_positive_prometheus_counter() {
     db.flush().unwrap();
 
     let counter_before = bloom_false_positive_count();
-    let prom_before = BLOOM_FALSE_POSITIVE_TOTAL.get();
+    let prom_before = testutil::counter_sum(&exporter, "aidb_bloom_false_positive_total");
     for i in 0..500 {
         let _ = db.get(format!("absent_{i:04x}").as_bytes());
     }
 
     assert_eq!(
-        BLOOM_FALSE_POSITIVE_TOTAL.get() - prom_before,
+        testutil::counter_sum(&exporter, "aidb_bloom_false_positive_total") - prom_before,
         bloom_false_positive_count() - counter_before,
-        "prometheus bloom counter should track internal atomic counter"
+        "otel bloom counter should track internal atomic counter"
     );
     db.close().unwrap();
 }
 
 #[test]
 fn test_db_operation_and_flush_duration_histograms() {
-    metrics::init();
+    let exporter = testutil::init_in_memory();
     let dir = tempdir().unwrap();
     let mut opts = Options::for_testing();
     opts.memtable_size = 4096;
     opts.background_compaction = false;
     let db = DB::open(dir.path(), opts).unwrap();
 
-    let put_before = OPERATION_DURATION
-        .with_label_values(&["put"])
-        .get_sample_count();
-    let get_before = OPERATION_DURATION
-        .with_label_values(&["get"])
-        .get_sample_count();
-    let flush_before = FLUSH_DURATION.get_sample_count();
+    let op_before = testutil::histogram_count(&exporter, "aidb_operation_duration_seconds");
+    let flush_before = testutil::histogram_count(&exporter, "aidb_flush_duration_seconds");
 
     db.put(b"k", b"v").unwrap();
     assert!(
-        OPERATION_DURATION
-            .with_label_values(&["put"])
-            .get_sample_count()
-            > put_before
+        testutil::histogram_count(&exporter, "aidb_operation_duration_seconds") > op_before
     );
 
     db.get(b"k").unwrap();
     assert!(
-        OPERATION_DURATION
-            .with_label_values(&["get"])
-            .get_sample_count()
-            > get_before
+        testutil::histogram_count(&exporter, "aidb_operation_duration_seconds") > op_before + 1
     );
 
     db.flush().unwrap();
-    assert!(FLUSH_DURATION.get_sample_count() > flush_before);
+    assert!(
+        testutil::histogram_count(&exporter, "aidb_flush_duration_seconds") > flush_before
+    );
 
     db.close().unwrap();
 }

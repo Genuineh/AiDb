@@ -18,7 +18,7 @@ cluster = [
   "dep:rmp-serde",
   "dep:async-trait",
 ]
-monitoring = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:prometheus"]
+monitoring = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 
 [dependencies]
 # Core primitives
@@ -51,10 +51,8 @@ snap = { version = "1", optional = true }
 lz4 = { version = "1", optional = true }
 
 # Monitoring feature (optional)
-opentelemetry = { version = "0.21", optional = true }
-opentelemetry_sdk = { version = "0.21", optional = true }
-tracing-opentelemetry = { version = "0.22", optional = true }
-prometheus = { version = "0.13", optional = true }
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", optional = true, features = ["testing"] }
 
 # Cluster feature (optional)
 tonic   = { version = "0.11", optional = true }

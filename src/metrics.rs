@@ -1,334 +1,441 @@
-//! 集中式 Metrics 注册表.
+//! 集中式 OTel Metrics (`monitoring` feature).
 //!
-//! 所有模块的 Prometheus 指标统一在此注册, 通过 `monitoring` feature 条件编译.
+//! aidb 无独立 OTLP 出口; 嵌入方 (aikv) 初始化 global `MeterProvider` 后调用 `init()`.
 
-use std::sync::LazyLock;
+#[cfg(feature = "monitoring")]
+use std::sync::{Arc, OnceLock};
 
-/// WAL 文件总字节数
-pub static WAL_SIZE: LazyLock<prometheus::Gauge> =
-    LazyLock::new(|| prometheus::Gauge::new("aidb_wal_size_bytes", "WAL 文件总大小").unwrap());
+#[cfg(feature = "monitoring")]
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
+#[cfg(feature = "monitoring")]
+use opentelemetry::KeyValue;
 
-/// MemTable 近似内存 (user_key+value), label `state`: `active` | `frozen`
-pub static MEMTABLE_SIZE: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
-    prometheus::IntGaugeVec::new(
-        prometheus::Opts::new(
-            "aidb_memtable_size_bytes",
-            "MemTable 近似大小 (user_key+value 字节)",
-        ),
-        &["state"],
-    )
-    .unwrap()
-});
+#[cfg(feature = "monitoring")]
+static METRICS: OnceLock<Arc<OtelMetrics>> = OnceLock::new();
 
-/// 各层 SSTable 文件数量
-pub static SSTABLE_COUNT: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
-    prometheus::IntGaugeVec::new(
-        prometheus::Opts::new("aidb_sstable_count", "各层 SSTable 文件数量"),
-        &["level"],
-    )
-    .unwrap()
-});
-
-/// DB 操作计数
-pub static OPERATIONS_TOTAL: LazyLock<prometheus::IntCounterVec> = LazyLock::new(|| {
-    prometheus::IntCounterVec::new(
-        prometheus::Opts::new("aidb_operations_total", "DB 操作总数"),
-        &["op"],
-    )
-    .unwrap()
-});
-
-/// DB 操作耗时 (秒)
-pub static OPERATION_DURATION: LazyLock<prometheus::HistogramVec> = LazyLock::new(|| {
-    prometheus::HistogramVec::new(
-        prometheus::HistogramOpts::new("aidb_operation_duration_seconds", "DB 操作耗时").buckets(
-            vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
-        ),
-        &["op"],
-    )
-    .unwrap()
-});
-
-/// MemTable flush 耗时 (秒)
-pub static FLUSH_DURATION: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    prometheus::Histogram::with_opts(
-        prometheus::HistogramOpts::new("aidb_flush_duration_seconds", "MemTable flush 耗时")
-            .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]),
-    )
-    .unwrap()
-});
-
-/// Block Cache 当前占用 (字节)
-pub static BLOCK_CACHE_SIZE_BYTES: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
-    prometheus::Gauge::new("aidb_block_cache_size_bytes", "Block Cache 当前大小").unwrap()
-});
-
-/// Block Cache 命中次数
-pub static BLOCK_CACHE_HITS_TOTAL: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
-    prometheus::IntCounter::new("aidb_block_cache_hits_total", "Block Cache 命中次数").unwrap()
-});
-
-/// Block Cache 未命中次数
-pub static BLOCK_CACHE_MISSES_TOTAL: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
-    prometheus::IntCounter::new("aidb_block_cache_misses_total", "Block Cache 未命中次数").unwrap()
-});
-
-/// Bloom Filter 假阳性累计次数
-pub static BLOOM_FALSE_POSITIVE_TOTAL: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
-    prometheus::IntCounter::new("aidb_bloom_false_positive_total", "Bloom Filter 假阳性次数")
-        .unwrap()
-});
-
-/// Flush 次数
-pub static FLUSH_TOTAL: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
-    prometheus::IntCounter::new("aidb_flush_total", "MemTable flush 次数").unwrap()
-});
-
-/// 当前 sequence
-pub static SEQUENCE: LazyLock<prometheus::IntGauge> =
-    LazyLock::new(|| prometheus::IntGauge::new("aidb_sequence", "当前 DB sequence").unwrap());
-
-/// 近似 key 数量
-pub static TOTAL_KEY_COUNT: LazyLock<prometheus::IntGauge> =
-    LazyLock::new(|| prometheus::IntGauge::new("aidb_total_key_count", "近似存活 key 数").unwrap());
-
-/// Compaction 次数
-pub static COMPACTION_TOTAL: LazyLock<prometheus::IntCounterVec> = LazyLock::new(|| {
-    prometheus::IntCounterVec::new(
-        prometheus::Opts::new("aidb_compaction_total", "Compaction 次数"),
-        &["type"],
-    )
-    .unwrap()
-});
-
-/// Compaction 耗时 (秒)
-pub static COMPACTION_DURATION: LazyLock<prometheus::HistogramVec> = LazyLock::new(|| {
-    prometheus::HistogramVec::new(
-        prometheus::HistogramOpts::new("aidb_compaction_duration_seconds", "Compaction 各阶段耗时")
-            .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]),
-        &["phase"],
-    )
-    .unwrap()
-});
-
-/// 各层 SSTable 文件总大小 (字节)
-pub static SSTABLE_SIZE_BYTES: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
-    prometheus::IntGaugeVec::new(
-        prometheus::Opts::new("aidb_sstable_size_bytes", "各层 SSTable 文件总大小"),
-        &["level"],
-    )
-    .unwrap()
-});
-
-/// 备份操作计数 (op=create|delete|restore)
-pub static BACKUP_TOTAL: LazyLock<prometheus::IntCounterVec> = LazyLock::new(|| {
-    prometheus::IntCounterVec::new(
-        prometheus::Opts::new("aidb_backup_total", "备份操作计数"),
-        &["op"],
-    )
-    .unwrap()
-});
-
-/// 备份文件总大小 (字节)
-pub static BACKUP_SIZE_BYTES: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
-    prometheus::IntGauge::new("aidb_backup_size_bytes", "备份文件总大小（字节）").unwrap()
-});
-
-/// 备份操作耗时 (秒)
-pub static BACKUP_DURATION_SECONDS: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    prometheus::Histogram::with_opts(
-        prometheus::HistogramOpts::new("aidb_backup_duration_seconds", "备份操作耗时（秒）")
-            .buckets(vec![0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]),
-    )
-    .unwrap()
-});
-
-/// 初始化所有指标 (幂等)
-pub fn init() {
-    let _ = &*WAL_SIZE;
-    let _ = &*MEMTABLE_SIZE;
-    let _ = &*SSTABLE_COUNT;
-    let _ = &*SSTABLE_SIZE_BYTES;
-    let _ = &*OPERATIONS_TOTAL;
-    let _ = &*OPERATION_DURATION;
-    let _ = &*FLUSH_DURATION;
-    let _ = &*BLOCK_CACHE_SIZE_BYTES;
-    let _ = &*BLOCK_CACHE_HITS_TOTAL;
-    let _ = &*BLOCK_CACHE_MISSES_TOTAL;
-    let _ = &*BLOOM_FALSE_POSITIVE_TOTAL;
-    let _ = &*FLUSH_TOTAL;
-    let _ = &*SEQUENCE;
-    let _ = &*TOTAL_KEY_COUNT;
-    let _ = &*COMPACTION_TOTAL;
-    let _ = &*COMPACTION_DURATION;
-    let _ = &*BACKUP_TOTAL;
-    let _ = &*BACKUP_SIZE_BYTES;
-    let _ = &*BACKUP_DURATION_SECONDS;
-    MEMTABLE_SIZE.with_label_values(&["active"]).set(0);
-    MEMTABLE_SIZE.with_label_values(&["frozen"]).set(0);
+#[cfg(feature = "monitoring")]
+struct OtelMetrics {
+    wal_size_bytes: Gauge<f64>,
+    memtable_size_bytes: Gauge<f64>,
+    sstable_count: Gauge<f64>,
+    sstable_size_bytes: Gauge<f64>,
+    operations_total: Counter<u64>,
+    operation_duration_seconds: Histogram<f64>,
+    flush_duration_seconds: Histogram<f64>,
+    block_cache_size_bytes: Gauge<f64>,
+    block_cache_hits_total: Counter<u64>,
+    block_cache_misses_total: Counter<u64>,
+    bloom_false_positive_total: Counter<u64>,
+    flush_total: Counter<u64>,
+    sequence: Gauge<f64>,
+    total_key_count: Gauge<f64>,
+    compaction_total: Counter<u64>,
+    compaction_duration_seconds: Histogram<f64>,
+    backup_total: Counter<u64>,
+    backup_size_bytes: Gauge<f64>,
+    backup_duration_seconds: Histogram<f64>,
+    #[cfg(feature = "cluster")]
+    raft_rpc_total: Counter<u64>,
+    #[cfg(feature = "cluster")]
+    raft_log_entries_total: Counter<u64>,
 }
 
-/// 将所有 AiDb 指标注册到外部 Registry.
-/// 在进程的早期调用, 确保在 record_* 被调用前完成.
-pub fn register_into(registry: &prometheus::Registry) -> Result<(), prometheus::Error> {
-    registry.register(Box::new(WAL_SIZE.clone()))?;
-    registry.register(Box::new(MEMTABLE_SIZE.clone()))?;
-    registry.register(Box::new(SSTABLE_COUNT.clone()))?;
-    registry.register(Box::new(SSTABLE_SIZE_BYTES.clone()))?;
-    registry.register(Box::new(OPERATIONS_TOTAL.clone()))?;
-    registry.register(Box::new(OPERATION_DURATION.clone()))?;
-    registry.register(Box::new(FLUSH_DURATION.clone()))?;
-    registry.register(Box::new(BLOCK_CACHE_SIZE_BYTES.clone()))?;
-    registry.register(Box::new(BLOCK_CACHE_HITS_TOTAL.clone()))?;
-    registry.register(Box::new(BLOCK_CACHE_MISSES_TOTAL.clone()))?;
-    registry.register(Box::new(BLOOM_FALSE_POSITIVE_TOTAL.clone()))?;
-    registry.register(Box::new(FLUSH_TOTAL.clone()))?;
-    registry.register(Box::new(SEQUENCE.clone()))?;
-    registry.register(Box::new(TOTAL_KEY_COUNT.clone()))?;
-    registry.register(Box::new(COMPACTION_TOTAL.clone()))?;
-    registry.register(Box::new(COMPACTION_DURATION.clone()))?;
-    registry.register(Box::new(BACKUP_TOTAL.clone()))?;
-    registry.register(Box::new(BACKUP_SIZE_BYTES.clone()))?;
-    registry.register(Box::new(BACKUP_DURATION_SECONDS.clone()))?;
-    #[cfg(all(feature = "monitoring", feature = "cluster"))]
-    crate::cluster::metrics::register_into(registry)?;
-    Ok(())
+#[cfg(feature = "monitoring")]
+impl OtelMetrics {
+    fn new(meter: Meter) -> Self {
+        Self {
+            wal_size_bytes: meter
+                .f64_gauge("aidb_wal_size_bytes")
+                .with_description("WAL 文件总大小")
+                .build(),
+            memtable_size_bytes: meter
+                .f64_gauge("aidb_memtable_size_bytes")
+                .with_description("MemTable 近似大小 (user_key+value 字节)")
+                .build(),
+            sstable_count: meter
+                .f64_gauge("aidb_sstable_count")
+                .with_description("各层 SSTable 文件数量")
+                .build(),
+            sstable_size_bytes: meter
+                .f64_gauge("aidb_sstable_size_bytes")
+                .with_description("各层 SSTable 文件总大小")
+                .build(),
+            operations_total: meter
+                .u64_counter("aidb_operations_total")
+                .with_description("DB 操作总数")
+                .build(),
+            operation_duration_seconds: meter
+                .f64_histogram("aidb_operation_duration_seconds")
+                .with_description("DB 操作耗时")
+                .with_boundaries(vec![
+                    0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0,
+                ])
+                .build(),
+            flush_duration_seconds: meter
+                .f64_histogram("aidb_flush_duration_seconds")
+                .with_description("MemTable flush 耗时")
+                .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0])
+                .build(),
+            block_cache_size_bytes: meter
+                .f64_gauge("aidb_block_cache_size_bytes")
+                .with_description("Block Cache 当前大小")
+                .build(),
+            block_cache_hits_total: meter
+                .u64_counter("aidb_block_cache_hits_total")
+                .with_description("Block Cache 命中次数")
+                .build(),
+            block_cache_misses_total: meter
+                .u64_counter("aidb_block_cache_misses_total")
+                .with_description("Block Cache 未命中次数")
+                .build(),
+            bloom_false_positive_total: meter
+                .u64_counter("aidb_bloom_false_positive_total")
+                .with_description("Bloom Filter 假阳性次数")
+                .build(),
+            flush_total: meter
+                .u64_counter("aidb_flush_total")
+                .with_description("MemTable flush 次数")
+                .build(),
+            sequence: meter
+                .f64_gauge("aidb_sequence")
+                .with_description("当前 DB sequence")
+                .build(),
+            total_key_count: meter
+                .f64_gauge("aidb_total_key_count")
+                .with_description("近似存活 key 数")
+                .build(),
+            compaction_total: meter
+                .u64_counter("aidb_compaction_total")
+                .with_description("Compaction 次数")
+                .build(),
+            compaction_duration_seconds: meter
+                .f64_histogram("aidb_compaction_duration_seconds")
+                .with_description("Compaction 各阶段耗时")
+                .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0])
+                .build(),
+            backup_total: meter
+                .u64_counter("aidb_backup_total")
+                .with_description("备份操作计数")
+                .build(),
+            backup_size_bytes: meter
+                .f64_gauge("aidb_backup_size_bytes")
+                .with_description("备份文件总大小（字节）")
+                .build(),
+            backup_duration_seconds: meter
+                .f64_histogram("aidb_backup_duration_seconds")
+                .with_description("备份操作耗时（秒）")
+                .with_boundaries(vec![0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0])
+                .build(),
+            #[cfg(feature = "cluster")]
+            raft_rpc_total: meter
+                .u64_counter("aidb_raft_rpc_total")
+                .with_description("Raft RPC 调用次数")
+                .build(),
+            #[cfg(feature = "cluster")]
+            raft_log_entries_total: meter
+                .u64_counter("aidb_raft_log_entries_total")
+                .with_description("Raft 日志条目累计数")
+                .build(),
+        }
+    }
+}
+
+#[cfg(feature = "monitoring")]
+fn metrics() -> Option<&'static Arc<OtelMetrics>> {
+    METRICS.get()
+}
+
+#[cfg(feature = "monitoring")]
+fn kv(label: &str, value: impl Into<String>) -> KeyValue {
+    KeyValue::new(label.to_string(), value.into())
+}
+
+/// 绑定 OTel Meter (幂等). 通常由 `init()` 在 global provider 就绪后调用.
+#[cfg(feature = "monitoring")]
+pub fn init_otel(meter: Meter) {
+    let _ = METRICS.set(Arc::new(OtelMetrics::new(meter)));
+}
+
+/// 初始化 OTel 指标 (幂等). 需要 global `MeterProvider` 已由嵌入方设置.
+pub fn init() {
+    #[cfg(feature = "monitoring")]
+    {
+        if METRICS.get().is_none() {
+            let meter = opentelemetry::global::meter("aidb");
+            init_otel(meter);
+        }
+    }
+}
+
+#[cfg(feature = "monitoring")]
+pub fn set_wal_size(bytes: u64) {
+    if let Some(m) = metrics() {
+        m.wal_size_bytes.record(bytes as f64, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_operation(op: &str) {
-    OPERATIONS_TOTAL.with_label_values(&[op]).inc();
-}
-
-/// aikv OTel histogram 双写 hook (C2: aidb 无独立 OTLP 出口).
-#[cfg(feature = "monitoring")]
-#[derive(Default, Clone, Copy)]
-pub struct OtelHistogramHooks {
-    pub operation_duration: Option<fn(&str, f64)>,
-    pub flush_duration: Option<fn(f64)>,
-    pub compaction_duration: Option<fn(&str, f64)>,
-    pub backup_duration: Option<fn(f64)>,
-}
-
-#[cfg(feature = "monitoring")]
-static OTEL_HISTOGRAM_HOOKS: std::sync::OnceLock<OtelHistogramHooks> = std::sync::OnceLock::new();
-
-#[cfg(feature = "monitoring")]
-pub fn set_otel_histogram_hooks(hooks: OtelHistogramHooks) {
-    let _ = OTEL_HISTOGRAM_HOOKS.set(hooks);
-}
-
-#[cfg(feature = "monitoring")]
-fn invoke_op_duration(op: &str, secs: f64) {
-    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
-        if let Some(h) = hooks.operation_duration {
-            h(op, secs);
-        }
+    if let Some(m) = metrics() {
+        m.operations_total.add(1, &[kv("op", op)]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_operation_duration(op: &str, secs: f64) {
-    OPERATION_DURATION.with_label_values(&[op]).observe(secs);
-    invoke_op_duration(op, secs);
+    if let Some(m) = metrics() {
+        m.operation_duration_seconds.record(secs, &[kv("op", op)]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_flush() {
-    FLUSH_TOTAL.inc();
+    if let Some(m) = metrics() {
+        m.flush_total.add(1, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_flush_duration(secs: f64) {
-    FLUSH_DURATION.observe(secs);
-    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
-        if let Some(h) = hooks.flush_duration {
-            h(secs);
-        }
+    if let Some(m) = metrics() {
+        m.flush_duration_seconds.record(secs, &[]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn set_block_cache_size(bytes: u64) {
-    BLOCK_CACHE_SIZE_BYTES.set(bytes as f64);
+    if let Some(m) = metrics() {
+        m.block_cache_size_bytes.record(bytes as f64, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_block_cache_hit() {
-    BLOCK_CACHE_HITS_TOTAL.inc();
+    if let Some(m) = metrics() {
+        m.block_cache_hits_total.add(1, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_block_cache_miss() {
-    BLOCK_CACHE_MISSES_TOTAL.inc();
+    if let Some(m) = metrics() {
+        m.block_cache_misses_total.add(1, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_bloom_false_positive() {
-    BLOOM_FALSE_POSITIVE_TOTAL.inc();
+    if let Some(m) = metrics() {
+        m.bloom_false_positive_total.add(1, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn set_sequence(seq: u64) {
-    SEQUENCE.set(seq as i64);
+    if let Some(m) = metrics() {
+        m.sequence.record(seq as f64, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn set_total_key_count(count: usize) {
-    TOTAL_KEY_COUNT.set(count as i64);
+    if let Some(m) = metrics() {
+        m.total_key_count.record(count as f64, &[]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn memtable_set_active(bytes: usize) {
-    MEMTABLE_SIZE
-        .with_label_values(&["active"])
-        .set(bytes as i64);
+    if let Some(m) = metrics() {
+        m.memtable_size_bytes
+            .record(bytes as f64, &[kv("state", "active")]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_compaction(phase: &str) {
-    COMPACTION_TOTAL.with_label_values(&[phase]).inc();
+    if let Some(m) = metrics() {
+        m.compaction_total.add(1, &[kv("type", phase)]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_compaction_duration(phase: &str, secs: f64) {
-    COMPACTION_DURATION
-        .with_label_values(&[phase])
-        .observe(secs);
-    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
-        if let Some(h) = hooks.compaction_duration {
-            h(phase, secs);
-        }
+    if let Some(m) = metrics() {
+        m.compaction_duration_seconds
+            .record(secs, &[kv("phase", phase)]);
     }
 }
 
-/// freeze 时: 将字节数计入 frozen, active 置 0 (新 active 由 Engine 创建后再 set)
 #[cfg(feature = "monitoring")]
 pub fn memtable_on_freeze(frozen_bytes: usize) {
-    MEMTABLE_SIZE
-        .with_label_values(&["frozen"])
-        .add(frozen_bytes as i64);
-    MEMTABLE_SIZE.with_label_values(&["active"]).set(0);
+    if let Some(m) = metrics() {
+        m.memtable_size_bytes
+            .record(frozen_bytes as f64, &[kv("state", "frozen")]);
+        m.memtable_size_bytes
+            .record(0.0, &[kv("state", "active")]);
+    }
+}
+
+#[cfg(feature = "monitoring")]
+pub fn set_sstable_level(level: &str, count: i64, size_bytes: i64) {
+    if let Some(m) = metrics() {
+        let attrs = [kv("level", level)];
+        m.sstable_count.record(count as f64, &attrs);
+        m.sstable_size_bytes.record(size_bytes as f64, &attrs);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_backup_create(size_bytes: u64, duration_secs: f64) {
-    BACKUP_TOTAL.with_label_values(&["create"]).inc();
-    BACKUP_SIZE_BYTES.set(size_bytes as i64);
-    BACKUP_DURATION_SECONDS.observe(duration_secs);
-    if let Some(hooks) = OTEL_HISTOGRAM_HOOKS.get() {
-        if let Some(h) = hooks.backup_duration {
-            h(duration_secs);
-        }
+    if let Some(m) = metrics() {
+        m.backup_total.add(1, &[kv("op", "create")]);
+        m.backup_size_bytes.record(size_bytes as f64, &[]);
+        m.backup_duration_seconds.record(duration_secs, &[]);
     }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_backup_delete() {
-    BACKUP_TOTAL.with_label_values(&["delete"]).inc();
+    if let Some(m) = metrics() {
+        m.backup_total.add(1, &[kv("op", "delete")]);
+    }
 }
 
 #[cfg(feature = "monitoring")]
 pub fn record_backup_restore() {
-    BACKUP_TOTAL.with_label_values(&["restore"]).inc();
+    if let Some(m) = metrics() {
+        m.backup_total.add(1, &[kv("op", "restore")]);
+    }
+}
+
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
+pub fn record_raft_rpc(rpc_type: &str, direction: &str) {
+    if let Some(m) = metrics() {
+        m.raft_rpc_total.add(
+            1,
+            &[kv("type", rpc_type), kv("direction", direction)],
+        );
+    }
+}
+
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
+pub fn record_raft_log_entries(count: u64) {
+    if count > 0 {
+        if let Some(m) = metrics() {
+            m.raft_log_entries_total.add(count, &[]);
+        }
+    }
+}
+
+#[cfg(not(feature = "monitoring"))]
+pub fn record_raft_rpc(_rpc_type: &str, _direction: &str) {}
+
+#[cfg(not(feature = "monitoring"))]
+pub fn record_raft_log_entries(_count: u64) {}
+
+#[cfg(feature = "monitoring")]
+pub mod testutil {
+    use std::sync::{Arc, OnceLock};
+
+    use opentelemetry::global;
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+
+    static TEST_EXPORTER: OnceLock<InMemoryMetricExporter> = OnceLock::new();
+    static TEST_PROVIDER: OnceLock<Arc<SdkMeterProvider>> = OnceLock::new();
+
+    /// 测试用: 安装 InMemory exporter 并 init aidb metrics.
+    pub fn init_in_memory() -> InMemoryMetricExporter {
+        if let Some(exporter) = TEST_EXPORTER.get() {
+            super::init();
+            return exporter.clone();
+        }
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        global::set_meter_provider(provider.clone());
+        let provider = Arc::new(provider);
+        let _ = TEST_PROVIDER.set(Arc::clone(&provider));
+        let _ = TEST_EXPORTER.set(exporter.clone());
+        super::init();
+        exporter
+    }
+
+    fn latest_resource_metrics(
+        exporter: &InMemoryMetricExporter,
+    ) -> Option<Vec<opentelemetry_sdk::metrics::data::ResourceMetrics>> {
+        if let Some(provider) = TEST_PROVIDER.get() {
+            provider.force_flush().unwrap();
+        }
+        exporter.get_finished_metrics().ok()
+    }
+
+    pub fn counter_sum(exporter: &InMemoryMetricExporter, name: &str) -> u64 {
+        let Some(metrics) = latest_resource_metrics(exporter) else {
+            return 0;
+        };
+        let Some(rm) = metrics.last() else {
+            return 0;
+        };
+        let mut total = 0u64;
+        for sm in rm.scope_metrics() {
+            for m in sm.metrics() {
+                if m.name() != name {
+                    continue;
+                }
+                if let AggregatedMetrics::U64(MetricData::Sum(sum)) = m.data() {
+                    total += sum.data_points().map(|dp| dp.value()).sum::<u64>();
+                }
+            }
+        }
+        total
+    }
+
+    pub fn gauge_value(exporter: &InMemoryMetricExporter, name: &str) -> f64 {
+        let Some(metrics) = latest_resource_metrics(exporter) else {
+            return 0.0;
+        };
+        let Some(rm) = metrics.last() else {
+            return 0.0;
+        };
+        for sm in rm.scope_metrics() {
+            for m in sm.metrics() {
+                if m.name() != name {
+                    continue;
+                }
+                if let AggregatedMetrics::F64(MetricData::Gauge(g)) = m.data() {
+                    if let Some(dp) = g.data_points().last() {
+                        return dp.value();
+                    }
+                }
+            }
+        }
+        0.0
+    }
+
+    pub fn histogram_count(exporter: &InMemoryMetricExporter, name: &str) -> u64 {
+        let Some(metrics) = latest_resource_metrics(exporter) else {
+            return 0;
+        };
+        let Some(rm) = metrics.last() else {
+            return 0;
+        };
+        let mut total = 0u64;
+        for sm in rm.scope_metrics() {
+            for m in sm.metrics() {
+                if m.name() != name {
+                    continue;
+                }
+                if let AggregatedMetrics::F64(MetricData::Histogram(h)) = m.data() {
+                    total += h
+                        .data_points()
+                        .map(|dp| dp.count() as u64)
+                        .sum::<u64>();
+                }
+            }
+        }
+        total
+    }
 }

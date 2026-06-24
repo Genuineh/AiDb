@@ -103,7 +103,7 @@ impl WALManager {
         writer.sync_all()?;
 
         #[cfg(feature = "monitoring")]
-        crate::metrics::WAL_SIZE.set(writer.file_size().unwrap_or(0) as f64);
+        crate::metrics::set_wal_size(writer.file_size().unwrap_or(0));
 
         Ok(WALManager {
             writer,
@@ -172,7 +172,7 @@ impl WALManager {
         self.writer.write_record(RecordType::Full, data)?;
 
         #[cfg(feature = "monitoring")]
-        crate::metrics::WAL_SIZE.set(self.writer.file_size().unwrap_or(0) as f64);
+        crate::metrics::set_wal_size(self.writer.file_size().unwrap_or(0));
 
         Ok(())
     }
@@ -249,7 +249,7 @@ impl WALManager {
         self.writer.sync_all()?;
 
         #[cfg(feature = "monitoring")]
-        crate::metrics::WAL_SIZE.set(self.writer.file_size().unwrap_or(0) as f64);
+        crate::metrics::set_wal_size(self.writer.file_size().unwrap_or(0));
 
         self.file_number = new_file_number;
         self.min_seq = next_sequence;
