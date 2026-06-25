@@ -80,6 +80,7 @@ flowchart LR
 | `aidb_flush_total` | Counter | — | flush 完成 |
 | `aidb_flush_duration_seconds` | Histogram | — | flush 路径 |
 | `aidb_block_cache_size_bytes` | Gauge | — | `block_cache.rs` |
+| `aidb_block_cache_capacity_bytes` | Gauge | — | `BlockCache::new` |
 | `aidb_block_cache_hits_total` | Counter | — | cache get hit |
 | `aidb_block_cache_misses_total` | Counter | — | cache get miss |
 | `aidb_bloom_false_positive_total` | Counter | — | `filter/bloom.rs` |

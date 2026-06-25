@@ -44,6 +44,7 @@ struct OtelMetrics {
     db_client_operation_duration: Histogram<f64>,
     flush_duration_seconds: Histogram<f64>,
     block_cache_size_bytes: Gauge<f64>,
+    block_cache_capacity_bytes: Gauge<f64>,
     block_cache_hits_total: Counter<u64>,
     block_cache_misses_total: Counter<u64>,
     bloom_false_positive_total: Counter<u64>,
@@ -120,6 +121,11 @@ impl OtelMetrics {
             block_cache_size_bytes: meter
                 .f64_gauge("aidb_block_cache_size_bytes")
                 .with_description("Block Cache 当前大小")
+                .with_unit("By")
+                .build(),
+            block_cache_capacity_bytes: meter
+                .f64_gauge("aidb_block_cache_capacity_bytes")
+                .with_description("Block Cache 配置容量上限")
                 .with_unit("By")
                 .build(),
             block_cache_hits_total: meter
@@ -278,6 +284,13 @@ pub fn record_flush_duration(secs: f64) {
 pub fn set_block_cache_size(bytes: u64) {
     if let Some(m) = metrics() {
         m.block_cache_size_bytes.record(bytes as f64, &[]);
+    }
+}
+
+#[cfg(feature = "monitoring")]
+pub fn set_block_cache_capacity(bytes: u64) {
+    if let Some(m) = metrics() {
+        m.block_cache_capacity_bytes.record(bytes as f64, &[]);
     }
 }
 

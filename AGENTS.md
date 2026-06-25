@@ -21,14 +21,28 @@
 
 ## 技术栈与参考
 
+### Redis 8.8 参考标准 (协议与可观测性在 AiKv)
+
+AiDb **不实现** RESP / INFO / redis_exporter; 与 Redis 的对照主要在 **AiKv** 层. 本库与 Redis 8.8 的交集:
+
+| 领域 | AiDb 对齐点 | 详细对照 |
+|------|-------------|----------|
+| **Slot 模型** | 16384 slot, CRC16 — 与 Redis Cluster 一致 | AiKv `cluster/` + [AiKv AGENTS.md](../aikv/AGENTS.md) |
+| **共识 / 拓扑** | MetaRaft + MultiRaft (非 Redis gossip 共识) | [DESIGN.md](DESIGN.md); 勿按 Redis 16379 bus 臆测行为 |
+| **引擎指标** | `aidb_*` 经 OTLP, **不进** Redis INFO | [docs/modules/observability.md](docs/modules/observability.md) |
+
+排查 **Redis 兼容性** (命令、MOVED、INFO、commandstats、慢查询统计) → **AiKv**; 排查 **LSM/Raft/Compaction** → **AiDb**.
+
+**AiKv 侧 Redis 8.8 基准:** [../aikv/docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](../aikv/docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) · [../aikv/DESIGN.md](../aikv/DESIGN.md) · [../aikv/AGENTS.md](../aikv/AGENTS.md)
+
 | 领域 | 本项目 | 可参考 (设计/实现, 非直接依赖) |
 |------|--------|--------------------------------|
 | **LSM-Tree** | 自研引擎: WAL、SkipMap MemTable、SSTable、Leveled Compaction、Bloom、Block Cache | LevelDB / RocksDB 文档与格式思路; 教学向可看 mini-lsm |
 | **Raft 共识** | **OpenRaft** 0.9 (`cluster` feature) | TinyKV、etcd/raft 的 Raft 流程与测试组织 |
-| **Multi-Raft** | MetaRaft (元数据) + MultiRaft (按 slot/Group 多 Raft + LifecycleManager); 在线 slot 迁移 | TiKV raftstore、TinyKV 的 Multi-Raft / Region 生命周期思路 (本项目为 **slot**, 非 TiKV Region 分裂) |
+| **Multi-Raft** | MetaRaft (元数据) + MultiRaft (按 slot/Group 多 Raft + LifecycleManager); 在线 slot 迁移 | TiKV raftstore、TinyKV 的 Multi-Raft / Region 生命周期思路 (本项目为 **slot**, 非 TiKV Region 分裂); slot 数量与 **Redis 8.8 Cluster** 一致 |
 | **节点 RPC** | **tonic** + **prost**, `proto/raft.proto` (Vote / AppendEntries / InstallSnapshot) | gRPC 惯例; 协议与 OpenRaft 类型对齐 |
 
-Redis 数据结构编码、RESP、轻量 Gossip 在 **AiKv** 侧; 见 AiKv `AGENTS.md`.
+Redis 数据结构编码、RESP、INFO、Cluster MOVED/ASK、可观测性 — **Redis 8.8 参考标准在 AiKv**; 见 [../aikv/AGENTS.md](../aikv/AGENTS.md).
 
 ## 开发与 CI
 
@@ -61,5 +75,7 @@ cargo test -- --ignored --test-threads=1
 
 - [README.md](README.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DESIGN.md](DESIGN.md)
+- [../aikv/AGENTS.md](../aikv/AGENTS.md) — Redis 8.8 协议/INFO 对照入口
 - [docs/README.md](docs/README.md) — 按域 WHEN 与 modules 导航
 - [.github/README.md](.github/README.md)

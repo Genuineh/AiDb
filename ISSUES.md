@@ -38,6 +38,15 @@
 
 <!-- 按 ISSUE-NNN 倒序追加 -->
 
+### ISSUE-019: Block Cache capacity 未导出 OTel gauge
+
+- **状态**: closed
+- **发现于**: Grafana 面板重设计 / `docs/modules/observability.md`
+- **相关 src**: `src/metrics.rs`, `src/engine/cache/block_cache.rs`
+- **现象**: `DB::block_cache_capacity()` API 存在; 仅有 `aidb_block_cache_size_bytes`, 无 capacity gauge
+- **修复**: 新增 `aidb_block_cache_capacity_bytes`; `BlockCache::new` 写入配置容量
+- **影响**: Grafana Engine 可画 cache 使用率 (size/capacity)
+
 ### ISSUE-018: scan/close 未计入 aidb_operations_total
 
 - **状态**: doc-only

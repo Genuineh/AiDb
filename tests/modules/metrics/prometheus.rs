@@ -30,6 +30,10 @@ fn test_block_cache_otel_counters_and_size() {
             .abs()
             < f64::EPSILON
     );
+    assert_eq!(
+        testutil::gauge_value(&exporter, "aidb_block_cache_capacity_bytes"),
+        cache.capacity() as f64
+    );
 
     cache.get(k.clone());
     assert_eq!(

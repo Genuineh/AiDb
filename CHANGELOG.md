@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Block Cache capacity gauge (ISSUE-019)**: `aidb_block_cache_capacity_bytes` OTel gauge; 在 `BlockCache::new` 写入配置容量, 供 Grafana cache 使用率面板.
+
 ### Changed
 
 - **OTel semconv (monitoring)**: 指标 label 命名空间化 (`aidb.operation.name`, `aidb.compaction.phase` 等); compaction counter/histogram 统一 label (ISSUE-017); 全部 instrument 声明 `with_unit()`.

@@ -94,7 +94,7 @@ impl BlockCache {
         } else {
             (capacity / NUM_SHARDS).max(1)
         };
-        Self {
+        let cache = Self {
             shards: Box::new([(); NUM_SHARDS].map(|_| CacheShard {
                 inner: Mutex::new(ShardInner {
                     cache: HashMap::new(),
@@ -108,7 +108,10 @@ impl BlockCache {
             misses: AtomicU64::new(0),
             insertions: AtomicU64::new(0),
             evictions: AtomicU64::new(0),
-        }
+        };
+        #[cfg(feature = "monitoring")]
+        crate::metrics::set_block_cache_capacity(cache.capacity() as u64);
+        cache
     }
 
     #[tracing::instrument(
