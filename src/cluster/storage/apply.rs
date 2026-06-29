@@ -14,6 +14,7 @@ use super::OpenRaftStorage;
 use crate::cluster::storage::log::map_db_err;
 
 impl OpenRaftStorage {
+    #[cfg(test)]
     pub(crate) fn apply_batch_to_sm(&self, batch: &ThinWriteBatch) -> Result<()> {
         let mut db_batch = WriteBatch::new();
         self.append_thin_batch_to_db_batch(&mut db_batch, batch);
@@ -26,6 +27,7 @@ impl OpenRaftStorage {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn apply_put_conditional(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let mut batch = WriteBatch::new();
         self.append_put_conditional_to_batch(&mut batch, &key, &value)?;

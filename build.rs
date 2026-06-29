@@ -10,8 +10,13 @@ fn main() {
 
         // Only compile proto if protoc is available (CI may not have it).
         let protoc_available = std::env::var("PROTOC")
-            .map(|p| Path::new(&p).exists())
-            .unwrap_or_else(|_| Command::new("protoc").arg("--version").output().is_ok());
+            .ok()
+            .filter(|p| !p.is_empty() && Path::new(p).exists())
+            .is_some()
+            || Command::new("protoc")
+                .arg("--version")
+                .output()
+                .is_ok_and(|o| o.status.success());
 
         if protoc_available {
             if let Err(e) = tonic_build::configure()
