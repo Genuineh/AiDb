@@ -103,10 +103,10 @@ impl SSTableBuilder {
             self.index_block_builder.add_entry(&IndexEntry {
                 key: self.last_key.clone(),
                 handle,
-            });
+            })?;
         }
 
-        self.data_block_builder.add(key, value);
+        self.data_block_builder.add(key, value)?;
         if self.data_block_builder.current_size() >= self.block_size {
             self.flush_data_block()?;
         }
@@ -164,7 +164,7 @@ impl SSTableBuilder {
             self.index_block_builder.add_entry(&IndexEntry {
                 key: self.last_key.clone(),
                 handle,
-            });
+            })?;
         }
 
         let mut meta_index_builder = IndexBlockBuilder::new();
@@ -185,7 +185,7 @@ impl SSTableBuilder {
             );
             let bloom_handle =
                 write_raw_block(&mut self.writer, &mut self.data_block_offset, &encoded)?;
-            meta_index_builder.add_entry(&index_entry_for_bloom(bloom_handle));
+            meta_index_builder.add_entry(&index_entry_for_bloom(bloom_handle))?;
         }
 
         let meta_index_data = meta_index_builder.finish();

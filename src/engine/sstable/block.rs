@@ -34,9 +34,13 @@ impl BlockBuilder {
         self.buffer.len() + self.restarts.len() * 4 + 4
     }
 
-    pub fn add(&mut self, key: &[u8], value: &[u8]) {
-        if !self.last_key.is_empty() && key <= self.last_key.as_slice() {
-            panic!("BlockBuilder: keys must be strictly increasing");
+    pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+        if !self.last_key.is_empty()
+            && compare_internal_key(key, self.last_key.as_slice()) != Ordering::Greater
+        {
+            return Err(Error::InvalidArgument(
+                "BlockBuilder: keys must be strictly increasing".into(),
+            ));
         }
 
         let is_restart = self.counter == 0;
@@ -66,6 +70,7 @@ impl BlockBuilder {
         if self.counter >= self.restart_interval {
             self.counter = 0;
         }
+        Ok(())
     }
 
     pub fn finish(&mut self) -> Bytes {

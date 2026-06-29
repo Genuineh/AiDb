@@ -33,9 +33,9 @@ impl IndexBlockBuilder {
         }
     }
 
-    pub fn add_entry(&mut self, entry: &IndexEntry) {
+    pub fn add_entry(&mut self, entry: &IndexEntry) -> Result<()> {
         let value = entry.handle.encode();
-        self.builder.add(&entry.key, &value);
+        self.builder.add(&entry.key, &value)
     }
 
     pub fn finish(&mut self) -> Bytes {

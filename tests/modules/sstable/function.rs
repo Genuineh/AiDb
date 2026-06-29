@@ -14,6 +14,10 @@ use aidb::engine::sstable::{BlockHandle, FOOTER_SIZE};
 use aidb::Error;
 use tempfile::tempdir;
 
+fn ik(user: &[u8], seq: u64) -> Vec<u8> {
+    encode_internal_key(user, seq, ValueType::TypePut)
+}
+
 #[test]
 fn test_block_builder_empty() {
     let b = BlockBuilder::new(16);
@@ -27,12 +31,13 @@ fn test_block_builder_empty() {
 #[test]
 fn test_block_single_entry() {
     let mut b = BlockBuilder::new(16);
-    b.add(b"key1", b"val1");
+    let key = ik(b"key1", 1);
+    b.add(&key, b"val1").unwrap();
     let data = b.finish();
     let block = Block::new(data).unwrap();
     let mut it = block.iter();
     assert!(it.valid());
-    assert_eq!(it.key(), b"key1");
+    assert_eq!(it.key(), key.as_slice());
     assert_eq!(it.value(), b"val1");
     assert!(!it.advance());
 }
@@ -40,31 +45,44 @@ fn test_block_single_entry() {
 #[test]
 fn test_block_prefix_compression() {
     let mut b = BlockBuilder::new(16);
-    b.add(b"prefix_a", b"v1");
-    b.add(b"prefix_b", b"v2");
+    b.add(&ik(b"prefix_a", 1), b"v1").unwrap();
+    b.add(&ik(b"prefix_b", 2), b"v2").unwrap();
     let data = b.finish();
     let block = Block::new(data).unwrap();
     let mut it = block.iter();
     assert!(it.valid());
-    assert_eq!(it.key(), b"prefix_a");
+    assert_eq!(it.key(), ik(b"prefix_a", 1).as_slice());
     assert!(it.advance());
-    assert_eq!(it.key(), b"prefix_b");
+    assert_eq!(it.key(), ik(b"prefix_b", 2).as_slice());
 }
 
 #[test]
-#[should_panic(expected = "strictly increasing")]
-fn test_block_unsorted_keys_panic() {
+fn test_block_unsorted_keys_rejected() {
     let mut b = BlockBuilder::new(16);
-    b.add(b"z", b"v");
-    b.add(b"a", b"v");
+    b.add(&ik(b"z", 2), b"v").unwrap();
+    assert!(b.add(&ik(b"a", 1), b"v").is_err());
+}
+
+#[test]
+fn test_block_prefix_user_key_order() {
+    // user key "k:9" is a prefix of "k:99"; internal-key compare must allow flush order.
+    let mut b = BlockBuilder::new(16);
+    b.add(&ik(b"k:9", 10), b"v9").unwrap();
+    b.add(&ik(b"k:99", 11), b"v99").unwrap();
+    let block = Block::new(b.finish()).unwrap();
+    let mut it = block.iter();
+    assert!(it.valid());
+    assert_eq!(it.key(), ik(b"k:9", 10).as_slice());
+    assert!(it.advance());
+    assert_eq!(it.key(), ik(b"k:99", 11).as_slice());
 }
 
 #[test]
 fn test_block_iterator() {
     let mut b = BlockBuilder::new(2);
     for i in 0..5u8 {
-        let k = format!("key_{i:02}").into_bytes();
-        b.add(&k, &[i]);
+        let k = ik(format!("key_{i:02}").as_bytes(), i as u64 + 1);
+        b.add(&k, &[i]).unwrap();
     }
     let block = Block::new(b.finish()).unwrap();
     let mut it = block.iter();
@@ -118,14 +136,16 @@ fn test_index_find_exact() {
             offset: 0,
             size: 10,
         },
-    });
+    })
+    .unwrap();
     ib.add_entry(&IndexEntry {
         key: k2,
         handle: BlockHandle {
             offset: 10,
             size: 10,
         },
-    });
+    })
+    .unwrap();
     let idx = IndexBlock::new(ib.finish()).unwrap();
     let seek = encode_internal_key(b"a", 99, ValueType::TypePut);
     let h = idx.find_block(&seek).unwrap();
@@ -143,14 +163,16 @@ fn test_index_find_between() {
             offset: 0,
             size: 10,
         },
-    });
+    })
+    .unwrap();
     ib.add_entry(&IndexEntry {
         key: k2,
         handle: BlockHandle {
             offset: 10,
             size: 10,
         },
-    });
+    })
+    .unwrap();
     let idx = IndexBlock::new(ib.finish()).unwrap();
     let seek = encode_internal_key(b"g", 1, ValueType::TypePut);
     let h = idx.find_block(&seek).unwrap();
@@ -414,8 +436,8 @@ fn test_crash_atomicity() {
 fn test_block_iterator_prev() {
     let mut b = BlockBuilder::new(2);
     for i in 0..5u8 {
-        let k = format!("key_{i:02}").into_bytes();
-        b.add(&k, &[i]);
+        let k = ik(format!("key_{i:02}").as_bytes(), i as u64 + 1);
+        b.add(&k, &[i]).unwrap();
     }
     let block = Block::new(b.finish()).unwrap();
     let mut it = block.iter();
@@ -431,15 +453,15 @@ fn test_block_iterator_prev() {
     // it is now invalid (past the end), seek_to_last
     it.seek_to_last();
     assert!(it.valid());
-    assert_eq!(it.key(), b"key_04");
+    assert_eq!(it.key(), ik(b"key_04", 5).as_slice());
     assert!(it.prev());
-    assert_eq!(it.key(), b"key_03");
+    assert_eq!(it.key(), ik(b"key_03", 4).as_slice());
     assert!(it.prev());
-    assert_eq!(it.key(), b"key_02");
+    assert_eq!(it.key(), ik(b"key_02", 3).as_slice());
     assert!(it.prev());
-    assert_eq!(it.key(), b"key_01");
+    assert_eq!(it.key(), ik(b"key_01", 2).as_slice());
     assert!(it.prev());
-    assert_eq!(it.key(), b"key_00");
+    assert_eq!(it.key(), ik(b"key_00", 1).as_slice());
     // prev at first entry should fail
     assert!(!it.prev());
 }
@@ -447,11 +469,12 @@ fn test_block_iterator_prev() {
 #[test]
 fn test_block_iterator_prev_single_entry() {
     let mut b = BlockBuilder::new(16);
-    b.add(b"only", b"val");
+    let key = ik(b"only", 1);
+    b.add(&key, b"val").unwrap();
     let block = Block::new(b.finish()).unwrap();
     let mut it = block.iter();
     assert!(it.valid());
-    assert_eq!(it.key(), b"only");
+    assert_eq!(it.key(), key.as_slice());
     // prev at first entry fails
     assert!(!it.prev());
     // advance and then prev back
@@ -459,7 +482,7 @@ fn test_block_iterator_prev_single_entry() {
     // should be at the end, need seek_to_last to go back
     it.seek_to_last();
     assert!(it.valid());
-    assert_eq!(it.key(), b"only");
+    assert_eq!(it.key(), key.as_slice());
     assert!(!it.prev());
 }
 
@@ -467,17 +490,17 @@ fn test_block_iterator_prev_single_entry() {
 fn test_block_iterator_seek_to_last() {
     let mut b = BlockBuilder::new(3);
     for i in 0..4u8 {
-        let k = format!("k{i:02}").into_bytes();
-        b.add(&k, &[i]);
+        let k = ik(format!("k{i:02}").as_bytes(), i as u64 + 1);
+        b.add(&k, &[i]).unwrap();
     }
     let block = Block::new(b.finish()).unwrap();
     let mut it = block.iter();
     it.seek_to_last();
     assert!(it.valid());
-    assert_eq!(it.key(), b"k03");
+    assert_eq!(it.key(), ik(b"k03", 4).as_slice());
     assert_eq!(it.value(), &[3]);
     it.prev();
-    assert_eq!(it.key(), b"k02");
+    assert_eq!(it.key(), ik(b"k02", 3).as_slice());
 }
 
 #[test]

@@ -122,6 +122,14 @@ impl DB {
             .map(|_| crossbeam_channel::bounded(options.compaction_channel_size))
             .unzip();
 
+        #[cfg(feature = "monitoring")]
+        {
+            crate::metrics::init();
+            crate::metrics::set_sequence(last_sequence);
+            crate::metrics::set_block_cache_size(0);
+            update_sstable_metrics(&sstables);
+        }
+
         let db = Arc::new(DB {
             path,
             options,
@@ -146,12 +154,6 @@ impl DB {
             block_cache,
             snapshots: SnapshotList::new(),
         });
-
-        #[cfg(feature = "monitoring")]
-        {
-            crate::metrics::init();
-            crate::metrics::set_sequence(last_sequence);
-        }
 
         db.start_flush_thread();
         if background_compaction {
@@ -191,7 +193,9 @@ impl DB {
                 let Some(db) = weak.upgrade() else {
                     break;
                 };
-                let _ = db.flush_pending();
+                if let Err(e) = db.flush_pending() {
+                    tracing::warn!(target: "db", error = %e, "background flush failed");
+                }
             })
             .expect("spawn flush thread");
         *self.flush_handle.lock() = Some(handle);
@@ -508,6 +512,24 @@ impl DB {
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("write_batch");
 
+        let mut key_delta: isize = 0;
+        for op in &batch.operations {
+            match op {
+                WriteOp::Put { key, .. } => {
+                    Self::validate_user_key(key)?;
+                    if self.get(key)?.is_none() {
+                        key_delta += 1;
+                    }
+                }
+                WriteOp::Delete { key } => {
+                    Self::validate_user_key(key)?;
+                    if self.get(key)?.is_some() {
+                        key_delta -= 1;
+                    }
+                }
+            }
+        }
+
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
         let base = self.alloc_sequence(n)?;
@@ -553,6 +575,25 @@ impl DB {
         // Release the write lock before maybe_freeze to prevent holding both
         // locks simultaneously if a freeze is triggered.
         drop(_guard);
+        if key_delta > 0 {
+            self.total_key_count
+                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(
+                self.total_key_count.load(AtomicOrdering::Relaxed),
+            );
+        } else if key_delta < 0 {
+            let sub = (-key_delta) as usize;
+            self.total_key_count
+                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
+                    Some(c.saturating_sub(sub))
+                })
+                .ok();
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(
+                self.total_key_count.load(AtomicOrdering::Relaxed),
+            );
+        }
         self.maybe_freeze()?;
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
         #[cfg(feature = "monitoring")]

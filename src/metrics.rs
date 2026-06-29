@@ -151,12 +151,12 @@ impl OtelMetrics {
             sequence: meter
                 .f64_gauge("aidb_sequence")
                 .with_description("当前 DB sequence")
-                .with_unit("1")
+                .with_unit("{sequence}")
                 .build(),
             total_key_count: meter
                 .f64_gauge("aidb_total_key_count")
                 .with_description("近似存活 key 数")
-                .with_unit("1")
+                .with_unit("{key}")
                 .build(),
             compaction_total: meter
                 .u64_counter("aidb_compaction_total")
