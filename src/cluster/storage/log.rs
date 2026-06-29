@@ -68,6 +68,7 @@ impl OpenRaftStorage {
         if entries.is_empty() {
             return Ok(());
         }
+        let t0 = std::time::Instant::now();
         use crate::engine::db::WriteBatch;
         let mut batch = WriteBatch::new();
         for entry in entries {
@@ -81,6 +82,7 @@ impl OpenRaftStorage {
         if let Some(last) = entries.last() {
             state.last_log_id = Some(last.log_id);
         }
+        tracing::info!(target: "perf", group_id = self.group_id, entry_count = entries.len(), ms = t0.elapsed().as_millis(), "raft_append_log");
         Ok(())
     }
 

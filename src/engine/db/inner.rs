@@ -505,6 +505,7 @@ impl DB {
         if batch.is_empty() {
             return Ok(());
         }
+        let t0 = std::time::Instant::now();
         #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
@@ -529,9 +530,11 @@ impl DB {
                 }
             }
         }
+        let precheck_ms = t0.elapsed().as_millis();
 
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
+        let lock_acquired = std::time::Instant::now();
         let base = self.alloc_sequence(n)?;
 
         if self.options.use_wal {
@@ -575,6 +578,7 @@ impl DB {
         // Release the write lock before maybe_freeze to prevent holding both
         // locks simultaneously if a freeze is triggered.
         drop(_guard);
+        let lock_hold_ms = lock_acquired.elapsed().as_millis();
         if key_delta > 0 {
             self.total_key_count
                 .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
@@ -595,6 +599,8 @@ impl DB {
             );
         }
         self.maybe_freeze()?;
+        let total_ms = t0.elapsed().as_millis();
+        tracing::info!(target: "perf", op_count = batch.len(), total_ms, precheck_ms, lock_hold_ms, "db_write_done");
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation_duration("write_batch", op_start.elapsed().as_secs_f64());

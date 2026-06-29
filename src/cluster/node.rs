@@ -331,13 +331,19 @@ impl OpenRaftNode {
 
     #[instrument(skip(self))]
     pub async fn propose(&self, request: Request) -> Result<Response> {
+        let t0 = std::time::Instant::now();
         self.check_entry_size(&request)?;
         // Retry on ForwardToLeader — during leader re-election, the first
         // forward target may itself be in transition.  Up to 3 retries with
         // 200ms backoff.
         for attempt in 0u32..3 {
+            let t1 = std::time::Instant::now();
             match self.raft.client_write(request.clone()).await {
-                Ok(response) => return Ok(response.data),
+                Ok(response) => {
+                    let elapsed = t0.elapsed();
+                    tracing::info!(target: "perf", group_id = self.group_id, total_ms = elapsed.as_millis(), client_write_ms = t1.elapsed().as_millis(), attempt, "raft_propose_ok");
+                    return Ok(response.data);
+                }
                 Err(e) => {
                     if let Some(ftl) = e.forward_to_leader() {
                         let leader_addr = ftl.leader_node.as_ref().map(|n| n.addr.clone());

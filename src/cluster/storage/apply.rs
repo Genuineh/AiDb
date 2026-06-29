@@ -174,6 +174,7 @@ impl OpenRaftStorage {
         request: &Request,
         log_id: &LogId<crate::cluster::types::NodeId>,
     ) -> Result<Response> {
+        let t0 = std::time::Instant::now();
         let mut batch = WriteBatch::new();
         let response = self.append_request_to_batch(&mut batch, request)?;
         batch.put(
@@ -184,6 +185,7 @@ impl OpenRaftStorage {
             .write(&batch)
             .map_err(|e| Error::Cluster(map_db_err(e)))?;
         self.state.write().last_applied = Some(*log_id);
+        tracing::info!(target: "perf", group_id = self.group_id, index = log_id.index, ms = t0.elapsed().as_millis(), "raft_apply_entry");
         Ok(response)
     }
 

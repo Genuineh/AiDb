@@ -133,6 +133,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
         };
 
         let rpc_future = client.append_entries(TonicRequest::new(request));
+        let t0 = std::time::Instant::now();
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
@@ -149,6 +150,7 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
                 ))));
             }
         };
+        tracing::info!(target: "perf", group_id, grpc_ms = t0.elapsed().as_millis(), "raft_rpc_ae_done");
 
         let resp = response.into_inner();
         if resp.success {
