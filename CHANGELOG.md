@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Raft log 读写性能**: `get_log_entries` 改为按 index 点查 (避免 log 累积后 O(总条数) prefix scan); `purge_logs_upto` 改为 `delete_range` 批量删除并记录 `raft_purge_logs` perf 日志.
+
 ### Added
 
 - **Block Cache capacity gauge (ISSUE-019)**: `aidb_block_cache_capacity_bytes` OTel gauge; 在 `BlockCache::new` 写入配置容量, 供 Grafana cache 使用率面板.

@@ -43,24 +43,17 @@ impl OpenRaftStorage {
             return Ok(Vec::new());
         }
 
-        let prefix = log_prefix(self.group_id);
-        let end_key = log_range_end(self.group_id);
-        let iter = self.db.scan(Some(&prefix), Some(&end_key))?;
-        let mut entries = Vec::new();
-        for item in iter {
-            let (key, data) = item?;
-            if key.len() < prefix.len() + 8 {
+        // 按 index 点查, 避免 log 累积后全表 scan (O(总 log 数) → O(请求区间)).
+        let mut entries = Vec::with_capacity((end - start) as usize);
+        for idx in start..end {
+            let key = log_key(self.group_id, idx);
+            let Some(data) = self.db.get(&key)? else {
                 continue;
-            }
-            let idx = u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap());
-            if idx < start || idx >= end {
-                continue;
-            }
+            };
             let entry: Entry<TypeConfig> = rmp_serde::from_slice(&data)
                 .map_err(|e| ClusterError::Serialization(e.to_string()))?;
             entries.push(entry);
         }
-        entries.sort_by_key(|e| e.log_id.index);
         Ok(entries)
     }
 
@@ -124,9 +117,18 @@ impl OpenRaftStorage {
         if log_id.index < start_index {
             return Ok(());
         }
-        for idx in start_index..=log_id.index {
-            self.db.delete(&log_key(self.group_id, idx))?;
-        }
+        let t0 = std::time::Instant::now();
+        let start_key = log_key(self.group_id, start_index);
+        let end_key = log_key(self.group_id, log_id.index.saturating_add(1));
+        self.db.delete_range(&start_key, &end_key)?;
+        tracing::info!(
+            target: "perf",
+            group_id = self.group_id,
+            from_index = start_index,
+            to_index = log_id.index,
+            ms = t0.elapsed().as_millis(),
+            "raft_purge_logs"
+        );
         self.state.write().last_purged_log_id = Some(log_id);
         Ok(())
     }
@@ -360,6 +362,27 @@ mod tests {
         storage.delete_logs_from(from).unwrap();
         assert_eq!(storage.get_log_entries(1..=3).unwrap().len(), 1);
         assert_eq!(storage.state.read().last_log_id.map(|id| id.index), Some(1));
+    }
+
+    #[test]
+    fn test_purge_logs_upto() {
+        let dir = TempDir::new().unwrap();
+        let storage = open_storage(&dir);
+        storage
+            .append_log_entries(&[
+                put_entry(1, 1),
+                put_entry(2, 1),
+                put_entry(3, 1),
+                put_entry(4, 1),
+            ])
+            .unwrap();
+        let purge_to = LogId::new(CommittedLeaderId::new(1, 1), 3);
+        storage.purge_logs_upto_internal(purge_to).unwrap();
+        assert_eq!(storage.get_log_entries(1..=4).unwrap().len(), 1);
+        assert_eq!(
+            storage.state.read().last_purged_log_id.map(|id| id.index),
+            Some(3)
+        );
     }
 
     #[test]

@@ -240,6 +240,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 ## 已知限制
 
 - **无 ThinReplication**: 全量 Raft log 复制
+- **Raft log 性能**: `get_log_entries` 按 index 点查; `purge_logs_upto` 使用 `delete_range` (避免 log 累积后全 prefix scan / 逐条 delete). 长跑时关注 `target=perf` 日志 `raft_purge_logs` / `raft_propose_ok`.
 - **无 `MultiRaftNode::write_batch`**: 跨 Group 批写由调用方 `Router::group_ops` 分组后逐 Group `propose`
 - **ASK/MOVED**: aidb 提供 `SlotStatus` + `ClusterError::NotLeader`; 客户端重定向在 **aikv cluster** 实现
 - **slot 级 ASK**: Migrating 期间整 slot ASK (非 per-key 追踪)
