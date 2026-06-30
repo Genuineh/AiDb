@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -63,7 +63,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -72,7 +72,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -81,7 +81,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -97,7 +97,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src/cluster"
+  "target_directory": "../../src/cluster"
 }
 ```
 
@@ -107,7 +107,7 @@
 ```json
 {
   "pattern": "mod cluster|pub mod cluster|use crate::cluster",
-  "path": "/root/code/database/aidb/src"
+  "path": "../../src"
 }
 ```
 
@@ -116,7 +116,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/lib.rs",
+  "path": "../../src/lib.rs",
   "limit": 80
 }
 ```
@@ -130,7 +130,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/mod.rs"
+  "path": "../../src/cluster/mod.rs"
 }
 ```
 
@@ -139,7 +139,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "cluster",
   "glob": "**/Cargo.toml"
 }
@@ -151,7 +151,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/aidb/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -161,7 +161,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -174,7 +174,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml",
+  "path": "../../Cargo.toml",
   "limit": 40
 }
 ```
@@ -184,7 +184,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "^pub (struct|enum|fn|trait|type|const)",
   "glob": "*.rs",
   "head_limit": 80
@@ -197,7 +197,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -206,7 +206,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "^",
   "glob": "*.rs",
   "output_mode": "count"
@@ -223,7 +223,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/examples/cluster.rs"
+  "path": "../../examples/cluster.rs"
 }
 ```
 
@@ -232,7 +232,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "cluster|MetaRaft|MultiRaft|slot",
   "glob": "*.md",
   "head_limit": 40
@@ -245,7 +245,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs"
+  "path": "../../src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -255,7 +255,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/cluster/meta_raft_node.rs"
+  "path": "../../src/cluster/meta_raft_node.rs"
 }
 ```
 
@@ -269,7 +269,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -280,7 +280,7 @@
 {
   "glob": "*.md",
   "head_limit": 30,
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "cluster|MetaRaft|MultiRaft|slot"
 }
 ```
@@ -290,7 +290,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "cluster|raft"
 }
 ```
@@ -306,7 +306,7 @@
 {
   "offset": 248,
   "limit": 80,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -316,7 +316,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb-oldmain/src/cluster"
+  "target_directory": "../../../aidb-oldmain/src/cluster"
 }
 ```
 
@@ -327,7 +327,7 @@
 {
   "glob": "*cluster*",
   "head_limit": 20,
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "."
 }
 ```
@@ -342,7 +342,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/WiQunTools/docs"
+  "target_directory": "../../../WiQunTools/docs"
 }
 ```
 
@@ -352,7 +352,7 @@
 ```json
 {
   "glob_pattern": "**/*raft*",
-  "target_directory": "/root/code/database/WiQunTools/docs/wiqun-db-inventory"
+  "target_directory": "../../../WiQunTools/docs/wiqun-db-inventory"
 }
 ```
 
@@ -362,7 +362,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/tests/raft.rs"
+  "path": "../../tests/raft.rs"
 }
 ```
 
@@ -376,7 +376,7 @@
 ```json
 {
   "glob_pattern": "*",
-  "target_directory": "/root/code/database/WiQunTools/docs/wiqun-db-inventory"
+  "target_directory": "../../../WiQunTools/docs/wiqun-db-inventory"
 }
 ```
 
@@ -385,7 +385,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/error.rs",
+  "path": "../../src/error.rs",
   "pattern": "Cluster|cluster"
 }
 ```
@@ -396,7 +396,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/src/cluster/types.rs"
+  "path": "../../src/cluster/types.rs"
 }
 ```
 
@@ -409,7 +409,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/cluster/mod.rs"
+  "path": "../../tests/modules/cluster/mod.rs"
 }
 ```
 
@@ -418,7 +418,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/meta/mod.rs"
+  "path": "../../tests/modules/meta/mod.rs"
 }
 ```
 
@@ -427,7 +427,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/multi_raft/mod.rs"
+  "path": "../../tests/modules/multi_raft/mod.rs"
 }
 ```
 
@@ -623,7 +623,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/cluster.md` | 待开始 | | | `cluster/*` |",
   "new_string": "| `docs/modules/cluster.md` | 步 0 ✅ | (步 2 起填旧文档) | | `cluster/*`; MetaRaft + MultiRaft + Router + slot 迁移 + gRPC; 步 3 核心文件逐段 |"
 }
@@ -634,7 +634,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 5/12 待开始)",
   "new_string": "**当前阶段**: 阶段 1 — modules (步 5/12 进行中)"
 }
@@ -645,7 +645,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 5 | aidb | `docs/modules/cluster.md` | cluster/* | ⬜ 待开始 | |",
   "new_string": "| 5 | aidb | `docs/modules/cluster.md` | cluster/* | 🔄 进行中 | |"
 }
@@ -656,7 +656,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/types.rs"
+  "path": "../../src/cluster/types.rs"
 }
 ```
 
@@ -665,7 +665,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/meta_types.rs"
+  "path": "../../src/cluster/meta_types.rs"
 }
 ```
 
@@ -674,7 +674,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/router.rs",
+  "path": "../../src/cluster/router.rs",
   "limit": 120
 }
 ```
@@ -689,7 +689,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 200,
-  "path": "/root/code/database/aidb/src/cluster/meta_state_machine.rs"
+  "path": "../../src/cluster/meta_state_machine.rs"
 }
 ```
 
@@ -699,7 +699,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 200,
-  "path": "/root/code/database/aidb/src/cluster/meta_raft_node.rs"
+  "path": "../../src/cluster/meta_raft_node.rs"
 }
 ```
 
@@ -709,7 +709,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 200,
-  "path": "/root/code/database/aidb/src/cluster/node.rs"
+  "path": "../../src/cluster/node.rs"
 }
 ```
 
@@ -718,7 +718,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/sharded_storage.rs"
+  "path": "../../src/cluster/sharded_storage.rs"
 }
 ```
 
@@ -733,7 +733,7 @@ aidb/src/cluster/
 {
   "limit": 250,
   "offset": 200,
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs"
+  "path": "../../src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -743,7 +743,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 180,
-  "path": "/root/code/database/aidb/src/cluster/storage/mod.rs"
+  "path": "../../src/cluster/storage/mod.rs"
 }
 ```
 
@@ -753,7 +753,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/cluster/storage/keys.rs"
+  "path": "../../src/cluster/storage/keys.rs"
 }
 ```
 
@@ -763,7 +763,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aidb/src/cluster/network.rs"
+  "path": "../../src/cluster/network.rs"
 }
 ```
 
@@ -777,7 +777,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/cluster/slot_migration.rs"
+  "path": "../../src/cluster/slot_migration.rs"
 }
 ```
 
@@ -787,7 +787,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/cluster/membership_coordinator.rs"
+  "path": "../../src/cluster/membership_coordinator.rs"
 }
 ```
 
@@ -797,7 +797,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/cluster/lifecycle_manager.rs"
+  "path": "../../src/cluster/lifecycle_manager.rs"
 }
 ```
 
@@ -807,7 +807,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb/src/cluster/leader_watcher.rs"
+  "path": "../../src/cluster/leader_watcher.rs"
 }
 ```
 
@@ -817,7 +817,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/error.rs"
+  "path": "../../src/error.rs"
 }
 ```
 
@@ -832,7 +832,7 @@ aidb/src/cluster/
 {
   "limit": 150,
   "offset": 448,
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs"
+  "path": "../../src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -842,7 +842,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb/src/cluster/storage/apply.rs"
+  "path": "../../src/cluster/storage/apply.rs"
 }
 ```
 
@@ -853,7 +853,7 @@ aidb/src/cluster/
 {
   "limit": 80,
   "offset": 200,
-  "path": "/root/code/database/aidb/src/cluster/node.rs"
+  "path": "../../src/cluster/node.rs"
 }
 ```
 
@@ -863,7 +863,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/cluster/replica_allocator.rs"
+  "path": "../../src/cluster/replica_allocator.rs"
 }
 ```
 
@@ -874,7 +874,7 @@ aidb/src/cluster/
 {
   "limit": 80,
   "offset": 118,
-  "path": "/root/code/database/aidb/src/cluster/router.rs"
+  "path": "../../src/cluster/router.rs"
 }
 ```
 
@@ -889,7 +889,7 @@ aidb/src/cluster/
 {
   "limit": 120,
   "offset": 80,
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs"
+  "path": "../../src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -898,7 +898,7 @@ aidb/src/cluster/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "pub async fn (start|shutdown|propose)"
 }
 ```
@@ -909,7 +909,7 @@ aidb/src/cluster/
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/tests/modules/cluster/integration.rs"
+  "path": "../../tests/modules/cluster/integration.rs"
 }
 ```
 
@@ -924,7 +924,7 @@ aidb/src/cluster/
 {
   "limit": 80,
   "offset": 330,
-  "path": "/root/code/database/aidb/src/cluster/node.rs"
+  "path": "../../src/cluster/node.rs"
 }
 ```
 
@@ -935,7 +935,7 @@ aidb/src/cluster/
 {
   "limit": 100,
   "offset": 250,
-  "path": "/root/code/database/aidb/src/cluster/slot_migration.rs"
+  "path": "../../src/cluster/slot_migration.rs"
 }
 ```
 
@@ -1160,7 +1160,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "glob": "*.md",
   "head_limit": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "MetaRaft|MultiRaft|Multi-Raft|cluster|slot|Raft|16384"
 }
 ```
@@ -1171,7 +1171,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -1181,7 +1181,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/WiQunTools/docs/wiqun-db-inventory"
+  "target_directory": "../../../WiQunTools/docs/wiqun-db-inventory"
 }
 ```
 
@@ -1190,7 +1190,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1203,7 +1203,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/09-raft.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/09-raft.md"
 }
 ```
 
@@ -1212,7 +1212,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/10-metaraf.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/10-metaraf.md"
 }
 ```
 
@@ -1221,7 +1221,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/11-multi-raft.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/11-multi-raft.md"
 }
 ```
 
@@ -1230,7 +1230,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/12-cluster-ops.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/12-cluster-ops.md"
 }
 ```
 
@@ -1245,7 +1245,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
   "pattern": "MetaRaft|MultiRaft|cluster|Raft|16384"
 }
 ```
@@ -1257,7 +1257,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/DESIGN.md",
   "pattern": "MetaRaft|MultiRaft|cluster|Raft|slot"
 }
 ```
@@ -1268,7 +1268,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb-oldmain/examples/cluster/README.md"
+  "path": "../../../aidb-oldmain/examples/cluster/README.md"
 }
 ```
 
@@ -1277,7 +1277,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "resolve_ask_redirect|get_ttl|PutConditional|thin_replication|ThinReplication|write_batch|UpdateNodeClientAddr|BumpEpoch"
 }
 ```
@@ -1291,7 +1291,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "resolve_ask|write_batch|CRC16|IBM|CCITT"
 }
 ```
@@ -1303,7 +1303,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "limit": 40,
   "offset": 600,
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs"
+  "path": "../../src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -1314,7 +1314,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "limit": 80,
   "offset": 115,
-  "path": "/root/code/database/aidb/src/cluster/slot_migration.rs"
+  "path": "../../src/cluster/slot_migration.rs"
 }
 ```
 
@@ -1324,7 +1324,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-db/src/cluster"
+  "target_directory": "../../../wiqun-db/src/cluster"
 }
 ```
 
@@ -1338,7 +1338,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb-oldmain/docs/REDIS_CLUSTER_COMPATIBILITY.md"
+  "path": "../../../aidb-oldmain/docs/REDIS_CLUSTER_COMPATIBILITY.md"
 }
 ```
 
@@ -1347,7 +1347,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "add_learner_to_group|change_group_membership|force_step_down|write_batch|auto_migrate|rebalance"
 }
 ```
@@ -1359,7 +1359,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "limit": 50,
   "offset": 78,
-  "path": "/root/code/database/aidb/src/cluster/meta_raft_node.rs"
+  "path": "../../src/cluster/meta_raft_node.rs"
 }
 ```
 
@@ -1370,7 +1370,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "limit": 80,
   "offset": 350,
-  "path": "/root/code/database/aidb/src/cluster/membership_coordinator.rs"
+  "path": "../../src/cluster/membership_coordinator.rs"
 }
 ```
 
@@ -1383,7 +1383,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs",
+  "path": "../../src/cluster/multi_raft_node.rs",
   "pattern": "fn write_batch|resolve_ask"
 }
 ```
@@ -1393,7 +1393,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests",
+  "path": "../../tests",
   "pattern": "crc16|key_to_slot",
   "head_limit": 20
 }
@@ -1405,7 +1405,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/src/cluster/storage/apply.rs",
+  "path": "../../src/cluster/storage/apply.rs",
   "offset": 90
 }
 ```
@@ -1420,7 +1420,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "limit": 35,
-  "path": "/root/code/database/aidb/tests/modules/multi_raft/unit.rs"
+  "path": "../../tests/modules/multi_raft/unit.rs"
 }
 ```
 
@@ -1430,7 +1430,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/09-raft.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/09-raft.md",
   "offset": 25
 }
 ```
@@ -1446,7 +1446,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 {
   "limit": 60,
   "offset": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
 }
 ```
 
@@ -1455,7 +1455,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/slot_migration.rs",
+  "path": "../../src/cluster/slot_migration.rs",
   "pattern": "auto_migrate|commit_migration|cancel_migration|get_migration_status"
 }
 ```
@@ -1469,7 +1469,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/membership_coordinator.rs",
+  "path": "../../src/cluster/membership_coordinator.rs",
   "pattern": "timeout|60|spawn"
 }
 ```
@@ -1479,7 +1479,7 @@ aikv `storage` / `cluster` (步 6/11) 预期依赖:
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "wiqun_meta|wiqun_mr|record_raft"
 }
 ```
@@ -1621,7 +1621,7 @@ flowchart TB
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/cluster.md` | 步 0 ✅ | (步 2 起填旧文档) | | `cluster/*`; MetaRaft + MultiRaft + Router + slot 迁移 + gRPC; 步 3 核心文件逐段 |",
   "new_string": "| `docs/modules/cluster.md` | 步 2 ✅ | backup/aidb DESIGN,README,CONTRIBUTING; WiQunTools 09–12; oldmain REDIS_CLUSTER_COMPATIBILITY (概念); oldmain examples/cluster/README (反例) | 步 3 oldmain src 逐段; ISSUE-005~010 | MetaRaft + MultiRaft + Router + slot 迁移 + gRPC |"
 }
@@ -1633,7 +1633,7 @@ flowchart TB
 ```json
 {
   "glob_pattern": "*",
-  "target_directory": "/root/code/database/aidb-oldmain/src/cluster"
+  "target_directory": "../../../aidb-oldmain/src/cluster"
 }
 ```
 
@@ -1643,7 +1643,7 @@ flowchart TB
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/mod.rs"
+  "path": "../../../aidb-oldmain/src/cluster/mod.rs"
 }
 ```
 
@@ -1653,7 +1653,7 @@ flowchart TB
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/raft_node_new.rs"
+  "path": "../../../aidb-oldmain/src/cluster/raft_node_new.rs"
 }
 ```
 
@@ -1667,7 +1667,7 @@ flowchart TB
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/raft_storage.rs"
+  "path": "../../../aidb-oldmain/src/cluster/raft_storage.rs"
 }
 ```
 
@@ -1677,7 +1677,7 @@ flowchart TB
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/multi_raft_network.rs"
+  "path": "../../../aidb-oldmain/src/cluster/multi_raft_network.rs"
 }
 ```
 
@@ -1687,7 +1687,7 @@ flowchart TB
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/multi_raft_node.rs"
+  "path": "../../../aidb-oldmain/src/cluster/multi_raft_node.rs"
 }
 ```
 
@@ -1696,7 +1696,7 @@ flowchart TB
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/cluster",
+  "path": "../../../aidb-oldmain/src/cluster",
   "pattern": "lifecycle|leader_watcher|group_id|METARAFT"
 }
 ```
@@ -1711,7 +1711,7 @@ flowchart TB
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/meta_types.rs"
+  "path": "../../../aidb-oldmain/src/cluster/meta_types.rs"
 }
 ```
 
@@ -1720,7 +1720,7 @@ flowchart TB
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/cluster/membership_coordinator.rs",
+  "path": "../../../aidb-oldmain/src/cluster/membership_coordinator.rs",
   "pattern": "pub async fn|pub fn"
 }
 ```
@@ -1730,7 +1730,7 @@ flowchart TB
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/membership_coordinator.rs",
+  "path": "../../src/cluster/membership_coordinator.rs",
   "pattern": "pub async fn|pub fn"
 }
 ```
@@ -1748,7 +1748,7 @@ flowchart TB
 {
   "new_string": "<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-010: MembershipCoordinator 无空节点 60s 超时清理\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/membership_coordinator.rs`\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/12-cluster-ops.md` — add_node 后 60s 无 Group 则 RemoveNode\n- **现象**: inventory 描述超时清理; 现码 `add_node` 注册后即返回, 无后台 spawn\n- **影响**: module 已知限制一句; 非阻塞文档\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-009: router.rs CRC 注释与 Redis 向量不一致\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/router.rs`, `tests/modules/multi_raft/unit.rs`\n- **现象**: 源码注释写 CRC16-CCITT; 测试 `crc16(b\"123456789\")==0x31C3` 为 Redis/XMODEM 标准向量, 行为与 Redis Cluster 一致\n- **影响**: module 写「Redis 兼容 slot 算法」, 不复制注释歧义\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-008: get_ttl_from_group 恒返回 None\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/multi_raft_node.rs` (`get_ttl_from_group`), `src/cluster/slot_migration.rs` (`verify_migration`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/12-cluster-ops.md` — 迁移验证含 TTL 对比\n- **现象**: 函数注释「AiDb 引擎层不支持逐 key TTL」; verify 中 TTL 分支为 no-op\n- **影响**: module 已知限制; 迁移验证仅比对 value\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-007: 无 MultiRaftNode 级 write_batch / resolve_ask_redirect\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/multi_raft_node.rs`, `src/cluster/router.rs` (`group_ops`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/11-multi-raft.md`\n- **oldmain 代码**: oldmain MultiRaftNode 亦无完整 inventory 伪代码级 API; 跨 Group batch 由调用方 + Router 分组\n- **现象**: inventory 描述 `MultiRaftNode::write_batch`; 现码 batch 在 `OpenRaftNode` + `Router::group_ops`, 无 MultiRaft 聚合入口\n- **影响**: aikv 层自行按 Group 分组 propose; module 说明边界即可\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-006: Migrating/ASK 重定向不在 aidb MultiRaftNode 内完成\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/multi_raft_node.rs` (`propose_key`, `get_key`), `src/cluster/router.rs` (`route_key` 返回 `SlotStatus`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/11-multi-raft.md` — `resolve_ask_redirect` + `NotLeader { is_ask: true }`\n- **oldmain 代码**: oldmain 亦无 is_ask 字段 (旧 `ClusterError` 为字符串)\n- **现象**: aidb 路由到 Migrating slot 的 source group 后直 propose; **不**填充 `ClusterError::NotLeader.is_ask`. MOVED/ASK 由 aikv `cluster` 模块读 `SlotStatus` + `migration_state` 实现 (步 11)\n- **影响**: module 明确 aidb/aikv 分工; 非 aidb bug\n- **下一步**: 已关闭 (doc-only); aikv cluster.md 覆盖\n\n### ISSUE-005: 数据 Group apply 仍逐 entry 写 last_applied\n\n- **状态**: open\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/cluster.md`\n- **相关 src**: `src/cluster/storage/apply.rs` (`apply_entries_internal`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/09-raft.md` — ⚠️ 数据 Group 原子 WriteBatch 待统一\n- **oldmain 代码**: `raft_storage.rs` 同为逐 entry apply (与现码同类)\n- **现象**: Meta 分支已单 WriteBatch 原子 (apply_meta_entry); 数据 Group 每条 entry 单独 `persist_last_applied` + SM 写入\n- **影响**: 崩溃窗口与 inventory 警告一致; module 待核实一行\n- **下一步**: 需写测试复现 / 评估是否合并 batch\n\n### ISSUE-004: inventory 称 compaction 不保护 Snapshot",
   "old_string": "<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-004: inventory 称 compaction 不保护 Snapshot",
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1928,7 +1928,7 @@ wiqun-db 与现 aidb 同构, 无额外差异, 未单独对照.
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md",
+  "path": "../../docs/modules/engine-storage.md",
   "limit": 80
 }
 ```
@@ -1949,7 +1949,7 @@ wiqun-db 与现 aidb 同构, 无额外差异, 未单独对照.
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/meta_types.rs",
+  "path": "../../src/cluster/meta_types.rs",
   "pattern": "^    [A-Z]"
 }
 ```
@@ -2274,7 +2274,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/docs/modules"
+  "target_directory": "../../docs/modules"
 }
 ```
 
@@ -2283,7 +2283,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "contents": "---\nname: aidb-cluster\ndescription: AiDb distributed cluster — MetaRaft control plane, Multi-Raft data groups, CRC16 slot Router, OpenRaftStorage on LSM DB, gRPC, slot migration, membership. Use when changing src/cluster/*, debugging Raft/MetaRaft, group lifecycle, slot routing, or integrating aikv storage/cluster.\n---\n\n# AiDb Cluster (MetaRaft + Multi-Raft)\n\n## 何时读本文\n\n- 改 `src/cluster/*` 或排查 MetaRaft / 数据 Group Raft / Router / slot 迁移 / gRPC\n- 集成 aikv `storage` / `cluster` 前, 理解 aidb 侧 pub API 与错误语义\n- **不覆盖**: 单节点 LSM 写读路径 → [engine.md](engine.md); SSTable/compaction → [engine-storage.md](engine-storage.md)\n- **不覆盖**: RESP MOVED/ASK / CLUSTER 子命令 → aikv [cluster.md](../../../aikv/docs/modules/cluster.md) (步 11)\n- **构建**: 需 `--features cluster` 与 `protoc`\n\n## 架构一览\n\n- **MetaRaft** (`group_id = 0`): 节点 / Group / SlotTable / 迁移状态; `MetaRequest` 经 Raft 共识\n- **Multi-Raft** (`group_id ≥ 1`): 每 Group 独立 `ShardedStorage` (目录 `data/group_{id}/`) + `OpenRaftNode`\n- **Router**: Redis 兼容 16384 slot (CRC16 + hash tag); 缓存由 `LifecycleManager::tick` 刷新\n- **统一 gRPC**: `RaftServiceDispatcher` 按 RPC 内 `group_id` 分发; Meta 与数据 Group 可共享端口\n\n```mermaid\nflowchart TB\n  subgraph ctrl [MetaRaft gid=0]\n    MR[MetaRaftNode]\n    MSM[MetaStateMachine]\n  end\n  subgraph data [Multi-Raft gid>=1]\n    MRN[MultiRaftNode]\n    ORN[OpenRaftNode]\n    SS[ShardedStorage]\n  end\n  subgraph coord [协调]\n    LM[LifecycleManager]\n    LW[LeaderChangeWatcher]\n    MC[MembershipCoordinator]\n    SM[SlotMigrationManager]\n  end\n  MR --> MSM\n  MRN --> ORN\n  MRN --> SS\n  LM --> MRN\n  LW --> MR\n  MC --> MR\n  MC --> MRN\n  SM --> MR\n  SM --> MRN\n```\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `types.rs` | `TypeConfig`, `Request`/`Response`, `ThinWriteBatch`, `RaftNodeConfig` | `Request::Meta`, `RaftNodeConfig::validate` |\n| `meta_types.rs` | `ClusterMeta`, `SlotTable`, `MetaRequest`, `METARAFT_GROUP_ID=0` | `MetaRequest::*`, `SLOT_COUNT=16384` |\n| `meta_state_machine.rs` | Meta SM: validate + apply → 三 KV | `apply_meta_request`, `validate_meta_request` |\n| `meta_raft_node.rs` | 控制平面封装 | `new`, `initialize`, `propose`, `start_server_with_dispatcher` |\n| `node.rs` | 通用 OpenRaft 节点 | `new_with_storage`, `propose`, `change_membership`, `get` |\n| `multi_raft_node.rs` | 数据面编排 | `start`, `start_lifecycle_with_data`, `propose_key`, `get_local` |\n| `router.rs` | slot 路由 | `key_to_slot`, `route_key`, `refresh_from_data`, `group_ops` |\n| `sharded_storage.rs` | 每 Group 独立 DB | `ShardedStorage::open` |\n| `storage/keys.rs` | Raft / SM / Meta key 编码 | `sm_key`, `log_key`, `meta_*_key` |\n| `storage/{mod,log,apply,snapshot}.rs` | `OpenRaftStorage` (OpenRaft trait) | `apply_entries_internal` |\n| `network.rs` | gRPC client/server + dispatcher | `RaftNetworkClientFactory`, `RaftServiceDispatcher` |\n| `lifecycle_manager.rs` | Group 创建/销毁 + Router 刷新 | `tick` → `TickResult` |\n| `leader_watcher.rs` | 本地 leader → Meta `is_leader` | `tick`, `spawn_background` |\n| `membership_coordinator.rs` | 节点 join/leave/replace | `add_node`, `remove_node`, `change_group_membership` |\n| `slot_migration.rs` | 在线 slot 迁移 | `SlotMigrationManager`, `SlotMigrationExecutor` |\n| `replica_allocator.rs` | 副本/slot 分配算法 (纯计算) | `allocate_group`, `rebalance_replicas` |\n| `metrics.rs` | Raft RPC 计数 (feature `monitoring`) | `record_raft_rpc` |\n\n`lib.rs` re-export: `MetaRaftNode`, `MultiRaftNode`, `OpenRaftNode`, `Router`, `key_to_slot`, `ClusterError`, `SlotMigrationManager`, `MembershipCoordinator`, 等 (见 `cluster/mod.rs`).\n\n## DB key 空间 (每 Group 独立 DB 实例内)\n\n```shell\n\\x00raft/{gid}/vote|log/{idx}|membership|snapshot_meta|last_applied  # Raft 元数据\n\\x01sm/{gid}/{user_key}                                               # 数据面状态机 KV\n\\x00meta_raft/cluster_meta|slot_table|migration_state                 # 仅 MetaRaft DB (gid=0)\n```\n\n- 数据 Group 的用户 key 在 apply 时写入 `sm_key(group_id, user_key)` (`storage/apply.rs`)\n- Meta apply 原子写三 meta key + `last_applied` (`apply_meta_entry`)\n\n## 关键 invariant (勿破坏)\n\n- **WAL**: Raft 模式要求 `db.use_wal() == true`, 否则 `ClusterError::InvalidConfig`\n- **Group ID**: `0` = MetaRaft; 数据 Group ≥ `1` (`DEFAULT_GROUP_ID = 1` 为 P12 单 Group 测试默认)\n- **Slot**: 固定 `16384`; `Unallocated` → `route_slot` 返回 `InvalidState`\n- **Request 序列化**: 不用 adjacently tagged serde (rmp_serde + openraft `Entry` 限制)\n- **成员变更**: `OpenRaftNode::change_membership` 前 catch-up、后 replication confirm 双屏障\n- **Router leader**: `observed_group_leaders` (本地 OpenRaft) 优先于 MetaRaft `ReplicaInfo.is_leader`\n- **地址**: MOVED 重定向用 `NodeInfo.client_addr`, 缺省 fallback `rpc_addr`; Raft RPC 始终 `rpc_addr`\n- **Meta 版本**: 每次成功 `apply_meta_request` 后 `ClusterMeta.version += 1`\n\n## 数据流\n\n### MetaRaft 元数据变更\n\n```mermaid\nsequenceDiagram\n  participant C as 调用方\n  participant MR as MetaRaftNode\n  participant ORN as OpenRaftNode gid=0\n  participant MSM as MetaStateMachine\n\n  C->>MR: propose(MetaRequest)\n  MR->>ORN: Request::Meta\n  ORN->>MSM: apply_meta_request\n  MSM-->>ORN: ApplyOutput kv_pairs\n  Note over ORN: 单 WriteBatch 写 meta keys + last_applied\n```\n\n### 单 key 写入 (数据 Group)\n\n```mermaid\nflowchart LR\n  K[key] --> R[Router.route_key]\n  R --> G{local group?}\n  G -->|yes| P[OpenRaftNode.propose Put/Delete]\n  G -->|no| E[ClusterError::NotLeader 或 group not found]\n  P --> SM[apply → sm_key in Group DB]\n```\n\n### Lifecycle tick (本节点 Group 对齐)\n\n```mermaid\nflowchart TD\n  T[LifecycleManager.tick] --> M[读 MetaRaft ClusterMeta + SlotTable]\n  M --> R[Router.refresh_from_data]\n  M --> C{groups_to_create?}\n  C -->|yes| O[open ShardedStorage + OpenRaftNode + dispatcher.register]\n  M --> D{membership drift?}\n  D -->|leader only| A[add_learner_nonblocking + change_membership]\n```\n\n## 关键类型与 API\n\n### Request / Response (数据面)\n\n| 变体 | 用途 |\n|------|------|\n| `Put` / `Delete` | 单 key 写 |\n| `WriteBatch(ThinWriteBatch)` | 批写 (Group 内原子) |\n| `PutConditional` | slot 迁移目标写入 (key 已存在则跳过) |\n| `Meta(MetaRequest)` | 仅 MetaRaft group |\n\n### MetaRequest (控制面, 摘要)\n\n| 类别 | 变体 |\n|------|------|\n| 节点 | `RegisterNode`, `UpdateNodeStatus`, `ChangeNodeRole`, `UpdateNodeTags`, `UpdateNodeClientAddr`, `RemoveNode` |\n| Group | `CreateGroup`, `RemoveGroup`, `ChangeGroupMembership` |\n| Slot | `AssignSlots`, `UnassignSlots`, `BeginSlotMigration`, `UpdateMigrationProgress`, `CommitSlotMigration`, `CancelSlotMigration` |\n| 其他 | `BumpEpoch` |\n\n完整校验规则见 `meta_state_machine.rs::validate_with_state`.\n\n### ClusterError (常用)\n\n| 变体 | 典型场景 |\n|------|----------|\n| `NotLeader { leader, leader_addr, is_ask }` | 非 Leader; **aidb 写路径通常 `is_ask=false`** (ASK 由 aikv 读 Router + migration_state) |\n| `InvalidState` / `InvalidConfig` | Meta 校验失败、slot 未分配 |\n| `Raft(String)` | openraft / group 不存在 |\n| `Timeout` | 成员变更屏障超时 |\n\n## 常见任务\n\n### 启动 MetaRaft + MultiRaft 节点 (概要)\n\n1. 创建共享 `RaftNetworkClientFactory` 与 `RaftServiceDispatcher`\n2. `MetaRaftNode::new(config, meta_db, factory)` — 强制 `group_id=0`\n3. 首节点: `initialize` 或 `initialize_with_client` (Raft membership + bootstrap `RegisterNode`)\n4. `MultiRaftNode::new_with_lifecycle(node_id, Router, dispatcher, lifecycle)`\n5. `multi_raft.start(rpc_addr, max_message_size)` — 统一 gRPC\n6. `multi_raft.start_lifecycle_with_data(LifecycleConfig { data_dir, raft_node_config, options })`\n7. 可选: `LeaderChangeWatcher::spawn_background`, `MembershipCoordinator` / `SlotMigrationManager` 挂接\n\n### 写入一条 KV (经 MultiRaft)\n\n1. `multi_raft.propose_key(key, Some(value))` — 内部 `Router.route_key` → `propose_group`\n2. 或已知 `group_id`: `propose_group(gid, Request::Put { key, value })`\n3. 非本地 Group → `ClusterError::NotLeader` (调用方/aikv 转发)\n\n### 注册新节点 (MembershipCoordinator)\n\n1. 构造 `NodeJoinContext { node_id, rpc_addr, client_addr, join_method }`\n2. `coordinator.add_node(ctx).await` — 幂等: 同 `rpc_addr` 已存在则更新 `client_addr`\n3. 后续由运维 / `ReplicaAllocator` + MetaRaft `CreateGroup` / `AssignSlots` 分配 Group\n\n### 在线 slot 迁移\n\n1. `SlotMigrationManager::start_migration(source, target, slots)` → MetaRaft `BeginSlotMigration`\n2. 后台 `SlotMigrationExecutor::execute` — scan 源 Group → `PutConditional` 到目标\n3. 进度 `UpdateMigrationProgress`; 完成 `commit_migration` → `CommitSlotMigration`\n4. 取消: `cancel_migration` → `CancelSlotMigration`\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `cluster` | `Cargo.toml` | tonic/prost/tokio/openraft; 需 `protoc` |\n| `monitoring` | `cluster/metrics.rs` | Raft RPC counter; 无 feature 时为 no-op |\n| `ClusterConfig` | `config.rs` | `group_count`, `replication_factor`, log 限制, `MigrationConfig` |\n| `RaftNodeConfig` | `types.rs` | election/heartbeat/snapshot/rpc 超时; 必须 `validate()` |\n| `MigrationConfig` | `config.rs` | `max_batch_size`, `progress_report_interval`, 重试参数 |\n\n测试常用: `ClusterConfig::for_testing()` (4 slot, RF=1).\n\n## 测试\n\n```bash\n# OpenRaftNode + storage + network\ncargo test --features cluster --test raft -- --test-threads=1\n\n# MetaRaft SM + 集成\ncargo test --features cluster --test meta -- --test-threads=1\n\n# MultiRaft + lifecycle + leader_watcher\ncargo test --features cluster --test multi_raft -- --test-threads=1\n\n# 运维: membership / migration\ncargo test --features cluster --test cluster_ops -- --test-threads=1\ncargo test --features cluster --test cluster_replica_reconcile -- --test-threads=1\n```\n\n| 测试目录 | 覆盖 |\n|----------|------|\n| `tests/modules/cluster/*` | 3-node formation, storage, network |\n| `tests/modules/meta/*` | MetaStateMachine, MetaRaft 集成 |\n| `tests/modules/multi_raft/*` | Router CRC16, lifecycle, MultiRaftNode |\n| `examples/cluster.rs` | `key_to_slot` / hash tag (无网络) |\n\n## 已知限制\n\n- **无 ThinReplication** (oldmain 已移除); 全量 Raft log 复制\n- **无 `MultiRaftNode::write_batch`**: 跨 Group 批写由调用方 `Router::group_ops` 分组后逐 Group `propose`\n- **ASK/MOVED**: aidb 提供 `SlotStatus` + `ClusterError::NotLeader`; 客户端重定向在 **aikv cluster** 实现\n- **slot 级 ASK**: Migrating 期间整 slot ASK (非 per-key 追踪)\n- **`get_ttl_from_group`**: 恒 `None`; 迁移 verify 仅比对 value\n- **`ShardedStorage` stats**: `StorageStats` 字段预留, 未全量接线 engine 指标\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#issue-005--数据-group-apply-仍逐-entry-写-last_applied) — 数据 Group apply 逐 entry 写 `last_applied`, 与 inventory 原子 batch 目标不一致\n"
 }
 ```
@@ -2293,7 +2293,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/cluster.md` | 步 2 ✅ | backup/aidb DESIGN,README,CONTRIBUTING; WiQunTools 09–12; oldmain REDIS_CLUSTER_COMPATIBILITY (概念); oldmain examples/cluster/README (反例) | 步 3 oldmain src 逐段; ISSUE-005~010 | MetaRaft + MultiRaft + Router + slot 迁移 + gRPC |",
   "new_string": "| `docs/modules/cluster.md` | ✅ | backup/aidb DESIGN,README,CONTRIBUTING; WiQunTools 09–12; oldmain REDIS_CLUSTER_COMPATIBILITY (概念); oldmain examples/cluster/README (反例) | 已写 aidb/docs/modules/cluster.md | ISSUE-005 open; 006–010 doc-only |"
 }
@@ -2304,7 +2304,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 5/12 进行中)",
   "new_string": "**当前阶段**: 阶段 1 — modules (步 6/12 待开始)"
 }
@@ -2315,7 +2315,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 5 | aidb | `docs/modules/cluster.md` | cluster/* | 🔄 进行中 | |",
   "new_string": "| 5 | aidb | `docs/modules/cluster.md` | cluster/* | ✅ 完成 | 2026-06-18 |"
 }
@@ -2332,7 +2332,7 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 {
   "new_string": "- **无 ThinReplication**: 全量 Raft log 复制",
   "old_string": "- **无 ThinReplication** (oldmain 已移除); 全量 Raft log 复制",
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -2379,7 +2379,7 @@ PROGRESS **步 5/12 ✅** — 下一章: **步 6** `aikv/docs/modules/storage.md
 ```json
 {
   "glob_pattern": "**/archive-cursor-session.sh",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

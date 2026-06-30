@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -74,7 +74,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -83,7 +83,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -92,7 +92,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -101,7 +101,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
   "limit": 150
 }
 ```
@@ -118,7 +118,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src"
+  "target_directory": "../../src"
 }
 ```
 
@@ -127,7 +127,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/lib.rs",
+  "path": "../../src/lib.rs",
   "limit": 80
 }
 ```
@@ -138,7 +138,7 @@
 ```json
 {
   "pattern": "^## 何时读本文|^# AiDb",
-  "path": "/root/code/database/aidb/docs/modules"
+  "path": "../../docs/modules"
 }
 ```
 
@@ -147,7 +147,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/AGENTS.md",
+  "path": "../../AGENTS.md",
   "limit": 80
 }
 ```
@@ -163,7 +163,7 @@
 {
   "offset": 1,
   "limit": 35,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -174,7 +174,7 @@
 {
   "offset": 1,
   "limit": 35,
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -185,7 +185,7 @@
 {
   "offset": 1,
   "limit": 35,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -196,7 +196,7 @@
 {
   "offset": 1,
   "limit": 35,
-  "path": "/root/code/database/aidb/docs/modules/backup.md"
+  "path": "../../docs/modules/backup.md"
 }
 ```
 
@@ -207,7 +207,7 @@
 {
   "offset": 1,
   "limit": 35,
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -216,7 +216,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../../aikv/docs/modules/storage.md",
   "pattern": "AiDb|aidb|嵌入",
   "head_limit": 20
 }
@@ -232,7 +232,7 @@
 ```json
 {
   "offset": 135,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
 }
 ```
 
@@ -241,7 +241,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml",
+  "path": "../../Cargo.toml",
   "pattern": "^\\[features\\]|^cluster|^backup|^monitoring"
 }
 ```
@@ -252,7 +252,7 @@
 ```json
 {
   "glob_pattern": "aidb/ARCHITECTURE.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -423,7 +423,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -432,7 +432,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/mod.rs"
+  "path": "../../src/engine/mod.rs"
 }
 ```
 
@@ -441,7 +441,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/mod.rs"
+  "path": "../../src/engine/db/mod.rs"
 }
 ```
 
@@ -450,7 +450,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/mod.rs"
+  "path": "../../src/cluster/mod.rs"
 }
 ```
 
@@ -459,7 +459,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/mod.rs"
+  "path": "../../src/backup/mod.rs"
 }
 ```
 
@@ -468,7 +468,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -482,7 +482,7 @@
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -492,7 +492,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -502,7 +502,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/src/error.rs"
+  "path": "../../src/error.rs"
 }
 ```
 
@@ -512,7 +512,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -521,7 +521,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "^## 数据流|^```mermaid"
 }
 ```
@@ -535,7 +535,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "^\\s+pub fn "
 }
 ```
@@ -547,7 +547,7 @@
 {
   "offset": 35,
   "limit": 90,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -558,7 +558,7 @@
 {
   "offset": 15,
   "limit": 130,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -569,7 +569,7 @@
 {
   "offset": 45,
   "limit": 80,
-  "path": "/root/code/database/aidb/docs/modules/backup.md"
+  "path": "../../docs/modules/backup.md"
 }
 ```
 
@@ -580,7 +580,7 @@
 {
   "offset": 28,
   "limit": 50,
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -595,7 +595,7 @@
 {
   "limit": 45,
   "offset": 55,
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -604,7 +604,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../../aikv/docs/modules/storage.md",
   "pattern": "^## |AiDbEngine|ClusterDataAdapter",
   "head_limit": 25
 }
@@ -846,7 +846,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
 }
 ```
 
@@ -856,7 +856,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/*ARCHITECT*",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -866,7 +866,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/*.md",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -875,7 +875,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory",
   "pattern": "架构|architecture|overview|总览",
   "-i": true
 }
@@ -887,7 +887,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/*ARCHITECT*",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -901,7 +901,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/docs/ARCHITECTURE.md"
+  "path": "../../../aidb-oldmain/docs/ARCHITECTURE.md"
 }
 ```
 
@@ -911,7 +911,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/AIKV_INTEGRATION.md"
+  "path": "../../../aidb-oldmain/AIKV_INTEGRATION.md"
 }
 ```
 
@@ -921,7 +921,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/wiqun-db/ARCHITECTURE.md"
+  "path": "../../../wiqun-db/ARCHITECTURE.md"
 }
 ```
 
@@ -931,7 +931,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -941,7 +941,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/implementation-roadmap.md",
-  "target_directory": "/root/code/database/WiQunTools"
+  "target_directory": "../../../WiQunTools"
 }
 ```
 
@@ -951,7 +951,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -966,7 +966,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 {
   "limit": 80,
   "offset": 200,
-  "path": "/root/code/database/aidb-oldmain/docs/ARCHITECTURE.md"
+  "path": "../../../aidb-oldmain/docs/ARCHITECTURE.md"
 }
 ```
 
@@ -976,7 +976,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb-oldmain/docs/MULTI_RAFT_ARCHITECTURE.md"
+  "path": "../../../aidb-oldmain/docs/MULTI_RAFT_ARCHITECTURE.md"
 }
 ```
 
@@ -986,7 +986,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/implementation-roadmap.md"
+  "path": "../../../WiQunTools/docs/implementation-roadmap.md"
 }
 ```
 
@@ -997,7 +997,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 {
   "limit": 50,
   "offset": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -1006,7 +1006,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/docs/ARCHITECTURE.md",
+  "path": "../../../aidb-oldmain/docs/ARCHITECTURE.md",
   "pattern": "AiKv|aikv|嵌入|库 vs"
 }
 ```
@@ -1016,7 +1016,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "AiKv|aikv|9191|OTel|HTTP"
 }
 ```
@@ -1031,7 +1031,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/compaction/background.rs",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -1041,7 +1041,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "glob_pattern": "**/raft_*.rs",
-  "target_directory": "/root/code/database/aidb/src/cluster"
+  "target_directory": "../../src/cluster"
 }
 ```
 
@@ -1051,7 +1051,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DESIGN.md"
 }
 ```
 
@@ -1060,7 +1060,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "^### ISSUE"
 }
 ```
@@ -1075,7 +1075,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -1084,7 +1084,7 @@ Restore: manifest 校验 → `restore_tmp_*` → 逐文件校验 → `DB::open` 
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/README.md",
+  "path": "../../../aidb-oldmain/README.md",
   "pattern": "AiKv|架构|ARCHITECTURE"
 }
 ```
@@ -1217,7 +1217,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs"
+  "path": "../../../aidb-oldmain/src/lib.rs"
 }
 ```
 
@@ -1227,7 +1227,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb-oldmain/src"
+  "target_directory": "../../../aidb-oldmain/src"
 }
 ```
 
@@ -1237,7 +1237,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src"
+  "target_directory": "../../src"
 }
 ```
 
@@ -1251,7 +1251,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb-oldmain/src/cluster/mod.rs"
+  "path": "../../../aidb-oldmain/src/cluster/mod.rs"
 }
 ```
 
@@ -1261,7 +1261,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/src/backup/mod.rs"
+  "path": "../../../aidb-oldmain/src/backup/mod.rs"
 }
 ```
 
@@ -1271,7 +1271,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/src/monitoring/mod.rs"
+  "path": "../../../aidb-oldmain/src/monitoring/mod.rs"
 }
 ```
 
@@ -1280,7 +1280,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/cluster",
+  "path": "../../../aidb-oldmain/src/cluster",
   "pattern": "^pub (struct|fn|enum|use)",
   "glob": "multi_raft_node.rs"
 }
@@ -1291,7 +1291,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/multi_raft_node.rs",
+  "path": "../../src/cluster/multi_raft_node.rs",
   "pattern": "^    pub (async )?fn ",
   "head_limit": 25
 }
@@ -1306,7 +1306,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "pub fn dbsize|pub fn get_path|clear_all_data|MetricsServer|thin_replication|sharded_state_machine"
 }
 ```
@@ -1316,7 +1316,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/cluster",
+  "path": "../../../aidb-oldmain/src/cluster",
   "pattern": "LifecycleManager|LeaderChangeWatcher"
 }
 ```
@@ -1327,7 +1327,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb-oldmain/Cargo.toml"
+  "path": "../../../aidb-oldmain/Cargo.toml"
 }
 ```
 
@@ -1340,7 +1340,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/Cargo.toml",
+  "path": "../../../aidb-oldmain/Cargo.toml",
   "pattern": "^\\[features\\]|^cluster|^monitoring|^backup|^raft"
 }
 ```
@@ -1351,7 +1351,7 @@ module 阶段已记入 `ISSUES.md`; 汇总文档 **至多一行** 指向 ISSUES,
 ```json
 {
   "glob_pattern": "checkpoint/**",
-  "target_directory": "/root/code/database/aidb-oldmain/src"
+  "target_directory": "../../../aidb-oldmain/src"
 }
 ```
 
@@ -1511,7 +1511,7 @@ ARCHITECTURE 根文档仅:
 ```json
 {
   "glob_pattern": "aidb/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1520,7 +1520,7 @@ ARCHITECTURE 根文档仅:
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine.md",
+  "path": "../../docs/modules/engine.md",
   "offset": 1,
   "limit": 5
 }
@@ -1531,7 +1531,7 @@ ARCHITECTURE 根文档仅:
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "^### ISSUE-014",
   "-A": 3
 }
@@ -1547,7 +1547,7 @@ ARCHITECTURE 根文档仅:
 ```json
 {
   "glob_pattern": "aikv/docs/modules/storage.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1806,7 +1806,7 @@ AiKv 通过 `path = "../aidb"` 依赖本库:
 
 ```json
 {
-  "path": "/root/code/database/aidb/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "contents": "# AiDb 架构\n\nAiDb 是用 Rust 实现的 **嵌入式 LSM-Tree KV 存储库** (lib crate). 单机提供同步 `DB` API; 分布式、备份、Prometheus 通过 Cargo feature 按需启用. **AiDb 不是网络服务** — [AiKv](../aikv/docs/modules/storage.md) 在其上实现 Redis RESP 与 Cluster 协议.\n\n日常改代码优先读 [docs/modules/](docs/modules/) 域文档; 本文提供系统分层、模块关系与数据流总览.\n\n## 定位与边界\n\n| 维度 | AiDb | AiKv (嵌入方) |\n|------|------|---------------|\n| 形态 | lib crate, **同步** API | 网络服务, async (Tokio) |\n| 存储 | `DB::put/get/...`, MVCC, LSM | `AiDbEngine` + `spawn_blocking` |\n| 集群 | MetaRaft + Multi-Raft, slot 路由, gRPC | `ClusterDataAdapter`, MOVED/ASK, CLUSTER 命令 |\n| 备份 | `BackupManager` / `Checkpoint` | `BGSAVE` 直调 `Checkpoint` |\n| 指标 | `aidb_*` 系列, `register_into` | HTTP `/metrics`, `aikv_*` 系列 |\n\n公共 API 刻意精简 (`lib.rs` re-export); 实现细节以 `pub(crate)` 隔离在 `engine/` 与 `cluster/` 内.\n\n## 系统分层\n\n```mermaid\nflowchart TB\n  subgraph api [公共 API — src/lib.rs]\n    OPT[config::Options]\n    ERR[error::Error / Result]\n    PUB[DB · WriteBatch · Snapshot · Checkpoint · BlockCache]\n  end\n\n  subgraph eng [Engine — 始终编译]\n    WP[写路径 wal / memtable / db]\n    PS[持久化 sstable / compaction / filter / cache / checkpoint]\n  end\n\n  subgraph feat [可选 feature]\n    CL[cluster]\n    BK[backup — default]\n    MON[monitoring]\n  end\n\n  api --> eng\n  WP --> PS\n  PUB --> WP\n  CL --> eng\n  BK --> eng\n  MON --> eng\n  MON --> CL\n```\n\n## 目录结构\n\n按域聚合 (非逐文件 listing). 完整路径见各 [module 文档](docs/modules/).\n\n```shell\naidb/src/\n├── lib.rs           # crate 根; feature gate; 公共 re-export\n├── config.rs        # Options (~20 项)\n├── error.rs         # Error; cluster 时 ClusterError\n├── engine/          # LSM 核心 (始终编译)\n│   ├── wal/         # WAL Record 格式与 WALManager\n│   ├── memtable/    # InternalKey, SkipMap MemTable\n│   ├── db/          # DB 总协调 (inner.rs); Snapshot, WriteBatch\n│   ├── sstable/     # SSTable 布局与读路径\n│   ├── compaction/  # Leveled compaction, VersionSet/MANIFEST\n│   ├── filter/      # Bloom Filter\n│   ├── cache/       # Block Cache (LRU)\n│   └── checkpoint/  # 目录一致性快照\n├── cluster/         # MetaRaft + Multi-Raft (feature cluster)\n├── backup/          # BackupManager, RecoveryManager (feature backup)\n└── metrics.rs       # Prometheus 系列 (feature monitoring)\n```\n\n## 模块导航\n\n| Module 文档 | 覆盖 `src/` | 何时深入 |\n|-------------|-------------|----------|\n| [engine.md](docs/modules/engine.md) | `engine/{wal,memtable,db}` | WAL, MemTable, 写路径, `DB::*`, MVCC |\n| [engine-storage.md](docs/modules/engine-storage.md) | `engine/{sstable,compaction,filter,cache,checkpoint}` | flush, compaction, Bloom, MANIFEST, Checkpoint |\n| [cluster.md](docs/modules/cluster.md) | `cluster/*` | MetaRaft, Multi-Raft, Router, slot 迁移, gRPC |\n| [backup.md](docs/modules/backup.md) | `backup/*` | 全量备份, manifest, restore |\n| [observability.md](docs/modules/observability.md) | `metrics.rs`, `cluster/metrics.rs` | `aidb_*` 指标, tracing, 嵌入方注册 |\n\n横切类型: `config.rs`, `error.rs` 在各 module 或后续 `docs/development.md` 中说明.\n\n## Feature 边界\n\n| Feature | Default | 启用内容 | 构建注意 |\n|---------|---------|----------|----------|\n| `backup` | yes | `backup::*` | 关则 mod 不存在 |\n| `cluster` | no | `cluster::*` | 需 `protoc`; `cargo build --features cluster` |\n| `monitoring` | no | `metrics`, `cluster/metrics` | Prometheus + tracing span 指标 |\n| `compression` | no | Options 占位 | Snap/Lz4 **未实现** |\n\n核心 `engine` 不硬依赖 cluster / backup / monitoring 的可选 crate.\n\n## 代码入口\n\n| 能力 | 入口 |\n|------|------|\n| 打开单机 DB | `DB::open(path, Options)` → `engine/db/inner.rs` |\n| 公共 re-export | `src/lib.rs` |\n| MetaRaft / Multi-Raft | `cluster/meta_raft_node.rs`, `cluster/multi_raft_node.rs` |\n| Slot 路由 | `cluster/router.rs` — `key_to_slot`, `Router::route_key` |\n| Group 生命周期 | `cluster/lifecycle_manager.rs` — `LifecycleManager::tick` |\n| gRPC 分发 | `cluster/network.rs` — `RaftServiceDispatcher` |\n| 全量备份 | `backup/manager.rs` — `BackupManager::create_backup` |\n| 指标注册 (嵌入) | `metrics.rs` — `register_into` |\n\n## 数据流总览\n\n### 写入 (put / write)\n\n```mermaid\nflowchart LR\n  W[check_write_stall] --> L[write_lock]\n  L --> S[alloc sequence]\n  S --> WAL[WAL append]\n  WAL --> MT[MemTable]\n  MT --> F{满?}\n  F -->|是| FR[freeze]\n  FR --> BG[后台 flush → L0 SST]\n  BG --> CP[可选 compaction]\n```\n\n细节: [engine.md](docs/modules/engine.md), flush/compaction: [engine-storage.md](docs/modules/engine-storage.md).\n\n### 读取 (get)\n\nactive MemTable → immutable (新→旧) → L0 SST (Bloom) → L1+ (范围定位 + BlockCache). MVCC 见 `Snapshot`.\n\n### Compaction (后台)\n\n`CompactionPicker` 选取 → claim 防重叠 → `CompactionJob` 归并 (含 trivial move / subcompaction) → `VersionEdit` 写 MANIFEST. Snapshot 保护旧版本.\n\n### 打开 (recover)\n\n`Options::validate` → `WALManager::recover` + replay → `VersionSet` recover / bootstrap → 加载 SST → 分配 sequence → 目录 `LOCK` → 启动 flush / compaction 线程.\n\n### 集群 (feature `cluster`)\n\n```mermaid\nflowchart TB\n  subgraph meta [MetaRaft gid=0]\n    MR[MetaRaftNode]\n    MSM[MetaStateMachine]\n  end\n  subgraph data [Multi-Raft gid≥1]\n    MRN[MultiRaftNode]\n    ORN[OpenRaftNode]\n    SS[ShardedStorage → DB]\n  end\n  LM[LifecycleManager.tick] --> MR\n  LM --> MRN\n  K[key] --> R[Router.route_key]\n  R --> ORN\n  ORN --> SS\n```\n\n- **MetaRaft**: 节点 / Group / SlotTable / 迁移状态 (`MetaRequest` 共识).\n- **Multi-Raft**: 每 Group 独立 `ShardedStorage` (目录 `data/group_{id}/`) + `OpenRaftNode`.\n- **LifecycleManager::tick**: 对齐本地 Group, `Router.refresh_from_data`.\n- **写 key**: 本地 Group → `OpenRaftNode.propose` → apply 到 Group DB 内 `sm_key(gid, user_key)`.\n- **gRPC**: 统一端口, `RaftServiceDispatcher` 按 RPC 内 `group_id` 分发.\n\nRedis MOVED/ASK / CLUSTER 子命令在 [aikv cluster.md](../aikv/docs/modules/cluster.md). 数据面端口偏移由 AiKv `--cluster-data-port-offset` 配置 (默认 10000).\n\n### 备份 (feature `backup`)\n\n`BackupManager::create_backup` → `Checkpoint::create` (flush + pin + link/copy) → manifest + 逐文件 SHA256 → 保留策略. Restore 经临时目录 + `DB::open` 冒烟后 rename.\n\n### 可观测性\n\n- **Tracing**: 始终编译; 各路径 `#[instrument]` span.\n- **Prometheus**: `monitoring` feature; `DB::open` 时 `metrics::init()`.\n- **暴露**: AiDb **无内置 HTTP scrape**; 嵌入方调用 `register_into` 后统一暴露 (见 [observability.md](docs/modules/observability.md)).\n\n## 与 AiKv 的嵌入关系\n\nAiKv 通过 `path = \"../aidb\"` 依赖本库:\n\n1. **单机**: `AiDbEngine::open` 包装 `DB`, key 编码为 `{db_index}:{user_key}`.\n2. **集群**: `ClusterDataAdapter` 包装数据面 Raft 写读; MetaRaft / MultiRaft 由 AiKv 启动流程与 aidb `cluster` API 对接.\n3. **持久化**: memory 引擎无 checkpoint; aidb 路径委托 `flush` / `Checkpoint::create`.\n4. **指标**: `aikv` 启动时 `aidb::metrics::register_into(&registry)`.\n\n协议与数据结构编码在 AiKv; AiDb 提供 LSM 存储与 Raft/slot 基础设施.\n\n## 设计取向 (摘要)\n\n- **LSM + Leveled Compaction**: 写密集、点查友好; 详见 [DESIGN.md](DESIGN.md).\n- **API 精简**: 借鉴 RocksDB/LevelDB 思路, 避免过多配置与 surface area.\n- **集群**: OpenRaft + MetaRaft/Multi-Raft 分离控制面与数据面; 16384 slot (CRC16, Redis 兼容槽模型).\n\n完整决策与 trade-off 见 [DESIGN.md](DESIGN.md).\n\n## 进一步阅读\n\n- [AGENTS.md](AGENTS.md) — AI 助手与 CI 入口\n- [docs/modules/](docs/modules/) — 域级 Skill 文档\n- [DESIGN.md](DESIGN.md) — 设计决策 (汇总)\n- [DEPLOYMENT.md](DEPLOYMENT.md) — 构建、feature、运行 (汇总)\n- [ISSUES.md](ISSUES.md) — 待核实项\n\n## 待核实\n\n- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).\n"
 }
 ```
@@ -1816,7 +1816,7 @@ AiKv 通过 `path = "../aidb"` 依赖本库:
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `ARCHITECTURE.md` (总审) | 待开始 | `backup/aidb/ARCHITECTURE.md` | 已移出 aidb | modules 完成后定稿 |",
   "new_string": "| `ARCHITECTURE.md` (总审) | ✅ | `backup/aidb/ARCHITECTURE.md`; oldmain `docs/ARCHITECTURE.md`, `MULTI_RAFT_ARCHITECTURE.md`; WiQunTools roadmap 查漏; wiqun-db 与 backup 重复跳过 | 已写 `aidb/ARCHITECTURE.md` | 模块级汇总; ISSUE-014 根文档一行 |"
 }
@@ -1827,7 +1827,7 @@ AiKv 通过 `path = "../aidb"` 依赖本库:
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 13 | `ARCHITECTURE.md` | ⬜ 待开始 | |",
   "new_string": "| 13 | `ARCHITECTURE.md` | ✅ 完成 | 2026-06-18 |"
 }

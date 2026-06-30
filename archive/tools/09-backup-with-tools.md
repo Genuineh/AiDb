@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -78,7 +78,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -87,7 +87,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -96,7 +96,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -112,7 +112,7 @@
 ```json
 {
   "glob_pattern": "aidb/src/backup/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -122,7 +122,7 @@
 ```json
 {
   "pattern": "backup",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "glob": "lib.rs"
 }
 ```
@@ -133,7 +133,7 @@
 ```json
 {
   "pattern": "BackupManager|RecoveryManager|BackupStorage|RetentionPolicy",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "glob": "*.rs",
   "output_mode": "files_with_matches"
 }
@@ -145,7 +145,7 @@
 ```json
 {
   "glob_pattern": "**/13-backup*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -158,7 +158,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/mod.rs"
+  "path": "../../src/backup/mod.rs"
 }
 ```
 
@@ -168,7 +168,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "backup::|use crate::backup|BackupManager|RecoveryManager|create_backup|restore"
 }
 ```
@@ -179,7 +179,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "aidb_backup"
 }
 ```
@@ -190,7 +190,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
 }
 ```
 
@@ -203,7 +203,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/manager.rs",
+  "path": "../../src/backup/manager.rs",
   "limit": 80
 }
 ```
@@ -213,7 +213,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/recovery.rs",
+  "path": "../../src/backup/recovery.rs",
   "limit": 80
 }
 ```
@@ -223,7 +223,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/storage.rs",
+  "path": "../../src/backup/storage.rs",
   "limit": 60
 }
 ```
@@ -233,7 +233,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/util.rs",
+  "path": "../../src/backup/util.rs",
   "limit": 60
 }
 ```
@@ -244,7 +244,7 @@
 ```json
 {
   "glob": "Cargo.toml",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "backup"
 }
 ```
@@ -255,7 +255,7 @@
 ```json
 {
   "glob": "**/*",
-  "path": "/root/code/database/AiKv-Workflow/backup",
+  "path": "../../../AiKv-Workflow/backup",
   "pattern": "backup",
   "head_limit": 40
 }
@@ -270,7 +270,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "backup|Backup|checkpoint",
   "glob": "*.md",
   "head_limit": 30
@@ -282,7 +282,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "backup",
   "glob": "**/*",
   "head_limit": 25
@@ -294,7 +294,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md",
+  "path": "../../docs/modules/engine-storage.md",
   "pattern": "Checkpoint|checkpoint",
   "head_limit": 20
 }
@@ -305,7 +305,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "backup|Checkpoint|BGSAVE",
   "glob": "**/*",
   "head_limit": 25
@@ -321,7 +321,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "BGSAVE|Checkpoint|backup",
   "glob": "*.rs",
   "head_limit": 25
@@ -333,7 +333,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "checkpoint|backup",
   "head_limit": 15
 }
@@ -346,7 +346,7 @@
 {
   "offset": 120,
   "limit": 120,
-  "path": "/root/code/database/aidb/src/backup/manager.rs"
+  "path": "../../src/backup/manager.rs"
 }
 ```
 
@@ -357,7 +357,7 @@
 {
   "offset": 80,
   "limit": 80,
-  "path": "/root/code/database/aidb/src/backup/recovery.rs"
+  "path": "../../src/backup/recovery.rs"
 }
 ```
 
@@ -371,7 +371,7 @@
 ```json
 {
   "head_limit": 10,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "文件 checkpoint|slot.*checkpoint|migration.*checkpoint"
 }
 ```
@@ -382,7 +382,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/tests/backup.rs"
+  "path": "../../tests/backup.rs"
 }
 ```
 
@@ -393,7 +393,7 @@
 {
   "glob": "*.md",
   "head_limit": 20,
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "backup|Backup"
 }
 ```
@@ -408,7 +408,7 @@
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../../aikv/docs/modules/commands-extended.md",
   "pattern": "BGSAVE|Checkpoint|backup"
 }
 ```
@@ -419,7 +419,7 @@
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "checkpoint|迁移"
 }
 ```
@@ -434,7 +434,7 @@
 ```json
 {
   "glob_pattern": "**/aidb-admin/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -444,7 +444,7 @@
 ```json
 {
   "glob": "manager.rs",
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "pattern": "pub fn"
 }
 ```
@@ -455,7 +455,7 @@
 ```json
 {
   "glob": "recovery.rs",
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "pattern": "pub fn"
 }
 ```
@@ -601,7 +601,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/manager.rs"
+  "path": "../../src/backup/manager.rs"
 }
 ```
 
@@ -610,7 +610,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/recovery.rs"
+  "path": "../../src/backup/recovery.rs"
 }
 ```
 
@@ -619,7 +619,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup/storage.rs"
+  "path": "../../src/backup/storage.rs"
 }
 ```
 
@@ -628,7 +628,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/checkpoint/mod.rs",
+  "path": "../../src/engine/checkpoint/mod.rs",
   "limit": 100
 }
 ```
@@ -638,7 +638,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/backup.rs"
+  "path": "../../tests/backup.rs"
 }
 ```
 
@@ -653,7 +653,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 {
   "limit": 50,
   "offset": 115,
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -662,7 +662,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/backup.rs"
+  "path": "../../examples/backup.rs"
 }
 ```
 
@@ -670,7 +670,7 @@ RetentionPolicy + BackupManifest / BackupMetadata / BackupFileEntry
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test backup -- --test-threads=1 2>&1 | tail -30
+cd ../../../aidb && cargo test backup -- --test-threads=1 2>&1 | tail -30
 ```
 
 
@@ -678,7 +678,7 @@ cd /root/code/database/aidb && cargo test backup -- --test-threads=1 2>&1 | tail
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/backup.md` | 待开始 | | | `backup/*` |",
   "new_string": "| `docs/modules/backup.md` | 🔄 步 1 | | | `backup/*`; Checkpoint 组合; RetentionPolicy; restore rename |"
 }
@@ -692,7 +692,7 @@ cd /root/code/database/aidb && cargo test backup -- --test-threads=1 2>&1 | tail
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test --test backup 2>&1 && cargo test backup:: 2>&1 | tail -20
+cd ../../../aidb && cargo test --test backup 2>&1 && cargo test backup:: 2>&1 | tail -20
 ```
 
 
@@ -701,7 +701,7 @@ cd /root/code/database/aidb && cargo test --test backup 2>&1 && cargo test backu
 ```json
 {
   "glob": "metrics.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "record_backup"
 }
 ```
@@ -714,7 +714,7 @@ cd /root/code/database/aidb && cargo test --test backup 2>&1 && cargo test backu
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test -p aidb --lib backup 2>&1 | tail -25
+cd ../../../aidb && cargo test -p aidb --lib backup 2>&1 | tail -25
 ```
 
 
@@ -895,7 +895,7 @@ cargo run --example backup
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "backup|Backup|备份|恢复"
 }
 ```
@@ -907,7 +907,7 @@ cargo run --example backup
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "backup|Backup|备份"
 }
 ```
@@ -919,7 +919,7 @@ cargo run --example backup
 {
   "glob": "*.md",
   "head_limit": 30,
-  "path": "/root/code/database/wiqun-db",
+  "path": "../../../wiqun-db",
   "pattern": "backup|Backup|备份"
 }
 ```
@@ -931,7 +931,7 @@ cargo run --example backup
 {
   "limit": 200,
   "offset": 60,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
 }
 ```
 
@@ -946,7 +946,7 @@ cargo run --example backup
 {
   "limit": 50,
   "offset": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DESIGN.md"
 }
 ```
 
@@ -957,7 +957,7 @@ cargo run --example backup
 {
   "limit": 40,
   "offset": 125,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/observability.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/observability.md"
 }
 ```
 
@@ -968,7 +968,7 @@ cargo run --example backup
 {
   "limit": 60,
   "offset": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -979,7 +979,7 @@ cargo run --example backup
 {
   "limit": 50,
   "offset": 200,
-  "path": "/root/code/database/aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
+  "path": "../../../aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
 }
 ```
 
@@ -989,7 +989,7 @@ cargo run --example backup
 ```json
 {
   "glob_pattern": "aidb-oldmain/src/backup/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1003,7 +1003,7 @@ cargo run --example backup
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/backup/mod.rs"
+  "path": "../../../aidb-oldmain/src/backup/mod.rs"
 }
 ```
 
@@ -1014,7 +1014,7 @@ cargo run --example backup
 {
   "limit": 150,
   "offset": 250,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
 }
 ```
 
@@ -1025,7 +1025,7 @@ cargo run --example backup
 {
   "limit": 80,
   "offset": 55,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md"
 }
 ```
 
@@ -1034,7 +1034,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1048,7 +1048,7 @@ cargo run --example backup
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/backup/manager.rs"
+  "path": "../../../aidb-oldmain/src/backup/manager.rs"
 }
 ```
 
@@ -1058,7 +1058,7 @@ cargo run --example backup
 ```json
 {
   "glob": "13-backup-bench.md",
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "compress|collision|backup_exists|incremental|S3"
 }
 ```
@@ -1069,7 +1069,7 @@ cargo run --example backup
 ```json
 {
   "glob": "manager.rs",
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "pattern": "tracing::event|record\\("
 }
 ```
@@ -1084,7 +1084,7 @@ cargo run --example backup
 ```json
 {
   "glob": "config.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "for_testing",
   "-A": 8
 }
@@ -1096,7 +1096,7 @@ cargo run --example backup
 ```json
 {
   "glob": "13-backup-bench.md",
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "read_to_string"
 }
 ```
@@ -1108,7 +1108,7 @@ cargo run --example backup
 {
   "limit": 50,
   "offset": 700,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
 }
 ```
 
@@ -1123,7 +1123,7 @@ cargo run --example backup
 {
   "limit": 40,
   "offset": 143,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -1134,7 +1134,7 @@ cargo run --example backup
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/CHANGELOG.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/CHANGELOG.md",
   "pattern": "backup"
 }
 ```
@@ -1257,7 +1257,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/backup/manager.rs"
+  "path": "../../../aidb-oldmain/src/backup/manager.rs"
 }
 ```
 
@@ -1266,7 +1266,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/backup/recovery.rs"
+  "path": "../../../aidb-oldmain/src/backup/recovery.rs"
 }
 ```
 
@@ -1275,7 +1275,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/backup/storage.rs"
+  "path": "../../../aidb-oldmain/src/backup/storage.rs"
 }
 ```
 
@@ -1285,7 +1285,7 @@ cargo run --example backup
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/backup/metadata.rs"
+  "path": "../../../aidb-oldmain/src/backup/metadata.rs"
 }
 ```
 
@@ -1300,7 +1300,7 @@ cargo run --example backup
 {
   "new_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-013: list_backups 与 get_backup_info 对损坏 manifest 行为不一致\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/backup.md`\n- **相关 src**: `src/backup/manager.rs` (`list_backups`, `get_backup_info`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md` §1 — 未区分两种查询路径\n- **现象**: `list_backups` 遇损坏 manifest 仅 `tracing::warn` 并跳过; `get_backup_info` 返回 `Error::Corruption`\n- **影响**: module「已知限制」一句; 非 bug\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-012: 无 backup_id 碰撞重试与压缩/增量/S3\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/backup.md`\n- **相关 src**: `src/backup/manager.rs`, `src/backup/storage.rs`\n- **旧文档**: `WiQunTools/.../13-backup-bench.md` §1 (碰撞 while 循环)、「未来考量」; `aidb-oldmain/src/backup/metadata.rs` (`BackupType::Incremental`)\n- **现象**: 现码 `timestamp_nanos()` 单次取值无重试; 无压缩、增量备份、S3 等远程 `BackupStorage` 实现\n- **影响**: module「已知限制」列举; 非阻塞文档\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-011: 创建路径为 Checkpoint 组合而非 inventory 直连 pin_sstables\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/backup.md`\n- **相关 src**: `src/backup/manager.rs` (`create_backup_with_description`), `src/engine/checkpoint/mod.rs`\n- **旧文档**: `WiQunTools/.../13-backup-bench.md` §1.3 — 逐步 `pin_sstables` + 分 SST/MANIFEST 复制\n- **oldmain 代码**: `aidb-oldmain/src/backup/manager.rs` — `list_sstable_files` / `list_wal_files` 分目录复制, 无 Checkpoint\n- **现象**: 现码 `Checkpoint::create` 得全目录快照后再 `BackupStorage::store` 到 `backup_{id}`; 二次 I/O\n- **影响**: 正文写实际流程并链 engine-storage; 已知限制可提双重复制开销\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-010: MembershipCoordinator 无空节点 60s 超时清理",
   "old_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-010: MembershipCoordinator 无空节点 60s 超时清理",
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1311,7 +1311,7 @@ cargo run --example backup
 {
   "new_string": "| `docs/modules/backup.md` | 🔄 步 3 | backup/aidb {ARCH,DESIGN,DEPLOY,CHANGELOG}; WiQunTools 13 §1; oldmain src/backup + ADMIN (过时) | | Checkpoint 组合; ISSUE-011~013 doc-only |",
   "old_string": "| `docs/modules/backup.md` | 🔄 步 1 | | | `backup/*`; Checkpoint 组合; RetentionPolicy; restore rename |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1409,7 +1409,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md",
+  "path": "../../docs/modules/engine-storage.md",
   "limit": 120
 }
 ```
@@ -1430,7 +1430,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "limit": 50
 }
 ```
@@ -1457,7 +1457,7 @@ cargo run --example backup
 {
   "limit": 40,
   "offset": 230,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -1472,7 +1472,7 @@ cargo run --example backup
 {
   "new_string": "| `docs/modules/backup.md` | 🔄 步 4 草稿 | backup/aidb {ARCH,DESIGN,DEPLOY,CHANGELOG}; WiQunTools 13 §1; oldmain src/backup + ADMIN (过时) | | oldmain 中央 metadata→per-manifest; restore 增强 |",
   "old_string": "| `docs/modules/backup.md` | 🔄 步 3 | backup/aidb {ARCH,DESIGN,DEPLOY,CHANGELOG}; WiQunTools 13 §1; oldmain src/backup + ADMIN (过时) | | Checkpoint 组合; ISSUE-011~013 doc-only |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1711,7 +1711,7 @@ cargo run --example backup
 ```json
 {
   "glob_pattern": "aidb/docs/modules/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1720,7 +1720,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "pattern": "engine-storage|cluster\\.md"
 }
 ```
@@ -1730,7 +1730,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/backup.md"
+  "path": "../../docs/modules/backup.md"
 }
 ```
 
@@ -1744,7 +1744,7 @@ cargo run --example backup
 ```json
 {
   "glob_pattern": "AiKv-Workflow/backup/archive/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1754,7 +1754,7 @@ cargo run --example backup
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1767,7 +1767,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "pattern": "已归档|已删"
 }
 ```
@@ -1781,7 +1781,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/backup.md",
+  "path": "../../docs/modules/backup.md",
   "contents": "---\nname: aidb-backup\ndescription: AiDb full backup and restore — BackupManager, RecoveryManager, BackupStorage, RetentionPolicy, manifest checksums. Use when changing src/backup/*, debugging backup/restore or retention policy, integrating BackupManager with DB, or understanding Checkpoint-based snapshot packaging.\n---\n\n# AiDb Backup (备份与恢复)\n\n## 何时读本文\n\n- 改 `src/backup/*` 或集成 `BackupManager` / `RecoveryManager`\n- 排查备份创建、manifest 校验、保留策略、restore 失败\n- **不覆盖**: `Checkpoint::create` 内部 (pin / link-copy / compaction 互斥) → [engine-storage.md](engine-storage.md)\n- **不覆盖**: slot 迁移文件 checkpoint → [cluster.md](cluster.md)\n- **不覆盖**: AiKv `BGSAVE` (直调 `Checkpoint`, 不用 `BackupManager`) → aikv [commands-extended.md](../../../aikv/docs/modules/commands-extended.md)\n- **不覆盖**: `aidb_backup_*` Prometheus 注册与 HTTP 暴露 → [observability.md](observability.md) (步 10)\n- **构建**: 默认启用 `backup` feature; 关则整个 `backup` mod 不存在\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `backup/mod.rs` | re-export | `#[cfg(feature = \"backup\")]` via `lib.rs` |\n| `backup/manager.rs` | 创建 / 列举 / 删除 / 保留策略 | `BackupManager`, `RetentionPolicy`, manifest 类型 |\n| `backup/recovery.rs` | 恢复 / 校验 | `RecoveryManager::restore`, `verify_backup` |\n| `backup/storage.rs` | 存储抽象 | `BackupStorage`, `LocalFileStorage` |\n| `backup/util.rs` | SHA256 (`ring` + `hex`) | `sha256_file`, `sha256_bytes` |\n\n**存储目录布局** (`LocalFileStorage`):\n\n```shell\n{root}/\n└── backup_{id}/              # backup_path(backup_id)\n    ├── backup_manifest.json  # 元数据 + 文件清单 + manifest checksum\n    ├── CURRENT\n    ├── MANIFEST-*\n    ├── *.sst\n    └── wal/ ...\n```\n\n**与 Checkpoint 分工**: `BackupManager` 调用 `Checkpoint::create` 得 DB 目录级快照, 再复制到 `backup_{id}` 并写 manifest; 不重复实现 pin / link-copy.\n\n## 关键 invariant (勿破坏)\n\n- **一致性来源**: 备份数据必须来自 `Checkpoint::create` 输出 (含 MANIFEST/CURRENT/SST/WAL), 不可只复制 SST 列表\n- **manifest checksum**: 序列化时 `metadata.checksum` 先为空, SHA256 后回填; restore / verify 须复现同一规则\n- **per-file SHA256**: `BackupFileEntry.checksum` 为备份存储中文件的 SHA256; restore 逐文件校验\n- **restore 原子性**: 必须先写到 `restore_tmp_{id}`, `DB::open` 冒烟通过后再 `rename` (EXDEV 时 `copy_dir_all`)\n- **保留策略**: `max_age` 硬过期不受 `min_count` 保护; `min_age` 内备份归入 young 组不删\n- **目标目录**: restore 时 `db_path` 可不存在或**空目录**; 非空 → `Error::InvalidArgument`\n\n## 数据流\n\n### 创建备份\n\n```mermaid\nsequenceDiagram\n    participant M as BackupManager\n    participant C as Checkpoint\n    participant S as BackupStorage\n\n    M->>M: backup_id = timestamp_nanos()\n    M->>C: create(db, .backup_tmp_{id})\n    Note over C: flush → enter_checkpoint → pin → link/copy\n    M->>M: collect_files → 逐文件 store + SHA256\n    M->>M: remove .backup_tmp_{id}\n    M->>M: 写 backup_manifest.json (checksum 回填)\n    M->>M: apply_retention_policy()\n```\n\n### 恢复\n\n```mermaid\nflowchart TD\n    A[读 manifest + 校验 checksum] --> B[restore_tmp_{id}]\n    B --> C[逐文件 load + SHA256]\n    C --> D[DB::open 冒烟]\n    D --> E{rename tmp → db_path}\n    E -->|ok| F[sync 父目录]\n    E -->|EXDEV| G[copy_dir_all + sync]\n```\n\n## 关键类型与 API\n\n| 类型 / API | 说明 |\n|------------|------|\n| `BackupId` | `u64`, 纳秒时间戳 |\n| `BackupMetadata` / `BackupManifest` / `BackupFileEntry` | serde JSON; manifest 在 `backup_manifest.json` |\n| `RetentionPolicy` | `min_count`/`max_count`/`min_age`/`max_age`; 默认 3/30/1d/30d |\n| `BackupStorage` | `store`, `store_bytes`, `load`, `read_to_string`, `list`, `delete`, `backup_path` |\n| `LocalFileStorage::new(root)` | 唯一内置实现; `fs::copy` |\n| `BackupManager::new(Arc<dyn BackupStorage>, policy)` | 创建后自动 `apply_retention_policy` |\n| `create_backup` / `create_backup_with_description` | 主入口 |\n| `list_backups` / `get_backup_info` / `delete_backup` | CRUD |\n| `RecoveryManager::new(storage)` | 与 Manager 共享同一 `Arc<dyn BackupStorage>` |\n| `restore(id, db_path)` | 五步流程 (见上) |\n| `verify_backup(id)` | 不恢复; 失败返回 `Ok(false)` |\n\n`RecoveryManager` 冒烟使用 `Options::for_testing()`, 非调用方生产 `Options`.\n\n## 常见任务\n\n### 创建并列举备份\n\n1. `let storage = Arc::new(LocalFileStorage::new(backup_root));`\n2. `let manager = BackupManager::new(storage.clone(), RetentionPolicy::default());`\n3. `let id = manager.create_backup(&db)?;` (或 `create_backup_with_description`)\n4. `manager.list_backups()?` — 按 `created_at` 降序\n\n### 恢复到新目录\n\n1. 确保目标目录不存在或为空\n2. `let recovery = RecoveryManager::new(storage);`\n3. `recovery.restore(id, &restore_path)?;`\n4. `DB::open(&restore_path, options)?` 验证业务数据\n\n### 仅校验备份完整性\n\n```rust\nassert!(RecoveryManager::new(storage).verify_backup(id)?);\n```\n\n### 调整保留策略\n\n1. 构造 `RetentionPolicy { min_count, max_count, min_age, max_age }`\n2. 传入 `BackupManager::new`\n3. 每次 `create_backup` 结束自动清理; 也可手动 `apply_retention_policy()`\n\n### 自定义存储后端\n\n1. 实现 `BackupStorage` trait (`Send + Sync`)\n2. `BackupManager::new(Arc::new(MyStorage), policy)` — Manager / Recovery 逻辑不变\n\n### 禁用 backup 模块\n\n```bash\ncargo build --no-default-features\n# 或显式: cargo build --no-default-features --features monitoring,cluster,...\n```\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `backup` | `Cargo.toml` default | 启用 `src/backup/`; 依赖 `ring`, `hex`, `serde_json` |\n| `monitoring` | `manager` / `recovery` | `aidb_backup_total{op}`, `aidb_backup_size_bytes`, `aidb_backup_duration_seconds` |\n| tracing span | `#[instrument]` | `backup_create`, `backup_list`, `backup_delete`, `backup_retention`, `backup_restore`, `backup_verify` |\n\n## 测试\n\n```bash\ncargo test --test backup\ncargo test -p aidb --lib backup\ncargo run --example backup\n```\n\n| 文件 | 覆盖 |\n|------|------|\n| `tests/backup.rs` | 空库、roundtrip、并发写后 verify |\n| `backup/manager.rs` tests | RetentionPolicy 五条规则 |\n| `backup/recovery.rs` tests | verify 完整 / 篡改 SST |\n| `benches/backup_bench.rs` | criterion (见 development / observability 边界) |\n\n## 已知限制\n\n- **双重复制 I/O**: checkpoint 已 link/copy 到 `.backup_tmp_*`, 再 `fs::copy` 到 `backup_{id}` (见 ISSUE-011)\n- **无增量 / 压缩 / 远程存储**: 仅全量; 无 S3 trait 实现 (见 ISSUE-012)\n- **无 backup_id 碰撞重试**: 单次 `timestamp_nanos()` (见 ISSUE-012)\n- **`list` vs `get`**: 损坏 manifest 在 list 中 warn 跳过, get 抛 `Corruption` (见 ISSUE-013)\n- **无 CLI**: 无 `aidb-admin`; 用库 API 或 `examples/backup.rs`\n- **单 DB 实例**: 集群多 group 协调备份不在本章; aikv 集群 checkpoint 见 `storage/cluster_adapter.rs`\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#issue-011--创建路径为-checkpoint-组合而非-inventory-直连-pin_sstables) — 创建路径为 Checkpoint 组合, 非 inventory 直连 pin_sstables\n- 见 [ISSUES.md](../../ISSUES.md#issue-012--无-backup_id-碰撞重试与压缩增量s3) — 无碰撞重试、压缩、增量、S3\n- 见 [ISSUES.md](../../ISSUES.md#issue-013--list_backups-与-get_backup_info-对损坏-manifest-行为不一致) — list 与 get 对损坏 manifest 行为不一致\n"
 }
 ```
@@ -1793,7 +1793,7 @@ cargo run --example backup
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 10/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 9/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1804,7 +1804,7 @@ cargo run --example backup
 {
   "new_string": "| 9 | aidb | `docs/modules/backup.md` | backup/* | ✅ 完成 | 2026-06-18 |",
   "old_string": "| 9 | aidb | `docs/modules/backup.md` | backup/* | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1815,7 +1815,7 @@ cargo run --example backup
 {
   "new_string": "| `docs/modules/backup.md` | ✅ | backup/aidb {ARCHITECTURE,DESIGN,DEPLOYMENT,CHANGELOG,CONTRIBUTING}; WiQunTools 13 §1; oldmain src/backup + ADMIN_TOOL (过时跳过) | 已写 aidb/docs/modules/backup.md | ISSUE-011~013 doc-only |",
   "old_string": "| `docs/modules/backup.md` | 🔄 步 4 草稿 | backup/aidb {ARCH,DESIGN,DEPLOY,CHANGELOG}; WiQunTools 13 §1; oldmain src/backup + ADMIN (过时) | | oldmain 中央 metadata→per-manifest; restore 增强 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1826,7 +1826,7 @@ cargo run --example backup
 {
   "new_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/ADMIN_TOOL_GUIDE.md` §Backup | `docs/modules/backup.md` | 无有效内容跳过 (aidb-admin CLI 已移除) |\n| 2026-06-18 | aikv-oldmain | `docs/development/architecture/04-storage.md` | `docs/modules/storage.md` | 已归档 → `backup/archive/aikv-oldmain/docs/development/architecture/04-storage.md` (legacy RDB/AOF, 已过时) |",
   "old_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aikv-oldmain | `docs/development/architecture/04-storage.md` | `docs/modules/storage.md` | 已归档 → `backup/archive/aikv-oldmain/docs/development/architecture/04-storage.md` (legacy RDB/AOF, 已过时) |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1878,7 +1878,7 @@ cargo run --example backup
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -1888,7 +1888,7 @@ cargo run --example backup
 ```json
 {
   "glob_pattern": "vibe-coding/scripts/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1902,7 +1902,7 @@ cargo run --example backup
 ```json
 {
   "glob_pattern": "aidb/archive/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1932,7 +1932,7 @@ head -c 2000 /root/.cursor/projects/root-code-database/agent-transcripts/993d695
 **Tool `Shell`**
 
 ```bash
-bash /root/code/database/vibe-coding/scripts/archive-cursor-session.sh aidb 09 backup --session-id 993d6957-ce9e-4461-963c-50f57ca2fb41
+bash ../../../vibe-coding/scripts/archive-cursor-session.sh aidb 09 backup --session-id 993d6957-ce9e-4461-963c-50f57ca2fb41
 ```
 
 
@@ -1943,7 +1943,7 @@ bash /root/code/database/vibe-coding/scripts/archive-cursor-session.sh aidb 09 b
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aidb/archive/09-backup.md /root/code/database/aidb/archive/tools/09-backup-with-tools.md && cat /root/code/database/aidb/archive/09-backup.meta.json
+wc -l ../../archive/09-backup.md ../../archive/tools/09-backup-with-tools.md && cat ../../archive/09-backup.meta.json
 ```
 
 

@@ -14,7 +14,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/SESSION-PROMPT.md"
+  "path": "../../../AiKv-Workflow/backup/SESSION-PROMPT.md"
 }
 ```
 
@@ -24,7 +24,7 @@
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -35,7 +35,7 @@
 {
   "glob": "*.md",
   "head_limit": 30,
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "pattern": "observability"
 }
 ```
@@ -49,7 +49,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md",
+  "path": "../../../AiKv-Workflow/backup/design.md",
   "pattern": "observability"
 }
 ```
@@ -60,7 +60,7 @@
 ```json
 {
   "glob_pattern": "aidb/src/metrics*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -71,7 +71,7 @@
 {
   "glob": "*.rs",
   "head_limit": 25,
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "monitoring|metrics|tracing"
 }
 ```
@@ -86,7 +86,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/observability.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/observability.md"
 }
 ```
 
@@ -96,7 +96,7 @@
 ```json
 {
   "glob_pattern": "aidb/src/cluster/metrics*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -106,7 +106,7 @@
 ```json
 {
   "glob": "Cargo.toml",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "monitoring|otel|prometheus|tracing"
 }
 ```
@@ -122,7 +122,7 @@
 {
   "glob": "*.rs",
   "head_limit": 15,
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "metrics-port|9191|MetricsServer|/metrics"
 }
 ```
@@ -134,7 +134,7 @@
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory",
   "pattern": "observability|metrics|tracing"
 }
 ```
@@ -149,7 +149,7 @@
 ```json
 {
   "glob_pattern": "aidb/tests/**/metrics/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -160,7 +160,7 @@
 {
   "glob": "*.rs",
   "head_limit": 20,
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "opentelemetry|init_tracing|metrics::init"
 }
 ```
@@ -172,7 +172,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -241,7 +241,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "limit": 50
 }
 ```
@@ -251,7 +251,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "pattern": "observability"
 }
 ```
@@ -262,7 +262,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -272,7 +272,7 @@
 ```json
 {
   "glob_pattern": "aidb/tests/**/metrics*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -283,7 +283,7 @@
 {
   "glob": "*.rs",
   "head_limit": 40,
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "#\\[instrument|tracing::"
 }
 ```
@@ -298,7 +298,7 @@
 ```json
 {
   "offset": 140,
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -307,7 +307,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/cluster/metrics.rs"
+  "path": "../../src/cluster/metrics.rs"
 }
 ```
 
@@ -317,7 +317,7 @@
 ```json
 {
   "glob": "lib.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "metrics|monitoring|tracing"
 }
 ```
@@ -328,7 +328,7 @@
 ```json
 {
   "glob_pattern": "aidb/tests/**/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -343,7 +343,7 @@
 {
   "glob": "*.rs",
   "head_limit": 30,
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "opentelemetry|tracing_subscriber|tracing_opentelemetry"
 }
 ```
@@ -353,7 +353,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/common/observability.rs"
+  "path": "../../tests/common/observability.rs"
 }
 ```
 
@@ -362,7 +362,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/metrics.rs"
+  "path": "../../tests/metrics.rs"
 }
 ```
 
@@ -372,7 +372,7 @@
 ```json
 {
   "glob": "Cargo.toml",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "feature"
 }
 ```
@@ -387,7 +387,7 @@
 ```json
 {
   "limit": 35,
-  "path": "/root/code/database/aidb/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -397,7 +397,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "opentelemetry"
 }
 ```
@@ -408,7 +408,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/observability.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/observability.md"
 }
 ```
 
@@ -418,7 +418,7 @@
 ```json
 {
   "glob_pattern": "wiqun-factory/docs/MONITORING*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -433,7 +433,7 @@
 {
   "glob": "*.rs",
   "output_mode": "count",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "#\\[tracing::instrument|#\\[instrument"
 }
 ```
@@ -444,7 +444,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "name = \\\"",
   "head_limit": 60
 }
@@ -457,7 +457,7 @@
 {
   "glob": "*.rs",
   "head_limit": 20,
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "metrics::|record_"
 }
 ```
@@ -472,7 +472,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "metrics::init|metrics::record_|metrics::set_|metrics::memtable"
 }
 ```
@@ -483,7 +483,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/tests/modules/metrics/prometheus.rs"
+  "path": "../../tests/modules/metrics/prometheus.rs"
 }
 ```
 
@@ -493,7 +493,7 @@
 ```json
 {
   "glob_pattern": "backup/aidb/docs/superpowers/**/*observ*",
-  "target_directory": "/root/code/database/AiKv-Workflow"
+  "target_directory": "../../../AiKv-Workflow"
 }
 ```
 
@@ -507,7 +507,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "WAL_SIZE|SSTABLE_COUNT|SSTABLE_SIZE"
 }
 ```
@@ -519,7 +519,7 @@
 {
   "glob": "*.md",
   "head_limit": 20,
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "aidb_wal|aidb_operations|MONITORING"
 }
 ```
@@ -679,7 +679,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -688,7 +688,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/metrics/prometheus.rs"
+  "path": "../../tests/modules/metrics/prometheus.rs"
 }
 ```
 
@@ -697,7 +697,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/cluster/metrics.rs"
+  "path": "../../tests/modules/cluster/metrics.rs"
 }
 ```
 
@@ -708,7 +708,7 @@
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 1 | backup/aidb/docs/observability.md; DEPLOYMENT §可观测性 | | metrics.rs + cluster/metrics; tracing 索引 |",
   "old_string": "| `docs/modules/observability.md` | 待开始 | `backup/aidb/docs/observability.md` | 已移出 aidb | `metrics.rs` + monitoring |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -723,7 +723,7 @@
 {
   "limit": 30,
   "offset": 145,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -734,7 +734,7 @@
 {
   "limit": 30,
   "offset": 1225,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -744,7 +744,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "record_operation\\(|record_compaction\\("
 }
 ```
@@ -755,7 +755,7 @@
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "tracing::(debug|info|warn|event)!",
   "head_limit": 35
 }
@@ -765,7 +765,7 @@
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test --test metrics --features monitoring -- --test-threads=1 2>&1 | tail -20
+cd ../../../aidb && cargo test --test metrics --features monitoring -- --test-threads=1 2>&1 | tail -20
 ```
 
 
@@ -778,7 +778,7 @@ cd /root/code/database/aidb && cargo test --test metrics --features monitoring -
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database",
+  "path": "<workspace>",
   "pattern": "register_into|aidb::metrics"
 }
 ```
@@ -789,7 +789,7 @@ cd /root/code/database/aidb && cargo test --test metrics --features monitoring -
 ```json
 {
   "glob": "inner.rs",
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "scan|close|record_operation"
 }
 ```
@@ -800,7 +800,7 @@ cd /root/code/database/aidb && cargo test --test metrics --features monitoring -
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "#\\[instrument"
 }
 ```
@@ -987,7 +987,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/observability.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/observability.md"
 }
 ```
 
@@ -998,7 +998,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "limit": 80,
   "offset": 125,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -1009,7 +1009,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "glob": "CHANGELOG.md",
   "head_limit": 25,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "monitoring|metrics|tracing|OTel|Prometheus|observability"
 }
 ```
@@ -1021,7 +1021,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "limit": 120,
   "offset": 1,
-  "path": "/root/code/database/aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
+  "path": "../../../aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
 }
 ```
 
@@ -1035,7 +1035,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "MetricsServer|AIDB_OTLP|AIDB_JSON_LOG"
 }
 ```
@@ -1046,7 +1046,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/wiqun-factory/docs/MONITORING.md"
+  "path": "../../../wiqun-factory/docs/MONITORING.md"
 }
 ```
 
@@ -1057,7 +1057,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/wiqun-db",
+  "path": "../../../wiqun-db",
   "pattern": "observability|metrics"
 }
 ```
@@ -1069,7 +1069,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "limit": 50,
   "offset": 200,
-  "path": "/root/code/database/aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
+  "path": "../../../aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md"
 }
 ```
 
@@ -1082,7 +1082,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/wiqun-db/docs/observability.md"
+  "path": "../../../wiqun-db/docs/observability.md"
 }
 ```
 
@@ -1091,7 +1091,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "ISSUE-014"
 }
 ```
@@ -1106,7 +1106,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "bloom_build|snapshot_create|raft_propose|compaction_pick"
 }
 ```
@@ -1117,7 +1117,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "glob": "*.rs",
-  "path": "/root/code/database/aidb/src/engine/compaction",
+  "path": "../../src/engine/compaction",
   "pattern": "cmp_background|instrument"
 }
 ```
@@ -1133,7 +1133,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 2 | backup/aidb/docs/observability.md; DEPLOYMENT §可观测性 | | metrics.rs + cluster/metrics; tracing 索引 |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 1 | backup/aidb/docs/observability.md; DEPLOYMENT §可观测性 | | metrics.rs + cluster/metrics; tracing 索引 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1274,7 +1274,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "glob": "*.rs",
   "head_limit": 20,
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "monitoring|metrics"
 }
 ```
@@ -1285,7 +1285,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1299,7 +1299,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/monitoring/metrics.rs"
+  "path": "../../../aidb-oldmain/src/monitoring/metrics.rs"
 }
 ```
 
@@ -1310,7 +1310,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-018: scan/close 未计入 aidb_operations_total\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/observability.md`\n- **相关 src**: `src/engine/db/inner.rs` (`scan`, `close`)\n- **旧文档**: `backup/aidb/DEPLOYMENT.md` §可观测性 — 列 `put/get/delete/scan/close`\n- **现象**: `record_operation` 覆盖 put/get/delete/write_batch/snapshot/stall_*; `db_scan`/`db_close` 有 span 但无 counter\n- **影响**: module 指标表不写 scan/close; 或已知限制一句\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-017: compaction 指标 counter/histogram label 名不一致\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/observability.md`\n- **相关 src**: `src/metrics.rs` (`COMPACTION_TOTAL`, `COMPACTION_DURATION`)\n- **现象**: `aidb_compaction_total` label 为 `type`; `aidb_compaction_duration_seconds` label 为 `phase`; 值均为 pick/run/apply\n- **影响**: 文档如实写两 label 名; PromQL 勿混用\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-016: 旧设计若干 Prometheus 系列未实现\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/observability.md`\n- **相关 src**: `src/metrics.rs`\n- **旧文档**: `backup/aidb/docs/observability.md` Metrics 表; `aidb-oldmain/docs/monitoring/MONITORING_GUIDE.md`\n- **oldmain 代码**: `aidb-oldmain/src/monitoring/metrics.rs` — 独立 requests/errors/cluster 指标\n- **现象**: 现码无 `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等\n- **影响**: 已知限制; Dashboard 用 PromQL 派生 (如 hit rate) 或链 aikv 指标\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-015: 旧 observability 指标表与 span 名大量过时\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/observability.md`\n- **相关 src**: `src/metrics.rs`, 各模块 `#[instrument]`\n- **旧文档**: `backup/aidb/docs/observability.md` §2 矩阵\n- **现象**: 旧稿 `aidb_puts_total`、`compaction_pick`、`raft_propose`、`memtable_insert` 等与现 `aidb_operations_total{op}`、`cmp_pick`、`meta_propose`、`mem_put` 不符\n- **影响**: 正文以现码 grep 为准; 不回迁旧表\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-014: HTTP/OTel/JSON log 运行在嵌入方, aidb 仅库内指标\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/observability.md`\n- **相关 src**: `src/metrics.rs` (`register_into`); `aikv/src/server/metrics.rs`\n- **旧文档**: `backup/aidb/DEPLOYMENT.md` §可观测性 (`--metrics-port`, `AIDB_OTLP_ENDPOINT`); `backup/aidb/docs/observability.md` OTel 拓扑\n- **oldmain 代码**: `aidb-oldmain/src/monitoring/{server,metrics}.rs` — 内置 MetricsServer + Collector\n- **现象**: 现 aidb 无 HTTP 端点、无 OTel Layer 初始化、无 `AIDB_*` env; `monitoring` 依赖含 opentelemetry 但未接线; aikv 调 `aidb::metrics::register_into` 后自行暴露 `/metrics`\n- **影响**: module 写库侧职责边界; HTTP/OTel 链 aikv observability (步 12)\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-013: list_backups 与 get_backup_info 对损坏 manifest 行为不一致",
   "old_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-013: list_backups 与 get_backup_info 对损坏 manifest 行为不一致",
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1321,7 +1321,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 3 | backup/aidb/docs/observability.md; DEPLOYMENT §; oldmain monitoring/* + MONITORING_GUIDE (过时) | | ISSUE-014~018 doc-only |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 2 | backup/aidb/docs/observability.md; DEPLOYMENT §可观测性 | | metrics.rs + cluster/metrics; tracing 索引 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1410,7 +1410,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../../aikv/src/server/metrics.rs",
   "offset": 755
 }
 ```
@@ -1422,7 +1422,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 4 草稿 | backup/aidb/docs/observability.md; DEPLOYMENT §; oldmain monitoring/* (过时) | | ISSUE-014~018 doc-only |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 3 | backup/aidb/docs/observability.md; DEPLOYMENT §; oldmain monitoring/* + MONITORING_GUIDE (过时) | | ISSUE-014~018 doc-only |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1689,7 +1689,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "contents": "---\nname: aidb-observability\ndescription: AiDb observability — centralized Prometheus metrics (monitoring feature), tracing span index, metrics::init and register_into for embedders. Use when changing src/metrics.rs or cluster/metrics.rs, wiring aidb_* counters in aikv, or debugging Prometheus/tracing for engine and Raft paths.\n---\n\n# AiDb Observability (可观测性)\n\n## 何时读本文\n\n- 改 `src/metrics.rs`、`src/cluster/metrics.rs` 或排查 `aidb_*` Prometheus 指标\n- 在 **嵌入方** (aikv) 注册 aidb 指标、理解 `register_into` 与 scrape 边界\n- 查 tracing span / event 命名, 跨 module 定位埋点\n- **不覆盖**: 各 module 内 span 实现细节 → [engine.md](engine.md) / [engine-storage.md](engine-storage.md) / [cluster.md](cluster.md) / [backup.md](backup.md)\n- **不覆盖**: HTTP `/metrics`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md) (步 12)\n- **构建**: `monitoring` feature 启用 `aidb::metrics`; 默认 **不** 启用\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `src/metrics.rs` | 引擎 Prometheus 系列 + `init` / `register_into` / `record_*` | `DB::open` → `init()` |\n| `src/cluster/metrics.rs` | Raft RPC / log 计数 | `cluster/network.rs` |\n| `src/lib.rs` | `#[cfg(monitoring)] pub mod metrics` | 无 monitoring 则无模块 |\n| `tests/common/observability.rs` | `EventCatcher`、tracing 测试锁 | 跨模块 tracing 验收 |\n| `tests/modules/metrics/prometheus.rs` | cache/bloom/DB histogram 接线 | `--test metrics` |\n| `tests/modules/cluster/metrics.rs` | Raft 指标 register + gather | cluster 测试套件 |\n\n**嵌入方**: `aikv/src/server/metrics.rs` 在 `Metrics::new()` 内调用 `aidb::metrics::register_into(&registry)?`, 与 `wiqun_kv_*` 共用 Registry 后由 HTTP 暴露.\n\n## 架构: 双轨 + 嵌入\n\n```mermaid\nflowchart LR\n  subgraph lib [aidb 库]\n    T[tracing spans/events]\n    M[metrics.rs LazyLock]\n    R[register_into]\n  end\n  subgraph embed [嵌入方 aikv]\n    REG[prometheus::Registry]\n    HTTP[GET /metrics]\n  end\n  T --> T\n  M --> R\n  R --> REG\n  REG --> HTTP\n```\n\n要点:\n\n- **Tracing**: 始终编译 (`tracing` crate); 与 `monitoring` feature **无关**\n- **Prometheus**: 仅 `monitoring` feature; `record_*` 在引擎热路径自动调用\n- **aidb 无内置 HTTP scrape 端点**; `opentelemetry` / `tracing-opentelemetry` 在 `Cargo.toml` 列为 `monitoring` 依赖, 但 **aidb/src 无 OTel Layer 接线** (见 ISSUE-014)\n\n## 生命周期\n\n1. **`DB::open`** (`monitoring`): `metrics::init()` (幂等触摸所有 `LazyLock`) + `set_sequence`\n2. **运行时**: put/get/flush/compaction/backup 等路径调 `record_*` 或直接 `Gauge::set`\n3. **嵌入方启动**: `Registry::new()` → `aidb::metrics::register_into(&registry)?` → encode 暴露\n\n`register_into` 在 `monitoring` + `cluster` 时链式注册 `cluster/metrics.rs`.\n\n## Prometheus 指标 (`metrics.rs`)\n\n| 指标 | 类型 | labels | 主要触发 |\n|------|------|--------|----------|\n| `aidb_wal_size_bytes` | Gauge | — | `wal/manager.rs` |\n| `aidb_memtable_size_bytes` | IntGaugeVec | `state=active\\|frozen` | `memtable/table.rs` |\n| `aidb_sstable_count` | IntGaugeVec | `level` | `db/inner.rs` `update_sstable_metrics` |\n| `aidb_sstable_size_bytes` | IntGaugeVec | `level` | 同上 |\n| `aidb_operations_total` | CounterVec | `op` | `db/inner.rs` |\n| `aidb_operation_duration_seconds` | HistogramVec | `op` | put/get/delete/write_batch |\n| `aidb_flush_total` | Counter | — | flush 完成 |\n| `aidb_flush_duration_seconds` | Histogram | — | flush 路径 |\n| `aidb_block_cache_size_bytes` | Gauge | — | `block_cache.rs` |\n| `aidb_block_cache_hits_total` | Counter | — | cache get hit |\n| `aidb_block_cache_misses_total` | Counter | — | cache get miss |\n| `aidb_bloom_false_positive_total` | Counter | — | `filter/bloom.rs` |\n| `aidb_sequence` | IntGauge | — | open / allocate |\n| `aidb_total_key_count` | IntGauge | — | put/delete 后 |\n| `aidb_compaction_total` | CounterVec | **`type`** | pick/run/apply |\n| `aidb_compaction_duration_seconds` | HistogramVec | **`phase`** | pick/run/apply |\n| `aidb_backup_total` | CounterVec | `op=create\\|delete\\|restore` | `backup/*` |\n| `aidb_backup_size_bytes` | IntGauge | — | create |\n| `aidb_backup_duration_seconds` | Histogram | — | create |\n\n**`aidb_operations_total` / `operation_duration` 的 `op`**: `put`, `get`, `delete`, `write_batch`, `snapshot`, `stall_stop`, `stall_slowdown`. **`scan` / `close` 无 counter** (见 ISSUE-018).\n\n**命中率**: 无 `cache_hit_rate` gauge; 用 PromQL `rate(hits)/(rate(hits)+rate(misses))`.\n\n### 集群指标 (`cluster/metrics.rs`, `monitoring` + `cluster`)\n\n| 指标 | labels | 触发 |\n|------|--------|------|\n| `aidb_raft_rpc_total` | `type`=vote/append_entries/install_snapshot, `direction`=incoming/outgoing | `cluster/network.rs` |\n| `aidb_raft_log_entries_total` | — | AppendEntries 入站 entry 数 |\n\n## Tracing 索引 (按域)\n\n> 完整字段见各 module; 此处只列 **instrument `name`** 与主要 **`target:` event**.\n\n| 域 | instrument 名 | 主要 event (`target`) |\n|----|---------------|----------------------|\n| WAL | `wal_open`, `wal_write`, `wal_replay`, … | `wal`: `wal.write.*`, `wal.sync.*` |\n| MemTable | `mem_put`, `mem_get`, `mem_freeze` | `mem`: `mem.put`, `mem.get.hit/miss` |\n| SSTable | `sst_seek`, `sst_block_read`, `sst_build_add` | `sst`: `sst.seek.result`; `bloom_build` info_span |\n| Cache | `cache_get`, `cache_insert` | — |\n| DB | `db_open`, `db_put`, `db_get`, `db_scan`, `db_flush`, `db_close` | `db`: `db.put`, `db.get.result`, `db.flush.complete` |\n| Compaction | `cmp_pick`, `cmp_run`, `cmp_merge`, `cmp_apply` | — |\n| Checkpoint | `bgsave_checkpoint` | `db`: `checkpoint.create.complete` |\n| Backup | `backup_create`, `backup_restore`, … | 见 [backup.md](backup.md) |\n| Raft 存储 | `raft_append_log`, `raft_apply_sm`, … | — |\n| Raft RPC | `raft_rpc_ae`, `raft_rpc_vote`, `raft_rpc_is` | — |\n| Meta | `meta_propose`, `meta_apply`, `meta_slot_query` | — |\n\n**不在 aidb**: `kv_command` / RESP 命令 span → aikv.\n\n## 常见任务\n\n### 启用引擎指标\n\n```toml\n# 嵌入方 Cargo.toml\naidb = { path = \"../aidb\", features = [\"monitoring\"] }\n```\n\n```bash\ncargo build --features monitoring\ncargo test --test metrics --features monitoring -- --test-threads=1\n```\n\n### 注册到自定义 Registry\n\n```rust\nlet registry = prometheus::Registry::new();\naidb::metrics::register_into(&registry)?;\n// prometheus::Encoder::gather → HTTP 或文件\n```\n\naikv 已在 `Metrics::new()` 内完成上述步骤.\n\n### 读取指标值 (测试)\n\n```rust\naidb::metrics::init();\n// 操作后:\nassert!(aidb::metrics::OPERATIONS_TOTAL.with_label_values(&[\"put\"]).get() > 0);\n```\n\n或 `tests/common/observability.rs` 的 `assert_gauge_eq` / `assert_counter_eq`.\n\n### 验证 tracing event\n\n```rust\nuse crate::common::observability::{capture_events_under_lock, EventCatcher};\nlet events = capture_events_under_lock(|| { /* 被测操作 */ });\n// 或 EventCatcher + init_test_subscriber\n```\n\n含 tracing 的测试建议 `--test-threads=1` (避免 subscriber 竞争).\n\n### 排查指标为 0\n\n1. 确认编译启用了 `monitoring` feature\n2. 确认 `DB::open` 已执行 (`init()` 在 open 内)\n3. 确认嵌入方调用了 `register_into` 且 scrape 的 Registry 为同一实例\n4. 对 gauge (如 `sstable_count`): 确认发生过 flush/compaction 触发 `update_sstable_metrics`\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `monitoring` | `Cargo.toml` | `prometheus`, `opentelemetry*`, `tracing-opentelemetry`; 导出 `aidb::metrics` |\n| `cluster` | 与 `monitoring` 叠加 | `register_into` 额外注册 `aidb_raft_*` |\n| 无 `monitoring` | — | 无 `aidb::metrics` mod; `cluster::metrics::record_*` 为 no-op stub |\n\n## 测试\n\n```bash\ncargo test --test metrics --features monitoring -- --test-threads=1\n# Raft: tests/modules/cluster/metrics.rs (cluster 测试套件内)\n```\n\n| 测试 | 覆盖 |\n|------|------|\n| `test_block_cache_prometheus_counters_and_size` | hit/miss/size |\n| `test_bloom_false_positive_prometheus_counter` | 与内部 atomic 一致 |\n| `test_db_operation_and_flush_duration_histograms` | put/get/flush 有样本 |\n| `test_raft_metrics_register_and_record` | gather 后 counter 值 |\n\n## 已知限制\n\n- **无内置 HTTP / OTel / JSON log 开关** — 嵌入方 (aikv) 负责 (ISSUE-014)\n- **旧 observability 稿大量指标名/span 名已过时** — 以 `metrics.rs` 为准 (ISSUE-015)\n- **未实现**: `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等 (ISSUE-016)\n- **compaction counter label `type` vs histogram label `phase`** — 同值不同名 (ISSUE-017)\n- **`scan`/`close` 无 `operations_total`** (ISSUE-018)\n- **无进程级 memory/disk 指标** — oldmain `monitoring` 模块已移除\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#issue-014--httpoteljson-log-运行在嵌入方-aidb-仅库内指标) — HTTP/OTel 在嵌入方, aidb 仅库内指标\n- 见 [ISSUES.md](../../ISSUES.md#issue-015--旧-observability-指标表与-span-名大量过时) — 旧稿指标表与 span 名过时\n- 见 [ISSUES.md](../../ISSUES.md#issue-016--旧设计若干-prometheus-系列未实现) — 若干旧设计指标未实现\n- 见 [ISSUES.md](../../ISSUES.md#issue-017--compaction-指标-counterhistogram-label-名不一致) — compaction label 名不一致\n- 见 [ISSUES.md](../../ISSUES.md#issue-018--scanclose-未计入-aidb_operations_total) — scan/close 未计入 operations_total\n"
 }
 ```
@@ -1701,7 +1701,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 11/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 10/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1712,7 +1712,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| 10 | aidb | `docs/modules/observability.md` | metrics, monitoring | ✅ 完成 | 2026-06-18 |",
   "old_string": "| 10 | aidb | `docs/modules/observability.md` | metrics, monitoring | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1723,7 +1723,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| `docs/modules/observability.md` | ✅ | backup/aidb/docs/observability.md; DEPLOYMENT §; oldmain monitoring/* + MONITORING_GUIDE (过时) | 已写 aidb/docs/modules/observability.md | ISSUE-014~018 doc-only |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 4 草稿 | backup/aidb/docs/observability.md; DEPLOYMENT §; oldmain monitoring/* (过时) | | ISSUE-014~018 doc-only |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1734,7 +1734,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 {
   "new_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/MONITORING_GUIDE.md` | `docs/modules/observability.md` | 无有效内容跳过 (MetricsServer/Collector 已移除) |\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/ADMIN_TOOL_GUIDE.md` §Backup | `docs/modules/backup.md` | 无有效内容跳过 (aidb-admin CLI 已移除) |",
   "old_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/ADMIN_TOOL_GUIDE.md` §Backup | `docs/modules/backup.md` | 无有效内容跳过 (aidb-admin CLI 已移除) |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1762,7 +1762,7 @@ cargo test --test metrics --features monitoring -- --test-threads=1
 ```markdown
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程

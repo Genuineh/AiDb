@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -55,7 +55,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -64,7 +64,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -73,7 +73,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -89,7 +89,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src/engine"
+  "target_directory": "../../src/engine"
 }
 ```
 
@@ -98,7 +98,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -108,7 +108,7 @@
 ```json
 {
   "pattern": "engine-storage|sstable|compaction|filter|cache|checkpoint",
-  "path": "/root/code/database/aidb/src/engine",
+  "path": "../../src/engine",
   "glob": "mod.rs"
 }
 ```
@@ -122,7 +122,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/mod.rs"
+  "path": "../../src/engine/mod.rs"
 }
 ```
 
@@ -131,7 +131,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/mod.rs"
+  "path": "../../src/engine/sstable/mod.rs"
 }
 ```
 
@@ -140,7 +140,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/compaction/mod.rs"
+  "path": "../../src/engine/compaction/mod.rs"
 }
 ```
 
@@ -149,7 +149,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/filter/mod.rs"
+  "path": "../../src/engine/filter/mod.rs"
 }
 ```
 
@@ -158,7 +158,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/cache/mod.rs"
+  "path": "../../src/engine/cache/mod.rs"
 }
 ```
 
@@ -167,7 +167,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/checkpoint/mod.rs",
+  "path": "../../src/engine/checkpoint/mod.rs",
   "limit": 50
 }
 ```
@@ -177,7 +177,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine.md",
+  "path": "../../docs/modules/engine.md",
   "limit": 80
 }
 ```
@@ -192,7 +192,7 @@
 ```json
 {
   "pattern": "pub (use|mod)|sstable|compaction|filter|cache|checkpoint|BlockCache|BloomFilter|VersionSet|SSTable",
-  "path": "/root/code/database/aidb/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -202,7 +202,7 @@
 ```json
 {
   "pattern": "sstable|compaction|filter|cache|checkpoint|VersionSet|flush|BlockCache|BloomFilter",
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "head_limit": 60
 }
 ```
@@ -213,7 +213,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -223,7 +223,7 @@
 ```json
 {
   "pattern": "sstable|compaction|filter|cache|checkpoint|bloom",
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory",
   "output_mode": "files_with_matches"
 }
 ```
@@ -237,7 +237,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "fn (flush|compact|build_sst|pin_sst|collect_checkpoint)"
 }
 ```
@@ -247,7 +247,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "block_cache|compaction|level|bloom|filter|checkpoint",
   "head_limit": 40
 }
@@ -258,7 +258,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "sstable|compaction|bloom|cache|checkpoint",
   "output_mode": "files_with_matches"
 }
@@ -272,7 +272,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aidb/src/engine/sstable/*.rs /root/code/database/aidb/src/engine/compaction/*.rs /root/code/database/aidb/src/engine/filter/*.rs /root/code/database/aidb/src/engine/cache/*.rs /root/code/database/aidb/src/engine/checkpoint/mod.rs 2>/dev/null | sort -n
+wc -l ../../src/engine/sstable/*.rs ../../src/engine/compaction/*.rs ../../src/engine/filter/*.rs ../../src/engine/cache/*.rs ../../src/engine/checkpoint/mod.rs 2>/dev/null | sort -n
 ```
 
 
@@ -281,7 +281,7 @@ wc -l /root/code/database/aidb/src/engine/sstable/*.rs /root/code/database/aidb/
 ```json
 {
   "head_limit": 30,
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "sstable|compaction|bloom|block.cache|checkpoint",
   "glob": "*.md",
   "output_mode": "files_with_matches"
@@ -297,7 +297,7 @@ wc -l /root/code/database/aidb/src/engine/sstable/*.rs /root/code/database/aidb/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine",
+  "path": "../../src/engine",
   "pattern": "BloomFilter|Filter|block_cache|read_block_cached",
   "glob": "*.rs",
   "head_limit": 25
@@ -309,7 +309,7 @@ wc -l /root/code/database/aidb/src/engine/sstable/*.rs /root/code/database/aidb/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/mod.rs"
+  "path": "../../src/engine/db/mod.rs"
 }
 ```
 
@@ -510,7 +510,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/engine-storage.md` | 待开始 | | | `engine/{sstable,compaction,filter,cache,checkpoint}` |",
   "new_string": "| `docs/modules/engine-storage.md` | 步 0 ✅ | | | 范围: sstable(11), compaction(6), filter(1), cache(1), checkpoint(1); 衔接 db/inner+iterator; 对比深度: 核心文件逐段 |"
 }
@@ -521,7 +521,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/block.rs",
+  "path": "../../src/engine/sstable/block.rs",
   "limit": 120
 }
 ```
@@ -531,7 +531,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/builder.rs"
+  "path": "../../src/engine/sstable/builder.rs"
 }
 ```
 
@@ -540,7 +540,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/reader.rs"
+  "path": "../../src/engine/sstable/reader.rs"
 }
 ```
 
@@ -549,7 +549,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/footer.rs"
+  "path": "../../src/engine/sstable/footer.rs"
 }
 ```
 
@@ -558,7 +558,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/index.rs",
+  "path": "../../src/engine/sstable/index.rs",
   "limit": 80
 }
 ```
@@ -573,7 +573,7 @@ aidb/src/engine/
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aidb/src/engine/compaction/version.rs"
+  "path": "../../src/engine/compaction/version.rs"
 }
 ```
 
@@ -583,7 +583,7 @@ aidb/src/engine/
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aidb/src/engine/compaction/job.rs"
+  "path": "../../src/engine/compaction/job.rs"
 }
 ```
 
@@ -593,7 +593,7 @@ aidb/src/engine/
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/engine/compaction/picker.rs"
+  "path": "../../src/engine/compaction/picker.rs"
 }
 ```
 
@@ -602,7 +602,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/compaction/merge.rs"
+  "path": "../../src/engine/compaction/merge.rs"
 }
 ```
 
@@ -611,7 +611,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/filter/bloom.rs"
+  "path": "../../src/engine/filter/bloom.rs"
 }
 ```
 
@@ -620,7 +620,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/cache/block_cache.rs"
+  "path": "../../src/engine/cache/block_cache.rs"
 }
 ```
 
@@ -635,7 +635,7 @@ aidb/src/engine/
 {
   "offset": 620,
   "limit": 120,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -646,7 +646,7 @@ aidb/src/engine/
 {
   "offset": 1000,
   "limit": 250,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -655,7 +655,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/block_io.rs"
+  "path": "../../src/engine/sstable/block_io.rs"
 }
 ```
 
@@ -664,7 +664,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/sstable/filename.rs"
+  "path": "../../src/engine/sstable/filename.rs"
 }
 ```
 
@@ -673,7 +673,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/checkpoint/mod.rs",
+  "path": "../../src/engine/checkpoint/mod.rs",
   "limit": 100
 }
 ```
@@ -689,7 +689,7 @@ aidb/src/engine/
 {
   "limit": 200,
   "offset": 726,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -700,7 +700,7 @@ aidb/src/engine/
 {
   "limit": 150,
   "offset": 200,
-  "path": "/root/code/database/aidb/src/engine/compaction/version.rs"
+  "path": "../../src/engine/compaction/version.rs"
 }
 ```
 
@@ -711,7 +711,7 @@ aidb/src/engine/
 {
   "limit": 100,
   "offset": 150,
-  "path": "/root/code/database/aidb/src/engine/compaction/job.rs"
+  "path": "../../src/engine/compaction/job.rs"
 }
 ```
 
@@ -721,7 +721,7 @@ aidb/src/engine/
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/engine/db/iterator.rs"
+  "path": "../../src/engine/db/iterator.rs"
 }
 ```
 
@@ -734,7 +734,7 @@ aidb/src/engine/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "check_write_stall|get_at_sequence|level0_"
 }
 ```
@@ -745,7 +745,7 @@ aidb/src/engine/
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/src/engine/sstable/meta.rs"
+  "path": "../../src/engine/sstable/meta.rs"
 }
 ```
 
@@ -760,7 +760,7 @@ aidb/src/engine/
 {
   "limit": 80,
   "offset": 415,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -771,7 +771,7 @@ aidb/src/engine/
 {
   "limit": 50,
   "offset": 200,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -973,7 +973,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "pattern": "sstable|SSTable|compaction|bloom|block.?cache|checkpoint|MANIFEST|VersionSet",
   "glob": "*.md",
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "output_mode": "files_with_matches",
   "-i": true
 }
@@ -986,7 +986,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "pattern": "sstable|SSTable|compaction|bloom|block.?cache|checkpoint",
   "glob": "*.md",
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "output_mode": "files_with_matches",
   "-i": true,
   "head_limit": 40
@@ -999,7 +999,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/WiQunTools/docs/wiqun-db-inventory"
+  "target_directory": "../../../WiQunTools/docs/wiqun-db-inventory"
 }
 ```
 
@@ -1010,7 +1010,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "pattern": "sstable|compaction|bloom|cache|checkpoint",
   "glob": "*.md",
-  "path": "/root/code/database/wiqun-db",
+  "path": "../../../wiqun-db",
   "output_mode": "files_with_matches",
   "-i": true,
   "head_limit": 30
@@ -1026,7 +1026,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
   "pattern": "SSTable|Compaction|Bloom|Block Cache|checkpoint|MANIFEST|Version"
 }
 ```
@@ -1036,7 +1036,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/DESIGN.md",
   "pattern": "SSTable|Compaction|Bloom|Block Cache|checkpoint|MANIFEST|Version|trivial|subcompaction"
 }
 ```
@@ -1046,7 +1046,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/03-sstable.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/03-sstable.md",
   "limit": 80
 }
 ```
@@ -1056,7 +1056,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/05-compaction.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/05-compaction.md",
   "limit": 80
 }
 ```
@@ -1066,7 +1066,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/06-bloom-filter.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/06-bloom-filter.md",
   "limit": 60
 }
 ```
@@ -1076,7 +1076,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/07-block-cache.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/07-block-cache.md",
   "limit": 60
 }
 ```
@@ -1086,7 +1086,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/08-snapshot.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/08-snapshot.md",
   "limit": 80
 }
 ```
@@ -1100,7 +1100,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database",
+  "path": "<workspace>",
   "pattern": "checkpoint|Checkpoint|BGSAVE",
   "glob": "**/wiqun-db-inventory/*.md"
 }
@@ -1111,7 +1111,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "checkpoint|Checkpoint"
 }
 ```
@@ -1121,7 +1121,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1131,7 +1131,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/completions/SSTABLE_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/completions/SSTABLE_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1141,7 +1141,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/completions/COMPACTION_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/completions/COMPACTION_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1150,7 +1150,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/03-sstable.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/03-sstable.md",
   "pattern": "compression|Snap|LZ4|known"
 }
 ```
@@ -1164,7 +1164,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "min_snapshot_sequence|SnapshotList"
 }
 ```
@@ -1174,7 +1174,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/05-compaction.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/05-compaction.md",
   "pattern": "snapshot|Snapshot"
 }
 ```
@@ -1185,7 +1185,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/superpowers/specs/2026-05-29-trivial-move-design.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/superpowers/specs/2026-05-29-trivial-move-design.md"
 }
 ```
 
@@ -1195,7 +1195,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/docs/completions/BLOCK_CACHE_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/completions/BLOCK_CACHE_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1205,7 +1205,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/docs/completions/BLOOM_FILTER_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/completions/BLOOM_FILTER_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1218,7 +1218,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "CompressionType::Snap|compression.*feature|test_compression",
   "glob": "*.rs",
   "head_limit": 20
@@ -1230,7 +1230,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "drain_compactions"
 }
 ```
@@ -1241,7 +1241,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/superpowers/specs/2026-05-29-sharded-lru-design.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/superpowers/specs/2026-05-29-sharded-lru-design.md"
 }
 ```
 
@@ -1257,7 +1257,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
   "glob": "*.md",
   "head_limit": 15,
   "output_mode": "files_with_matches",
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "checkpoint|Checkpoint|BGSAVE"
 }
 ```
@@ -1268,7 +1268,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/13-backup-bench.md"
 }
 ```
 
@@ -1282,7 +1282,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src/backup"
+  "target_directory": "../../src/backup"
 }
 ```
 
@@ -1437,7 +1437,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/engine-storage.md` | 步 0 ✅ | | | 范围: sstable(11), compaction(6), filter(1), cache(1), checkpoint(1); 衔接 db/inner+iterator; 对比深度: 核心文件逐段 |",
   "new_string": "| `docs/modules/engine-storage.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE,DESIGN + superpowers specs (trivial/subcomp/sharded); WiQunTools 03–07, 13 §checkpoint; oldmain completions/* (已过时, 步3用代码) | | ISSUE-003/004 (doc-only); 对比深度: 核心文件逐段 |"
 }
@@ -1448,7 +1448,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "old_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-002: 大 WriteBatch 与 max_wal_size 轮转交互",
   "new_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-004: inventory 称 compaction 不保护 Snapshot\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/compaction/job.rs`, `src/engine/db/snapshot.rs`, `src/engine/db/inner.rs` (`run_compaction_once`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/05-compaction.md`, `08-snapshot.md` — 「不保护 / 弱化语义 / 预留分支」\n- **现象**: 当前 `SnapshotList::min_snapshot_sequence` → `CompactionJob::with_snapshot_threshold`, dedup 时 `snapshot_protected` 保留旧版本\n- **影响**: module 写现行保护语义; 与 `engine.md` snapshot 节一致; 勿抄 inventory 设计决策\n- **下一步**: 步 3 对照 oldmain 代码; 步 4 文档表述\n\n### ISSUE-003: inventory 仍写 Block 压缩未实现\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/sstable/block_io.rs`, `Cargo.toml` feature `compression`\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/03-sstable.md` — `known_limitation`\n- **现象**: inventory 称 Snap/LZ4 未接线; 源码在 `compression` feature 下已实现读写\n- **影响**: module 勿抄 limitation; 写 `compression` feature 与默认 `None`\n- **下一步**: 步 4 正文修正; 不需改代码\n\n### ISSUE-002: 大 WriteBatch 与 max_wal_size 轮转交互"
 }
@@ -1460,7 +1460,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb-oldmain/src"
+  "target_directory": "../../../aidb-oldmain/src"
 }
 ```
 
@@ -1474,7 +1474,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "glob_pattern": "**/checkpoint/**",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -1483,7 +1483,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/compaction/mod.rs",
+  "path": "../../../aidb-oldmain/src/compaction/mod.rs",
   "limit": 80
 }
 ```
@@ -1493,7 +1493,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/sstable/builder.rs",
+  "path": "../../../aidb-oldmain/src/sstable/builder.rs",
   "limit": 80
 }
 ```
@@ -1503,7 +1503,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/sstable/reader.rs",
+  "path": "../../../aidb-oldmain/src/sstable/reader.rs",
   "limit": 100
 }
 ```
@@ -1513,7 +1513,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "trivial|subcompaction|snapshot|checkpoint|BlockCache|read_block"
 }
 ```
@@ -1529,7 +1529,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "limit": 120,
   "offset": 78,
-  "path": "/root/code/database/aidb-oldmain/src/compaction/mod.rs"
+  "path": "../../../aidb-oldmain/src/compaction/mod.rs"
 }
 ```
 
@@ -1539,7 +1539,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb-oldmain/src/compaction/picker.rs"
+  "path": "../../../aidb-oldmain/src/compaction/picker.rs"
 }
 ```
 
@@ -1549,7 +1549,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/filter/bloom.rs"
+  "path": "../../../aidb-oldmain/src/filter/bloom.rs"
 }
 ```
 
@@ -1559,7 +1559,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/src/backup/manager.rs"
+  "path": "../../../aidb-oldmain/src/backup/manager.rs"
 }
 ```
 
@@ -1568,7 +1568,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs",
+  "path": "../../../aidb-oldmain/src/lib.rs",
   "pattern": "compact|CompactionJob|run_compaction|trivial|expanded"
 }
 ```
@@ -1584,7 +1584,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "limit": 100,
   "offset": 150,
-  "path": "/root/code/database/aidb-oldmain/src/sstable/reader.rs"
+  "path": "../../../aidb-oldmain/src/sstable/reader.rs"
 }
 ```
 
@@ -1594,7 +1594,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/sstable/block.rs"
+  "path": "../../../aidb-oldmain/src/sstable/block.rs"
 }
 ```
 
@@ -1603,7 +1603,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/sstable",
+  "path": "../../../aidb-oldmain/src/sstable",
   "pattern": "write_block|compression|CRC|trailer"
 }
 ```
@@ -1614,7 +1614,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/engine/compaction/picker.rs",
+  "path": "../../src/engine/compaction/picker.rs",
   "offset": 115
 }
 ```
@@ -1628,7 +1628,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs",
+  "path": "../../../aidb-oldmain/src/lib.rs",
   "pattern": "flush|builder\\.add|encode_internal",
   "head_limit": 30
 }
@@ -1640,7 +1640,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb-oldmain/src/compaction/merge.rs"
+  "path": "../../../aidb-oldmain/src/compaction/merge.rs"
 }
 ```
 
@@ -1650,7 +1650,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb-oldmain/src/compaction/version.rs"
+  "path": "../../../aidb-oldmain/src/compaction/version.rs"
 }
 ```
 
@@ -1663,7 +1663,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "pattern": "Checkpoint"
 }
 ```
@@ -1674,7 +1674,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/src/filter/bloom.rs",
+  "path": "../../../aidb-oldmain/src/filter/bloom.rs",
   "offset": 100
 }
 ```
@@ -1684,7 +1684,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/filter/bloom.rs",
+  "path": "../../../aidb-oldmain/src/filter/bloom.rs",
   "pattern": "fnv|hash|encode"
 }
 ```
@@ -1700,7 +1700,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "limit": 40,
   "offset": 210,
-  "path": "/root/code/database/aidb-oldmain/src/filter/bloom.rs"
+  "path": "../../../aidb-oldmain/src/filter/bloom.rs"
 }
 ```
 
@@ -1710,7 +1710,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/engine/sstable/builder.rs",
+  "path": "../../src/engine/sstable/builder.rs",
   "offset": 155
 }
 ```
@@ -1899,7 +1899,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "new_string": "| `docs/modules/engine-storage.md` | 步 3 ✅ | (步2 参考) + oldmain src 逐段对照 | | ISSUE-003/004 doc-only (旧文档过时, 代码无 bug); 步4 草稿待确认 |",
   "old_string": "| `docs/modules/engine-storage.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE,DESIGN + superpowers specs (trivial/subcomp/sharded); WiQunTools 03–07, 13 §checkpoint; oldmain completions/* (已过时, 步3用代码) | | ISSUE-003/004 (doc-only); 对比深度: 核心文件逐段 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1909,7 +1909,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -1918,7 +1918,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "block_size|block_restart|bloom_false|level0_|max_bytes|subcompaction|max_manifest|background_compaction|compaction_threads"
 }
 ```
@@ -2164,7 +2164,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/docs"
+  "target_directory": "../../docs"
 }
 ```
 
@@ -2173,7 +2173,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "limit": 50
 }
 ```
@@ -2183,7 +2183,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -2196,7 +2196,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md",
+  "path": "../../docs/modules/engine-storage.md",
   "contents": "---\nname: aidb-engine-storage\ndescription: AiDb LSM persistence layer — SSTable layout, leveled compaction, Bloom filter, block cache, directory checkpoint. Use when changing src/engine/{sstable,compaction,filter,cache,checkpoint}, debugging flush/compaction/read amplification, MANIFEST/VersionSet, or Checkpoint::create.\n---\n\n# AiDb Engine Storage (持久化层)\n\n## 何时读本文\n\n- 改 `engine/sstable`, `compaction`, `filter`, `cache`, `checkpoint`\n- 排查 flush→SST、compaction 不触发/卡住、get 读放大、Bloom/BlockCache、MANIFEST、目录 checkpoint\n- **不覆盖**: WAL / MemTable / 写路径 / `DB::put` → [engine.md](engine.md)\n- **衔接**: flush/compaction/checkpoint 编排见 `engine/db/inner.rs`; 全量备份见 [backup.md](backup.md)\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `sstable/block.rs` | Data Block: prefix compression + restart points | `BlockBuilder::add`, `Block::iter` |\n| `sstable/block_io.rs` | Block trailer (压缩类型 + CRC); cache 读写 | `write_block`, `read_block_cached` |\n| `sstable/builder.rs` | InternalKey 有序写盘; `.sst.tmp` → rename | `SSTableBuilder::add`, `finish` |\n| `sstable/reader.rs` | Footer → Index → Bloom → Block 点查 | `SSTableReader::open`, `get` |\n| `sstable/iterator.rs` | 单文件顺序迭代 | `SSTableIterator` |\n| `sstable/index.rs` | Block 最大 InternalKey → `BlockHandle` | `find_block_handle` |\n| `sstable/footer.rs` | 48B Footer + MAGIC | `Footer::encode/decode` |\n| `sstable/filename.rs` | `{num:06}_L{level}.sst` | `sstable_path`, `parse_sstable_filename` |\n| `sstable/meta.rs` | Bloom meta 裸块 | `BLOOM_META_NAME`, `write_raw_block` |\n| `compaction/version.rs` | `CURRENT` + `MANIFEST-*`; recover/bootstrap | `VersionSet::recover`, `apply_edit` |\n| `compaction/picker.rs` | L0/Ln 选取; trivial move | `CompactionPicker::pick_compaction` |\n| `compaction/job.rs` | 归并 dedup; subcompaction | `CompactionJob::run` |\n| `compaction/merge.rs` | 多 SST 堆归并 (compaction 专用) | `MergeIterator` |\n| `filter/bloom.rs` | SST 级 Bloom (user_key) | `BloomFilter`, `Filter` |\n| `cache/block_cache.rs` | 16 分片 LRU Data Block cache | `BlockCache::get/insert` |\n| `checkpoint/mod.rs` | 目录一致性快照 | `Checkpoint::create` |\n| `db/inner.rs` (节选) | flush、后台 compaction、读 SST 层 | `flush_memtable_to_sstable`, `run_compaction_once`, `get_from_sstables` |\n\n公共 re-export (`lib.rs`): `BlockCache`, `CacheStats`, `Checkpoint`. SST/compaction 类型多为内部 API.\n\n## 关键 invariant (勿破坏)\n\n- **SST 键**: 文件内 InternalKey **严格递增**; restart point 存完整 key (`shared=0`).\n- **L0 overlap**: L0 允许多文件 overlap; 新 flush 的文件在 `sstables[0]` **头部** (读时优先).\n- **L1+**: 按 user_key 范围定位单文件 (`find_sstable_for_key`); picker 用 meta raw range 扩展 overlap.\n- **Block CRC**: 校验 **解压后** payload; trailer = `[compressed_data][type:1][crc:4]`.\n- **Bloom meta**: 裸字节 + 内嵌 CRC; **无** 5B block trailer. decode 失败 → open **降级**为无 filter (warn).\n- **Compaction dedup**: 同 user_key 保留最高 seq; L1+ 丢弃 `TypeDelete` tombstone; **活跃 Snapshot** 保护 (`min_snapshot_sequence`).\n- **Checkpoint**: `enter_checkpoint` 期间 compaction **暂停**; `pin_sstables` 防止 unlink.\n- **MergeIterator 勿混用**: compaction 用 `compaction::MergeIterator`; 读路径用 `db/iterator::DBIterator`.\n\n## 数据流\n\n### Flush (MemTable → L0)\n\n```mermaid\nflowchart LR\n  IM[immutable MemTable] --> B[SSTableBuilder]\n  B --> TMP[.sst.tmp]\n  TMP --> R[rename .sst]\n  R --> VS[VersionEdit AddFile L0]\n  VS --> M[MANIFEST append]\n  M --> SIG[maybe_trigger_compaction]\n```\n\n### 点查 (get → SST)\n\n```mermaid\nflowchart TD\n  G[get_at_sequence] --> L0[L0 逐文件 新→旧]\n  L0 --> LN[L1+ user_key 范围定位]\n  LN --> BF{Bloom?}\n  BF -->|miss| X[None]\n  BF -->|hit/none| IDX[Index → Block]\n  IDX --> BC[read_block_cached]\n  BC --> SCAN[Block 内 seq ≤ max_seq]\n```\n\n### Compaction\n\n```mermaid\nflowchart TD\n  P[CompactionPicker] --> TM{trivial move?}\n  TM -->|yes| RN[rename SST + VersionEdit]\n  TM -->|no| J[CompactionJob::run]\n  J --> MI[MergeIterator dedup]\n  MI --> NB[SSTableBuilder]\n  NB --> VS2[AddFile + DeleteFile]\n  VS2 --> RM[remove 旧 .sst]\n```\n\n## 关键类型与 API\n\n### SSTable 文件布局 (自上而下)\n\nData Blocks → (optional) Bloom raw → Meta Index Block → Index Block → Footer (48B).\n\n- 命名: `{file_number:06}_L{level}.sst`\n- 空 SST: `finish` 报错; flush 路径 `count==0` 时 `abandon`\n\n### VersionSet\n\n- `CURRENT` 指向活跃 `MANIFEST-NNNNNN`\n- `VersionEdit`: `AddFile` / `DeleteFile` (JSON line + sync)\n- 超 `max_manifest_size` → `rotate_manifest`\n- 无 `CURRENT` 遗留库: `scan_version_edits_from_dir` → `bootstrap_from_scan`\n\n### CompactionTask\n\n- `inputs` + `expanded_inputs` (L1 overlap)\n- `is_trivial_move`: 无 overlap 时 rename 提升, 不重写\n\n### Checkpoint\n\n- `Checkpoint::create(db, dest)`: flush → pin → link/copy 全目录\n- **非** Redis RDB; 完整数据目录副本, 可 `DB::open`\n- `BackupManager` 基于此后处理 → [backup.md](backup.md)\n\n## 常见任务\n\n### 排查 compaction 不前进\n\n1. 看 L0 文件数 vs `level0_compaction_trigger`\n2. 确认 `background_compaction=true` 或测试里 `drain_compactions()`\n3. 查是否卡在 `checkpoint_in_progress` 或 `try_claim_files` 冲突\n4. `RUST_LOG=aidb=debug` 看 `cmp_*` span\n\n### 排查 get 慢 / 读放大\n\n1. L0 文件过多 → 触发 compaction 或调低 trigger\n2. Bloom 关闭 (`bloom_false_positive_rate=0`) → 每文件读 Block\n3. `block_cache_size=0` → 无 Data Block 缓存\n4. `--features monitoring` 看 bloom FP / cache hit\n\n### 改 SST 格式或 Block 大小\n\n1. 改 `Options.block_size` / `block_restart_interval` (≥256 / ≥1)\n2. 同步 `SSTableBuilder` 与 `CompactionJob` 构造参数 (经 `db/inner.rs`)\n3. 跑 `cargo test sstable -- --test-threads=1`\n\n### 验证 checkpoint 一致性\n\n1. `Checkpoint::create` 后 `Checkpoint::verify_openable`\n2. 测试: `cargo test checkpoint_consistency -- --test-threads=1`\n\n## 配置与 feature flags\n\n| 项 | 默认 (prod) | 说明 |\n|----|-------------|------|\n| `block_size` | 4KB | Data Block 切分 |\n| `block_restart_interval` | 16 | restart 间隔 |\n| `compression` | `None` | Snap/Lz4 需 crate feature `compression` |\n| `bloom_false_positive_rate` | 0.01 | `0.0` = 不写 Bloom |\n| `block_cache_size` | 64MB | `0` = 禁用 |\n| `level0_compaction_trigger` | 4 | L0 compaction |\n| `level0_slowdown/stop_writes_trigger` | 8 / 16 | write stall |\n| `max_bytes_for_level_base` | 256MB | Ln 容量 |\n| `max_bytes_for_level_multiplier` | 10 | 每层 ×10 |\n| `compaction_threads` | 1 | 1–4; 配合 subcompaction |\n| `subcompaction_min_size` | 64MB | `0` = 禁用分裂 |\n| `background_compaction` | true | 测试常用 `for_testing()` → false |\n| `max_manifest_size` | 64MB | MANIFEST 轮转 |\n\n调试: `AIDB_SKIP_CHECKSUM=1` 跳过 Block CRC (勿用于生产).\n\n## 测试\n\n```bash\ncargo test sstable compaction filter cache -- --test-threads=1\ncargo test --test engine compaction -- --test-threads=1\ncargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --test-threads=1\n```\n\n## 已知限制\n\n- 与 **aidb-oldmain** 磁盘格式不兼容 (InternalKey SST、Bloom CRC、Block CRC 语义等均已演进).\n- Index/Meta Index Block 固定 `CompressionType::None`.\n- Checkpoint 复制当前 MANIFEST + 现存 SST/WAL, 非增量备份.\n\n## 待核实\n\n- 无.\n"
 }
 ```
@@ -2208,7 +2208,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "new_string": "### ISSUE-004: inventory 称 compaction 不保护 Snapshot\n\n- **状态**: closed\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/compaction/job.rs`, `src/engine/db/snapshot.rs`, `src/engine/db/inner.rs` (`run_compaction_once`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/05-compaction.md`, `08-snapshot.md` — 「不保护 / 弱化语义 / 预留分支」\n- **现象**: 当前 `SnapshotList::min_snapshot_sequence` → `CompactionJob::with_snapshot_threshold`, dedup 时 `snapshot_protected` 保留旧版本\n- **影响**: 旧 inventory 设计决策已过时; 代码无 bug. `engine-storage.md` 已写现行保护语义\n- **下一步**: 已关闭 (doc-only)\n\n### ISSUE-003: inventory 仍写 Block 压缩未实现\n\n- **状态**: closed\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/sstable/block_io.rs`, `Cargo.toml` feature `compression`\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/03-sstable.md` — `known_limitation`\n- **现象**: inventory 称 Snap/LZ4 未接线; 源码在 `compression` feature 下已实现读写\n- **影响**: 旧 inventory limitation 已过时; 代码无 bug. `engine-storage.md` 已写 feature gate\n- **下一步**: 已关闭 (doc-only)",
   "old_string": "### ISSUE-004: inventory 称 compaction 不保护 Snapshot\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/compaction/job.rs`, `src/engine/db/snapshot.rs`, `src/engine/db/inner.rs` (`run_compaction_once`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/05-compaction.md`, `08-snapshot.md` — 「不保护 / 弱化语义 / 预留分支」\n- **现象**: 当前 `SnapshotList::min_snapshot_sequence` → `CompactionJob::with_snapshot_threshold`, dedup 时 `snapshot_protected` 保留旧版本\n- **影响**: module 写现行保护语义; 与 `engine.md` snapshot 节一致; 勿抄 inventory 设计决策\n- **下一步**: 步 3 对照 oldmain 代码; 步 4 文档表述\n\n### ISSUE-003: inventory 仍写 Block 压缩未实现\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 2 / 章节 `docs/modules/engine-storage.md`\n- **相关 src**: `src/engine/sstable/block_io.rs`, `Cargo.toml` feature `compression`\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/03-sstable.md` — `known_limitation`\n- **现象**: inventory 称 Snap/LZ4 未接线; 源码在 `compression` feature 下已实现读写\n- **影响**: module 勿抄 limitation; 写 `compression` feature 与默认 `None`\n- **下一步**: 步 4 正文修正; 不需改代码",
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -2219,7 +2219,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 3/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 2/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2230,7 +2230,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "new_string": "| 2 | aidb | `docs/modules/engine-storage.md` | sstable, compaction, filter, cache, checkpoint | ✅ 完成 | 2026-06-17 |",
   "old_string": "| 2 | aidb | `docs/modules/engine-storage.md` | sstable, compaction, filter, cache, checkpoint | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2241,7 +2241,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 {
   "new_string": "| `docs/modules/engine-storage.md` | ✅ | backup/aidb/ARCHITECTURE,DESIGN + superpowers specs; WiQunTools 03–07, 13 §checkpoint; oldmain src 对照 | 已写 aidb/docs/modules/engine-storage.md | ISSUE-003/004 closed (doc-only) |",
   "old_string": "| `docs/modules/engine-storage.md` | 步 3 ✅ | (步2 参考) + oldmain src 逐段对照 | | ISSUE-003/004 doc-only (旧文档过时, 代码无 bug); 步4 草稿待确认 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2283,7 +2283,7 @@ cargo test --test modules db::checkpoint_consistency db::cache db::bloom -- --te
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSUES.md 2>/dev/null; git status --short aidb/docs/modules/engine-storage.md aidb/ISSUES.md 2>/dev/null
+cd <workspace> && git diff aidb/docs/modules/engine-storage.md aidb/ISSUES.md 2>/dev/null; git status --short aidb/docs/modules/engine-storage.md aidb/ISSUES.md 2>/dev/null
 ```
 
 
@@ -2291,7 +2291,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -2300,7 +2300,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -2315,7 +2315,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/compaction/version.rs",
+  "path": "../../src/engine/compaction/version.rs",
   "pattern": "crc|CRC|Corruption"
 }
 ```
@@ -2325,7 +2325,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml",
+  "path": "../../Cargo.toml",
   "pattern": "default|compression|features"
 }
 ```
@@ -2335,7 +2335,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "for_testing|fn default"
 }
 ```
@@ -2346,7 +2346,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "glob_pattern": "**/checkpoint*",
-  "target_directory": "/root/code/database/aidb/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -2356,7 +2356,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/src/engine/checkpoint/mod.rs",
+  "path": "../../src/engine/checkpoint/mod.rs",
   "offset": 100
 }
 ```
@@ -2366,7 +2366,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "run_trivial_move|rename.*old_path"
 }
 ```
@@ -2380,7 +2380,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/db.rs"
+  "path": "../../tests/db.rs"
 }
 ```
 
@@ -2389,7 +2389,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/regression.rs",
+  "path": "../../tests/regression.rs",
   "pattern": "bloom|empty_value"
 }
 ```
@@ -2399,7 +2399,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/compaction/job.rs",
+  "path": "../../src/engine/compaction/job.rs",
   "pattern": "entry_count: 0|CompactionResult",
   "head_limit": 20
 }
@@ -2410,7 +2410,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/compaction/picker.rs",
+  "path": "../../src/engine/compaction/picker.rs",
   "pattern": "target_size_for_level"
 }
 ```
@@ -2424,7 +2424,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/modules/db/mod.rs"
+  "path": "../../tests/modules/db/mod.rs"
 }
 ```
 
@@ -2434,7 +2434,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/src/engine/sstable/block_io.rs"
+  "path": "../../src/engine/sstable/block_io.rs"
 }
 ```
 
@@ -2444,7 +2444,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aidb/src/engine/compaction/mod.rs"
+  "path": "../../src/engine/compaction/mod.rs"
 }
 ```
 
@@ -2457,7 +2457,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml",
+  "path": "../../Cargo.toml",
   "pattern": "\\[\\[test\\]\\]"
 }
 ```
@@ -2468,7 +2468,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -2482,7 +2482,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 ```json
 {
   "glob_pattern": "tests/*.rs",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -2497,7 +2497,7 @@ cd /root/code/database && git diff aidb/docs/modules/engine-storage.md aidb/ISSU
 {
   "limit": 30,
   "offset": 726,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -2614,7 +2614,7 @@ flowchart TD
 {
   "new_string": "```mermaid\nflowchart TD\n  CP{checkpoint?}\n  CP -->|in progress| RET[return false]\n  CP -->|ok| P[CompactionPicker]\n  P -->|none| RET2[return false]\n  P -->|task| CLAIM[try_claim_files]\n  CLAIM -->|collision| RET3[return true 重试]\n  CLAIM -->|ok| TM{trivial move?}\n  TM -->|yes| RN[rename + VersionEdit]\n  TM -->|no| SUB[subcompaction splits]\n  SUB --> J[CompactionJob::run]\n  J --> MI[MergeIterator dedup]\n  MI --> NB[SSTableBuilder]\n  NB --> VS2[AddFile + DeleteFile]\n  VS2 --> RM[remove 旧 .sst]\n  VS2 --> WALGC[try_cleanup_wals]\n```",
   "old_string": "```mermaid\nflowchart TD\n  P[CompactionPicker] --> CLAIM[try_claim_files]\n  CLAIM --> CP{checkpoint?}\n  CP -->|in progress| RET[return false]\n  CP -->|ok| TM{trivial move?}\n  TM -->|yes| RN[rename + VersionEdit]\n  TM -->|no| SUB[subcompaction splits]\n  SUB --> J[CompactionJob::run]\n  J --> MI[MergeIterator dedup]\n  MI --> NB[SSTableBuilder]\n  NB --> VS2[AddFile + DeleteFile]\n  VS2 --> RM[remove 旧 .sst]\n  VS2 --> WALGC[try_cleanup_wals]\n```",
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -2647,7 +2647,7 @@ ISSUES 未动.
 ```json
 {
   "glob_pattern": "**/archive-cursor-session.sh",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -2657,7 +2657,7 @@ ISSUES 未动.
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/archive"
+  "target_directory": "../../archive"
 }
 ```
 

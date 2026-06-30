@@ -14,7 +14,7 @@ description: AiDb observability — OTel metrics (monitoring feature), tracing s
 - 查 tracing span / event 命名, 跨 module 定位埋点
 - **不覆盖**: 各 module 内 span 实现细节 → [engine.md](engine.md) / [engine-storage.md](engine-storage.md) / [cluster.md](cluster.md) / [backup.md](backup.md)
 - **不覆盖**: HTTP `/health`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)
-- **监控栈部署**: AiFactory [`monitor/README.md`](../../../AiFactory/monitor/README.md) (115 中心 + worker Alloy)
+- **监控栈部署**: AiFactory [`monitor/README.md`](../../../aifactory/monitor/README.md) (115 中心 + worker Alloy)
 - **构建**: `monitoring` feature 启用 `aidb::metrics`; 默认 **不** 启用
 
 ## 代码地图
@@ -103,7 +103,7 @@ flowchart LR
 | `aidb_raft_rpc_total` | `aidb.raft.rpc.type`=vote/append_entries/install_snapshot, `aidb.raft.rpc.direction`=incoming/outgoing | `cluster/network.rs` |
 | `aidb_raft_log_entries_total` | — | AppendEntries 入站 entry 数 |
 
-**Grafana**: `aidb_raft_rpc_total` / `aidb_raft_log_entries_total` 在 AiFactory **Cluster** 行 (Raft RPC); 引擎 LSM/cache/compaction 见 **Engine** 行 — [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md).
+**Grafana**: `aidb_raft_rpc_total` / `aidb_raft_log_entries_total` 在 AiFactory **Cluster** 行 (Raft RPC); 引擎 LSM/cache/compaction 见 **Engine** 行 — [`monitor/config/grafana/dashboards/README.md`](../../../aifactory/monitor/config/grafana/dashboards/README.md).
 
 ## Tracing 索引 (按域)
 

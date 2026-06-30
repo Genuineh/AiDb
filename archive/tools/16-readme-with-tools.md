@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -81,7 +81,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -90,7 +90,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -99,7 +99,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -108,7 +108,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -118,7 +118,7 @@
 ```json
 {
   "glob_pattern": "aidb/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -133,7 +133,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml",
+  "path": "../../Cargo.toml",
   "limit": 80
 }
 ```
@@ -143,7 +143,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/basic.rs"
+  "path": "../../examples/basic.rs"
 }
 ```
 
@@ -153,7 +153,7 @@
 ```json
 {
   "glob_pattern": "aidb/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -162,7 +162,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "limit": 60
 }
 ```
@@ -172,7 +172,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "limit": 80
 }
 ```
@@ -182,7 +182,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/AGENTS.md",
+  "path": "../../AGENTS.md",
   "limit": 50
 }
 ```
@@ -197,7 +197,7 @@
 ```json
 {
   "offset": 80,
-  "path": "/root/code/database/aidb/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -207,7 +207,7 @@
 ```json
 {
   "glob_pattern": "aidb/examples/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -217,7 +217,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -227,7 +227,7 @@
 ```json
 {
   "pattern": "README",
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "glob": "*.md",
   "output_mode": "files_with_matches",
   "head_limit": 10
@@ -244,7 +244,7 @@
 ```json
 {
   "glob_pattern": "README.md",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -253,7 +253,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -263,7 +263,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "offset": 80
 }
 ```
@@ -278,7 +278,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb-oldmain/README.md"
+  "path": "../../../aidb-oldmain/README.md"
 }
 ```
 
@@ -288,7 +288,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -442,7 +442,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -451,7 +451,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -461,7 +461,7 @@
 ```json
 {
   "glob_pattern": "aidb/docs/modules/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -470,7 +470,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "offset": 1,
   "limit": 120
 }
@@ -486,7 +486,7 @@
 ```json
 {
   "pattern": "^\\s*pub fn",
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "glob": "*.rs",
   "head_limit": 30
 }
@@ -498,7 +498,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/engine/db/mod.rs"
+  "path": "../../src/engine/db/mod.rs"
 }
 ```
 
@@ -508,7 +508,7 @@
 ```json
 {
   "pattern": "^pub (struct|enum|fn|type|mod)",
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "glob": "*.rs",
   "head_limit": 20
 }
@@ -520,7 +520,7 @@
 ```json
 {
   "pattern": "^pub (struct|enum|fn|mod)",
-  "path": "/root/code/database/aidb/src/cluster/mod.rs"
+  "path": "../../src/cluster/mod.rs"
 }
 ```
 
@@ -529,7 +529,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -542,7 +542,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "^\\s*pub fn"
 }
 ```
@@ -553,7 +553,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -563,7 +563,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/src/metrics.rs"
+  "path": "../../src/metrics.rs"
 }
 ```
 
@@ -573,7 +573,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/src/backup/mod.rs"
+  "path": "../../src/backup/mod.rs"
 }
 ```
 
@@ -735,7 +735,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -745,7 +745,7 @@ db.close()?;
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb-oldmain/README.md"
+  "path": "../../../aidb-oldmain/README.md"
 }
 ```
 
@@ -755,7 +755,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "**/wiqun-db-inventory/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -767,7 +767,7 @@ db.close()?;
   "glob": "README.md",
   "head_limit": 5,
   "output_mode": "files_with_matches",
-  "path": "/root/code/database/wiqun-db"
+  "path": "../../../wiqun-db"
 }
 ```
 
@@ -781,7 +781,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "README.md",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -790,7 +790,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory",
   "pattern": "README|项目|入口|overview",
   "-i": true,
   "head_limit": 20
@@ -804,7 +804,7 @@ db.close()?;
 {
   "limit": 80,
   "offset": 110,
-  "path": "/root/code/database/aidb-oldmain/README.md"
+  "path": "../../../aidb-oldmain/README.md"
 }
 ```
 
@@ -814,7 +814,7 @@ db.close()?;
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/AGENTS.md",
+  "path": "../../AGENTS.md",
   "offset": 50
 }
 ```
@@ -829,7 +829,7 @@ db.close()?;
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/wiqun-db/README.md"
+  "path": "../../../wiqun-db/README.md"
 }
 ```
 
@@ -839,7 +839,7 @@ db.close()?;
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "offset": 55
 }
 ```
@@ -849,7 +849,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "ISSUE-014",
   "-A": 8
 }
@@ -864,7 +864,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "pattern": "ISSUE-014|待核实"
 }
 ```
@@ -874,7 +874,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "pattern": "ISSUE-014|待核实"
 }
 ```
@@ -1009,7 +1009,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "MetricsServer|:9191|slow.?log",
   "-i": true,
   "head_limit": 15
@@ -1021,7 +1021,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/metrics.rs",
+  "path": "../../src/metrics.rs",
   "pattern": "register_into|pub fn"
 }
 ```
@@ -1032,7 +1032,7 @@ db.close()?;
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/examples/cluster.rs"
+  "path": "../../examples/cluster.rs"
 }
 ```
 
@@ -1041,7 +1041,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/Cargo.toml",
+  "path": "../../../aidb-oldmain/Cargo.toml",
   "pattern": "^\\[features\\]|^default|^cluster|^backup|^monitoring"
 }
 ```
@@ -1056,7 +1056,7 @@ db.close()?;
 ```json
 {
   "head_limit": 10,
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "MetaRaft|Coordinator|P2P|multi_raft"
 }
 ```
@@ -1067,7 +1067,7 @@ db.close()?;
 ```json
 {
   "head_limit": 8,
-  "path": "/root/code/database/aidb/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "MetaRaft|16384|key_to_slot"
 }
 ```
@@ -1078,7 +1078,7 @@ db.close()?;
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "offset": 58
 }
 ```
@@ -1187,7 +1187,7 @@ db.close()?;
 ```json
 {
   "limit": 45,
-  "path": "/root/code/database/aidb/DEPLOYMENT.md"
+  "path": "../../DEPLOYMENT.md"
 }
 ```
 
@@ -1198,7 +1198,7 @@ db.close()?;
 {
   "limit": 25,
   "offset": 190,
-  "path": "/root/code/database/aidb/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -1208,7 +1208,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "LICENSE*",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -1217,7 +1217,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -1231,7 +1231,7 @@ db.close()?;
 ```json
 {
   "limit": 5,
-  "path": "/root/code/database/aidb/LICENSE"
+  "path": "../../LICENSE"
 }
 ```
 
@@ -1241,7 +1241,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "aidb/docs/modules/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1386,7 +1386,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../README.md",
   "contents": "# AiDb\n\n基于 LSM-Tree 的嵌入式 KV 存储引擎 (Rust lib crate, 当前 **0.14.x**). 核心 `engine` 始终编译; 备份、集群、指标通过 Cargo feature 按需启用. **AiDb 不是网络服务** — 无内置 HTTP listener.\n\n## 特性\n\n**单机引擎** (默认):\n\n- WAL 持久化, SkipMap MemTable, SSTable 分层存储\n- Leveled Compaction, Bloom Filter, Block Cache\n- `put` / `get` / `delete` / `scan`, WriteBatch 原子写, MVCC Snapshot\n- Checkpoint 目录快照 (备份底层)\n\n**可选能力** (feature):\n\n| 能力 | Feature | 说明 |\n|------|---------|------|\n| 全量备份与恢复 | `backup` (默认开启) | `BackupManager`, `RecoveryManager` |\n| 分布式存储 | `cluster` | MetaRaft 控制面 + Multi-Raft 数据面, 16384 slot (CRC16) |\n| Prometheus 指标 | `monitoring` | `aidb_*` 系列, `register_into` 供嵌入方 scrape |\n| 块压缩 | `compression` | 占位, 尚未实现 |\n\nFeature 组合与构建命令见 [DEPLOYMENT.md](DEPLOYMENT.md).\n\n## 与 AiKv\n\n[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 HTTP `/metrics`. AiDb 负责 LSM 存储与 Raft/slot 基础设施; monorepo 内 AiKv 通过 `path = \"../aidb\"` 依赖.\n\n## 快速开始\n\n```toml\n[dependencies]\naidb = \"0.14\"\n```\n\n```rust\nuse aidb::{DB, config::Options};\n\nlet db = DB::open(\"/tmp/aidb-data\", Options::default())?;\ndb.put(b\"hello\", b\"world\")?;\nassert_eq!(db.get(b\"hello\")?, Some(b\"world\".to_vec()));\ndb.close()?;\n```\n\n仓库内运行完整示例:\n\n```bash\ncargo run --example basic\n```\n\n## 示例\n\n| 示例 | 说明 | 运行 |\n|------|------|------|\n| `basic` | CRUD、批量写、扫描、快照 | `cargo run --example basic` |\n| `backup` | 备份创建与恢复 | `cargo run --example backup` |\n| `cluster` | CRC16 槽位 / hash tag 演示 | `cargo run --features cluster --example cluster` |\n\n详见 [examples/README.md](examples/README.md).\n\n## 基准测试\n\n使用 [criterion](https://github.com/bheisler/criterion.rs): `cargo bench`. 主要 bench: `write_bench`, `read_bench`, `backup_bench`; `read_bench` 可用环境变量 `AIDB_BENCH_PRELOAD` 调整预填充规模. 详见 [DEPLOYMENT.md §构建与验证](DEPLOYMENT.md#构建与验证).\n\n## 文档\n\n| 文档 | 内容 |\n|------|------|\n| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、与 AiKv 边界 |\n| [DESIGN.md](DESIGN.md) | 跨模块设计决策 |\n| [DEPLOYMENT.md](DEPLOYMENT.md) | 构建、feature、嵌入、目录与运维 |\n| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |\n| [docs/modules/engine.md](docs/modules/engine.md) | WAL, MemTable, 写路径, `DB` API |\n| [docs/modules/engine-storage.md](docs/modules/engine-storage.md) | SSTable, compaction, Bloom, cache |\n| [docs/modules/cluster.md](docs/modules/cluster.md) | MetaRaft, Multi-Raft, slot 迁移 |\n| [docs/modules/backup.md](docs/modules/backup.md) | BackupManager, 恢复流程 |\n| [docs/modules/observability.md](docs/modules/observability.md) | 指标与 tracing |\n| [ISSUES.md](ISSUES.md) | 待核实项 |\n\n## 待核实\n\n- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).\n\n## 许可\n\n[MIT OR Apache-2.0](LICENSE) (见 [Cargo.toml](Cargo.toml)).\n"
 }
 ```
@@ -1396,7 +1396,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `README.md` | 待开始 | `backup/aidb/README.md` | 已移出 aidb | 最后修订入口 |",
   "new_string": "| `README.md` (入口) | ✅ | `backup/aidb/README.md` (主); oldmain `README.md` (查漏, 过时); WiQunTools/wiqun-db 跳过 | 已写 `aidb/README.md` | 模块级; ISSUE-014 一行; 弃 Milestone/:9191/v0.13 |"
 }
@@ -1407,7 +1407,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 16 | `README.md` | ⬜ 待开始 | |",
   "new_string": "| 16 | `README.md` | ✅ 完成 | 2026-06-18 |"
 }
@@ -1455,7 +1455,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -1465,7 +1465,7 @@ cargo run --example basic
 ```json
 {
   "glob_pattern": "**/archive-cursor-session*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

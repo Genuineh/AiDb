@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -55,7 +55,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -64,7 +64,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -73,7 +73,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -89,7 +89,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/src/engine"
+  "target_directory": "../../src/engine"
 }
 ```
 
@@ -98,7 +98,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/lib.rs",
+  "path": "../../src/lib.rs",
   "limit": 80
 }
 ```
@@ -109,7 +109,7 @@
 ```json
 {
   "glob_pattern": "**/engine*",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -122,7 +122,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/mod.rs"
+  "path": "../../src/engine/mod.rs"
 }
 ```
 
@@ -131,7 +131,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/mod.rs"
+  "path": "../../src/engine/db/mod.rs"
 }
 ```
 
@@ -140,7 +140,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/wal/mod.rs"
+  "path": "../../src/engine/wal/mod.rs"
 }
 ```
 
@@ -149,7 +149,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/memtable/mod.rs"
+  "path": "../../src/engine/memtable/mod.rs"
 }
 ```
 
@@ -159,7 +159,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -173,7 +173,7 @@
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -184,7 +184,7 @@
 {
   "pattern": "engine|wal|memtable|WAL|MemTable",
   "glob": "**/*",
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "output_mode": "files_with_matches"
 }
 ```
@@ -196,7 +196,7 @@
 {
   "pattern": "engine|wal|memtable",
   "glob": "**/*",
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "output_mode": "files_with_matches",
   "head_limit": 30
 }
@@ -207,7 +207,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/tests/engine.rs",
+  "path": "../../tests/engine.rs",
   "limit": 40
 }
 ```
@@ -221,7 +221,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "WAL|MemTable|WriteBatch|engine",
   "glob": "*.md",
   "head_limit": 40
@@ -234,7 +234,7 @@
 ```json
 {
   "glob_pattern": "**/*wal*",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -244,7 +244,7 @@
 ```json
 {
   "glob_pattern": "**/*memtable*",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -254,7 +254,7 @@
 ```json
 {
   "glob_pattern": "**/*engine*",
-  "target_directory": "/root/code/database/WiQunTools/docs"
+  "target_directory": "../../../WiQunTools/docs"
 }
 ```
 
@@ -268,7 +268,7 @@
 ```json
 {
   "glob_pattern": "**/*DB*",
-  "target_directory": "/root/code/database/aidb-oldmain/docs"
+  "target_directory": "../../../aidb-oldmain/docs"
 }
 ```
 
@@ -278,7 +278,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/04-db-engine.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/04-db-engine.md"
 }
 ```
 
@@ -288,7 +288,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/engine/wal/manager.rs"
+  "path": "../../src/engine/wal/manager.rs"
 }
 ```
 
@@ -298,7 +298,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/src/engine/wal/record.rs"
+  "path": "../../src/engine/wal/record.rs"
 }
 ```
 
@@ -312,7 +312,7 @@
 ```json
 {
   "glob_pattern": "**/0*-*.md",
-  "target_directory": "/root/code/database/WiQunTools/docs/wiqun-db-inventory"
+  "target_directory": "../../../WiQunTools/docs/wiqun-db-inventory"
 }
 ```
 
@@ -322,7 +322,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -332,7 +332,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aidb/src/engine/memtable/internal_key.rs"
+  "path": "../../src/engine/memtable/internal_key.rs"
 }
 ```
 
@@ -346,7 +346,7 @@
 ```json
 {
   "glob_pattern": "docs/modules/**",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -356,7 +356,7 @@
 ```json
 {
   "pattern": "^\\s*pub fn",
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -366,7 +366,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/tests/pipeline/wal_memtable.rs"
+  "path": "../../tests/pipeline/wal_memtable.rs"
 }
 ```
 
@@ -525,7 +525,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/engine.md` | 待开始 | | | `engine/{wal,memtable,db}` |",
   "new_string": "| `docs/modules/engine.md` | 步 0 ✅ | (步 2 起填) | | wal(4)+memtable(5)+db(7); config/error 摘录; 测试 wal/memtable/db/pipeline/engine/snapshot |"
 }
@@ -536,7 +536,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/write_batch.rs"
+  "path": "../../src/engine/db/write_batch.rs"
 }
 ```
 
@@ -545,7 +545,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/replay.rs"
+  "path": "../../src/engine/db/replay.rs"
 }
 ```
 
@@ -554,7 +554,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/snapshot.rs"
+  "path": "../../src/engine/db/snapshot.rs"
 }
 ```
 
@@ -563,7 +563,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/iterator.rs"
+  "path": "../../src/engine/db/iterator.rs"
 }
 ```
 
@@ -578,7 +578,7 @@ aidb/src/
 {
   "offset": 370,
   "limit": 320,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -587,7 +587,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/memtable/table.rs"
+  "path": "../../src/engine/memtable/table.rs"
 }
 ```
 
@@ -597,7 +597,7 @@ aidb/src/
 ```json
 {
   "limit": 200,
-  "path": "/root/code/database/aidb/src/engine/wal/manager.rs"
+  "path": "../../src/engine/wal/manager.rs"
 }
 ```
 
@@ -612,7 +612,7 @@ aidb/src/
 {
   "limit": 200,
   "offset": 200,
-  "path": "/root/code/database/aidb/src/engine/wal/manager.rs"
+  "path": "../../src/engine/wal/manager.rs"
 }
 ```
 
@@ -623,7 +623,7 @@ aidb/src/
 {
   "limit": 150,
   "offset": 50,
-  "path": "/root/code/database/aidb/src/engine/wal/record.rs"
+  "path": "../../src/engine/wal/record.rs"
 }
 ```
 
@@ -634,7 +634,7 @@ aidb/src/
 {
   "limit": 200,
   "offset": 688,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -643,7 +643,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/numbers.rs"
+  "path": "../../src/engine/db/numbers.rs"
 }
 ```
 
@@ -656,7 +656,7 @@ aidb/src/
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "fn (maybe_freeze|freeze|alloc_sequence|write_put|write_delete|flush_immutable|rotate_wal|try_cleanup)",
   "-A": 25
 }
@@ -666,7 +666,7 @@ aidb/src/
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test --test wal --test memtable --test db --test pipeline -- --test-threads=1 2>&1 | tail -25
+cd ../../../aidb && cargo test --test wal --test memtable --test db --test pipeline -- --test-threads=1 2>&1 | tail -25
 ```
 
 
@@ -680,7 +680,7 @@ cd /root/code/database/aidb && cargo test --test wal --test memtable --test db -
 {
   "limit": 150,
   "offset": 59,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -688,7 +688,7 @@ cd /root/code/database/aidb && cargo test --test wal --test memtable --test db -
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aidb && cargo test --test engine --test snapshot -- --test-threads=1 2>&1 | tail -15
+cd ../../../aidb && cargo test --test engine --test snapshot -- --test-threads=1 2>&1 | tail -15
 ```
 
 
@@ -700,7 +700,7 @@ cd /root/code/database/aidb && cargo test --test engine --test snapshot -- --tes
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "iter_at_sequence",
   "-A": 12
 }
@@ -889,7 +889,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/aidb"
+  "target_directory": "../../../AiKv-Workflow/backup/aidb"
 }
 ```
 
@@ -899,7 +899,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aidb-oldmain/docs"
+  "target_directory": "../../../aidb-oldmain/docs"
 }
 ```
 
@@ -909,7 +909,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/01-wal.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/01-wal.md"
 }
 ```
 
@@ -919,7 +919,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/02-memtable.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/02-memtable.md"
 }
 ```
 
@@ -932,7 +932,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/ISSUES.md"
+  "path": "../../../AiKv-Workflow/backup/ISSUES.md"
 }
 ```
 
@@ -941,7 +941,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/ARCHITECTURE.md",
   "pattern": "WAL|MemTable|WriteBatch|Snapshot|engine"
 }
 ```
@@ -951,7 +951,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aidb/DESIGN.md",
   "pattern": "WAL|MemTable|WriteBatch|Snapshot|sequence"
 }
 ```
@@ -962,7 +962,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/docs/WAL_IMPLEMENTATION.md"
+  "path": "../../../aidb-oldmain/docs/WAL_IMPLEMENTATION.md"
 }
 ```
 
@@ -972,7 +972,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/docs/MEMTABLE_IMPLEMENTATION.md"
+  "path": "../../../aidb-oldmain/docs/MEMTABLE_IMPLEMENTATION.md"
 }
 ```
 
@@ -985,7 +985,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine",
+  "path": "../../src/engine",
   "pattern": "batch.*rotate|rotate.*batch|max_wal_size"
 }
 ```
@@ -997,7 +997,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 80,
   "offset": 115,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/01-wal.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/01-wal.md"
 }
 ```
 
@@ -1007,7 +1007,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/08-snapshot.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/08-snapshot.md"
 }
 ```
 
@@ -1017,7 +1017,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/WAL*.md",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -1031,7 +1031,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -1042,7 +1042,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 100,
   "offset": 388,
-  "path": "/root/code/database/aidb/src/engine/wal/manager.rs"
+  "path": "../../src/engine/wal/manager.rs"
 }
 ```
 
@@ -1052,7 +1052,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/completions/DB_CORE_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/completions/DB_CORE_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1062,7 +1062,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/docs/observability.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/docs/observability.md"
 }
 ```
 
@@ -1076,7 +1076,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "docs/**/*.md",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -1085,7 +1085,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "rotate|batch"
 }
 ```
@@ -1097,7 +1097,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 50,
   "offset": 190,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/01-wal.md"
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/01-wal.md"
 }
 ```
 
@@ -1107,7 +1107,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -1120,7 +1120,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "memtable_size|block_cache_size|default",
   "head_limit": 40
 }
@@ -1132,7 +1132,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/archive/WAL_COMPLETION_SUMMARY.md"
+  "path": "../../../aidb-oldmain/docs/archive/WAL_COMPLETION_SUMMARY.md"
 }
 ```
 
@@ -1141,7 +1141,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-db-inventory/04-db-engine.md",
+  "path": "../../../WiQunTools/docs/wiqun-db-inventory/04-db-engine.md",
   "pattern": "delete_range|iter\\(\\)|K_MAX|SnapshotList|write_lock"
 }
 ```
@@ -1297,7 +1297,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "new_string": "| `docs/modules/engine.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 路径/类型过时; inventory Phase 状态过时 | wal(4)+memtable(5)+db(7); ISSUE-001/002 |",
   "old_string": "| `docs/modules/engine.md` | 步 0 ✅ | (步 2 起填) | | wal(4)+memtable(5)+db(7); config/error 摘录; 测试 wal/memtable/db/pipeline/engine/snapshot |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1308,7 +1308,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "new_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-002: 大 WriteBatch 与 max_wal_size 轮转交互\n\n- **状态**: open\n- **发现于**: PROGRESS 步 1 / 章节 `aidb/docs/modules/engine.md` (步 2)\n- **相关 src**: `aidb/src/engine/db/inner.rs` (`DB::write`), `aidb/src/engine/wal/manager.rs` (`append` → `rotate`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/01-wal.md` — batch 超 `max_wal_size` 时禁止 rotate\n- **现象**: inventory 规定大 batch 可临时超过文件上限且写入期间禁止 rotate; 当前 `append` 每条后检查 `max_wal_size` 并可能 rotate, 无 batch 临界区\n- **影响**: 与 ISSUE-001 同源; 文档暂勿写 inventory 的 batch 轮转豁免, 或标注待核实\n- **下一步**: 步 3 对照 oldmain; 需写测试复现\n\n### ISSUE-001: WriteBatch 可能跨 WAL 文件边界\n\n- **状态**: open\n- **发现于**: PROGRESS 步 1 / 章节 `aidb/docs/modules/engine.md` (步 2)\n- **相关 src**: `aidb/src/engine/db/inner.rs` (`DB::write`), `aidb/src/engine/wal/manager.rs` (`append` → `rotate`)\n- **旧文档**: `WiQunTools/docs/wiqun-db-inventory/01-wal.md` — 「Batch 不跨 WAL 文件」\n- **现象**: `write()` 循环 `wal.append()`; `append` 在 `size >= max_wal_size` 时自动 `rotate`, batch 中途可切文件. recover 按文件内 batch 边界 rollback, 跨文件 batch 语义未定义\n- **影响**: 若可复现, 可能是崩溃恢复边界 bug; module 待核实一行引用\n- **下一步**: 步 3 对照 oldmain + 写测试复现",
   "old_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n(暂无)",
-  "path": "/root/code/database/AiKv-Workflow/backup/ISSUES.md"
+  "path": "../../../AiKv-Workflow/backup/ISSUES.md"
 }
 ```
 
@@ -1318,7 +1318,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/wal/**/*.rs",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -1328,7 +1328,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/memtable/**/*.rs",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -1338,7 +1338,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/db/**/*.rs",
-  "target_directory": "/root/code/database/aidb-oldmain"
+  "target_directory": "../../../aidb-oldmain"
 }
 ```
 
@@ -1352,7 +1352,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*.rs",
-  "target_directory": "/root/code/database/aidb-oldmain/src"
+  "target_directory": "../../../aidb-oldmain/src"
 }
 ```
 
@@ -1361,7 +1361,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "struct DB|WALManager|WriteBatch"
 }
 ```
@@ -1376,7 +1376,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb-oldmain/src/wal/record.rs"
+  "path": "../../../aidb-oldmain/src/wal/record.rs"
 }
 ```
 
@@ -1386,7 +1386,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/memtable/internal_key.rs"
+  "path": "../../../aidb-oldmain/src/memtable/internal_key.rs"
 }
 ```
 
@@ -1395,7 +1395,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs",
+  "path": "../../../aidb-oldmain/src/lib.rs",
   "pattern": "fn (write|put|open|recover|snapshot|replay)"
 }
 ```
@@ -1406,7 +1406,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb-oldmain/src/snapshot.rs"
+  "path": "../../../aidb-oldmain/src/snapshot.rs"
 }
 ```
 
@@ -1419,7 +1419,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "BatchStart|FileHeader|WalEntry|OpType"
 }
 ```
@@ -1431,7 +1431,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 120,
   "offset": 173,
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs"
+  "path": "../../../aidb-oldmain/src/lib.rs"
 }
 ```
 
@@ -1442,7 +1442,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 120,
   "offset": 460,
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs"
+  "path": "../../../aidb-oldmain/src/lib.rs"
 }
 ```
 
@@ -1453,7 +1453,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "limit": 120,
   "offset": 850,
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs"
+  "path": "../../../aidb-oldmain/src/lib.rs"
 }
 ```
 
@@ -1467,7 +1467,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "src/engine/wal/manager.rs",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -1476,7 +1476,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/wiqun-db/src/engine/db/inner.rs",
+  "path": "../../../wiqun-db/src/engine/db/inner.rs",
   "pattern": "fn write|rotate|BatchStart"
 }
 ```
@@ -1486,7 +1486,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/wiqun-db/src/engine/wal/manager.rs",
+  "path": "../../../wiqun-db/src/engine/wal/manager.rs",
   "pattern": "rotate|max_wal_size|batch"
 }
 ```
@@ -1499,7 +1499,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/aidb/src/engine/wal/record.rs /root/code/database/wiqun-db/src/engine/wal/record.rs 2>/dev/null; diff -q /root/code/database/aidb/src/engine/memtable/internal_key.rs /root/code/database/wiqun-db/src/engine/memtable/internal_key.rs 2>/dev/null; diff -q /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-db/src/engine/db/inner.rs 2>/dev/null; wc -l /root/code/database/aidb-oldmain/src/lib.rs
+diff -q ../../src/engine/wal/record.rs ../../../wiqun-db/src/engine/wal/record.rs 2>/dev/null; diff -q ../../src/engine/memtable/internal_key.rs ../../../wiqun-db/src/engine/memtable/internal_key.rs 2>/dev/null; diff -q ../../src/engine/db/inner.rs ../../../wiqun-db/src/engine/db/inner.rs 2>/dev/null; wc -l ../../../aidb-oldmain/src/lib.rs
 ```
 
 
@@ -1509,7 +1509,7 @@ diff -q /root/code/database/aidb/src/engine/wal/record.rs /root/code/database/wi
 {
   "limit": 60,
   "offset": 755,
-  "path": "/root/code/database/aidb-oldmain/src/lib.rs"
+  "path": "../../../aidb-oldmain/src/lib.rs"
 }
 ```
 
@@ -1519,7 +1519,7 @@ diff -q /root/code/database/aidb/src/engine/wal/record.rs /root/code/database/wi
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb-oldmain/src/memtable/mod.rs"
+  "path": "../../../aidb-oldmain/src/memtable/mod.rs"
 }
 ```
 
@@ -1531,7 +1531,7 @@ diff -q /root/code/database/aidb/src/engine/wal/record.rs /root/code/database/wi
 **Tool `Shell`**
 
 ```bash
-diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-db/src/engine/db/inner.rs | head -40
+diff ../../src/engine/db/inner.rs ../../../wiqun-db/src/engine/db/inner.rs | head -40
 ```
 
 
@@ -1539,7 +1539,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/wal/mod.rs",
+  "path": "../../../aidb-oldmain/src/wal/mod.rs",
   "pattern": "rotate|max_wal|LOCK"
 }
 ```
@@ -1554,7 +1554,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/src/wal/mod.rs"
+  "path": "../../../aidb-oldmain/src/wal/mod.rs"
 }
 ```
 
@@ -1563,7 +1563,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/wal/record.rs",
+  "path": "../../src/engine/wal/record.rs",
   "pattern": "MAX_RECORD|32768|block"
 }
 ```
@@ -1573,7 +1573,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/wal/writer.rs",
+  "path": "../../src/engine/wal/writer.rs",
   "pattern": "MAX_RECORD|32768|block"
 }
 ```
@@ -1589,7 +1589,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 {
   "new_string": "| `docs/modules/engine.md` | 步 3 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 为上一代实现; wiqun-db≈aidb; ISSUE-001/002 | wal→memtable→db 三代差异见步 3 摘要 |",
   "old_string": "| `docs/modules/engine.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 路径/类型过时; inventory Phase 状态过时 | wal(4)+memtable(5)+db(7); ISSUE-001/002 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1604,7 +1604,7 @@ diff /root/code/database/aidb/src/engine/db/inner.rs /root/code/database/wiqun-d
 {
   "new_string": "| `docs/modules/engine.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 路径/类型过时; inventory Phase 状态过时 | wal(4)+memtable(5)+db(7); ISSUE-001/002; 步 3 差异待确认 |",
   "old_string": "| `docs/modules/engine.md` | 步 3 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 为上一代实现; wiqun-db≈aidb; ISSUE-001/002 | wal→memtable→db 三代差异见步 3 摘要 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1771,7 +1771,7 @@ flowchart LR
 {
   "new_string": "| `docs/modules/engine.md` | 步 3 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain (上一代, 格式不兼容); WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; wiqun-db≈aidb; ISSUE-001/002 | 步 4 草稿待确认 |",
   "old_string": "| `docs/modules/engine.md` | 步 2 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain/docs/WAL_IMPLEMENTATION.md, MEMTABLE_IMPLEMENTATION.md, completions/DB_*; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; oldmain 路径/类型过时; inventory Phase 状态过时 | wal(4)+memtable(5)+db(7); ISSUE-001/002; 步 3 差异待确认 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1791,7 +1791,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/config.rs",
+  "path": "../../src/config.rs",
   "pattern": "memtable_wait|compaction_channel|max_sub_compactions|min_sub_compactions"
 }
 ```
@@ -1805,7 +1805,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs",
+  "path": "../../src/engine/db/inner.rs",
   "pattern": "validate_user_key",
   "-A": 8
 }
@@ -2076,7 +2076,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```json
 {
   "glob_pattern": "docs/**",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -2085,7 +2085,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "limit": 55
 }
 ```
@@ -2099,7 +2099,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine.md",
+  "path": "../../docs/modules/engine.md",
   "contents": "---\nname: aidb-engine\ndescription: AiDb write path — WAL, MemTable, DB API, WriteBatch, MVCC snapshot, crash recovery. Use when changing src/engine/{wal,memtable,db}, debugging put/get/write path, WAL replay, MemTable freeze, or Snapshot reads.\n---\n\n# AiDb Engine (写路径)\n\n## 何时读本文\n\n- 改 `engine/wal`, `engine/memtable`, `engine/db` 或 `DB::*` 公共 API\n- 排查写路径、WAL 恢复、MemTable freeze、WriteBatch 原子性、Snapshot 读\n- **不覆盖**: SSTable 布局 / compaction / Bloom / BlockCache / checkpoint → [engine-storage.md](engine-storage.md)\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `engine/wal/record.rs` | Record 物理格式; `WalEntry` 编解码; `OpType` | `WalEntry::encode`, `OpType` |\n| `engine/wal/writer.rs` | 追加 Record; 32KB block padding; sync | `Writer::write_record` |\n| `engine/wal/reader.rs` | 顺序读; 分片重组; strict/非 strict 损坏处理 | `Reader::read_record` |\n| `engine/wal/manager.rs` | open/recover/append/rotate/cleanup; `LOCK` | `WALManager::*` |\n| `engine/memtable/internal_key.rs` | InternalKey 编码; `ValueType`; sequence 上界 | `encode_internal_key`, `check_sequence` |\n| `engine/memtable/table.rs` | `MemTable` / `ImmutableMemTable`; freeze | `MemTable::put`, `freeze` |\n| `engine/memtable/iterator.rs` | MemTable 迭代 | `MemTableIterator` |\n| `engine/db/inner.rs` | DB 总协调: open/写/读/flush/close/后台线程 | `DB::open`, `put`, `write`, `get` |\n| `engine/db/write_batch.rs` | 批写容器 | `WriteBatch`, `WriteOp` |\n| `engine/db/replay.rs` | WAL entry → MemTable | `replay_entries` |\n| `engine/db/snapshot.rs` | MVCC 快照; `SnapshotList` | `Snapshot::get`, `SnapshotList` |\n| `engine/db/iterator.rs` | 跨 MemTable + SSTable 归并迭代 | `DBIterator` |\n| `engine/db/numbers.rs` | WAL 文件编号扫描 | `scan_next_wal_file_number` |\n\n公共 re-export (`lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `Snapshot`, `DbIterGuard`.\n\n## 关键 invariant (勿破坏)\n\n- **写顺序**: WAL append **先于** MemTable 写入 (`put`/`delete`/`write` 均如此).\n- **Sequence**: 合法范围 `[1, 2^56)`; `alloc_sequence` 与 `check_sequence` 双重校验; overflow → `Error::InvalidState`.\n- **User key**: 非空; 空 key → `Error::InvalidArgument`.\n- **单进程**: 数据目录 `LOCK` 文件 + `fs2` 独占锁; 多进程打开 → `Error::Busy`.\n- **Batch 崩溃原子性**: recover 时 `BatchStart` 标记不完整 batch 整批丢弃; 单条 put/delete 无 BatchStart.\n- **MemTable freeze**: `freeze(self)` 消费可变表; `flush_seq` = 冻结时刻 sequence.\n- **Snapshot 创建**: 在 `write_lock` 下读 sequence 并注册 `SnapshotList`; Drop 时 unregister.\n- **iter/scan vs get**: `iter`/`scan` 使用 `K_MAX_SEQUENCE`; `get` 使用 `sequence.load()` — 行为 intentionally 不同.\n\n## 数据流\n\n### 写入 (put / write)\n\n```mermaid\nflowchart LR\n  W[check_write_stall] --> L[write_lock]\n  L --> S[alloc_sequence]\n  S --> WAL[WAL append]\n  WAL --> MT[MemTable put/delete]\n  MT --> F{memtable_size?}\n  F -->|yes| FR[freeze → immutable]\n  FR --> BG[后台 flush 线程]\n```\n\n### 打开 (open + recover)\n\n```mermaid\nflowchart TD\n  A[Options::validate] --> B[WALManager::recover]\n  B --> C[replay_entries → MemTable]\n  C --> D[VersionSet recover / bootstrap]\n  D --> E[load SSTables]\n  E --> F[\"sequence = max(WAL, MemTable, SST) + 1\"]\n  F --> G[WALManager::open + LOCK]\n  G --> H[flush / compaction 后台线程]\n```\n\nSSTable / VersionSet 细节见 [engine-storage.md](engine-storage.md).\n\n### 读取 (get / snapshot)\n\n`get_at_sequence(key, max_seq)`: 构造 `seek_key = encode_internal_key(key, max_seq, TypePut)` → active MemTable → immutable (新→旧) → SSTable 层 (L0 新→旧, L1+ 二分).\n\n## 关键类型与 API\n\n### WalEntry / OpType\n\n逻辑 WAL 记录 (非 InternalKey):\n\n| OpType | 含义 | has_value |\n|--------|------|-----------|\n| `TypePut` | put | true |\n| `TypeDelete` | delete | false |\n| `BatchStart` | WriteBatch 边界; value = op count (u32 LE) | true |\n| `FileHeader` | 文件元数据; key=`WAL` | true |\n\n磁盘 Record: `CRC32(4) + Length(2 LE) + Type(1) + Data`. Data 承载编码后的 `WalEntry`. 超大 entry 分片为 First/Middle/Last; 32KB block 边界 padding.\n\n### InternalKey\n\n`user_key + 7B (sequence<<8 高 56 位, 每位取反) + 1B ValueType`. `TypePut=0`, `TypeDelete=1`. MemTable 与 SSTable 共用编码.\n\n### DB 公共 API (摘录)\n\n| API | 说明 |\n|-----|------|\n| `DB::open(path, Options)` | 恢复 + 启动后台 flush/compaction |\n| `put` / `delete` | 单条写; 连续 sequence |\n| `write(&WriteBatch)` | 原子 batch; BatchStart + 连续 seq; 一次 `sync_wal` |\n| `get` | 最新可见版本 |\n| `delete_range(start, end)` | `[start,end)` scan + WriteBatch (非 RangeTombstone) |\n| `snapshot()` | MVCC 点快照 |\n| `iter` / `scan` | 全表或范围迭代 (见 invariant) |\n| `flush` / `close` | 手动 flush; 优雅关闭 (停线程 → flush → WAL sync) |\n\n### Snapshot\n\n- `Snapshot::get/iter/scan` 固定 `sequence` 边界, 仅见 `seq <= snapshot_seq`.\n- `SnapshotList::min_snapshot_sequence()` 供 compaction 保留旧版本 (见 engine-storage).\n\n## 常见任务\n\n### 排查写路径未持久化\n\n1. 确认 `Options.use_wal` 与 `sync_wal` (false 时进程 crash 可能丢末批写).\n2. 查 WAL 文件 `wal_{n}.log` 是否存在最新 entry.\n3. `cargo test --test wal function::test_crash_recovery -- --test-threads=1`\n\n### 排查 open 恢复丢数据\n\n1. 读 `WALManager::recover` 日志 / `strict_wal_recovery` 配置.\n2. 检查是否有未完成 BatchStart batch (recover 会整批 rollback).\n3. `cargo test --test engine crash_recovery -- --test-threads=1`\n\n### 改 MemTable freeze 行为\n\n1. 入口: `DB::maybe_freeze`, `wait_for_memtable_slot` (`inner.rs`).\n2. 阈值: `Options.memtable_size`, `max_write_buffer_number`.\n3. freeze 后 immutable 由后台 `flush_pending` 或 `DB::flush` 写出 SST.\n\n### 使用 WriteBatch\n\n```rust\nlet mut batch = WriteBatch::new();\nbatch.put(b\"k1\", b\"v1\");\nbatch.delete(b\"k2\");\ndb.write(&batch)?;\n```\n\n空 batch 为 no-op (不写 WAL, 不分配 sequence).\n\n### Snapshot 点读\n\n```rust\nlet snap = db.snapshot()?;\ndb.put(b\"k\", b\"new\")?;\nassert_eq!(snap.get(b\"k\")?, Some(b\"old\".to_vec()));\n```\n\n### 跑 engine 相关测试\n\n见下方「测试」节.\n\n## 配置与 feature flags\n\n引擎写路径相关 `Options` 字段 (`config.rs`):\n\n| 项 | 默认 (生产) | 说明 |\n|----|-------------|------|\n| `memtable_size` | 64 MiB | freeze 阈值 |\n| `max_write_buffer_number` | 2 | immutable 上限; 超出背压 |\n| `min_write_buffer_number_to_merge` | 1 | flush 合并控制 |\n| `use_wal` | true | 禁用则 crash 不保证持久 |\n| `sync_wal` | false | true = 每条写后 fsync |\n| `strict_wal_recovery` | false | true = CRC 损坏报 `Corruption` |\n| `max_wal_size` | 64 MiB | WAL 自动轮转 (0=禁用) |\n| `flush_poll_ms` | 500 | 后台 flush 轮询 |\n| `write_stall_poll_ms` | 10 | L0 过多时写 stall |\n| `memtable_wait_iters` / `memtable_wait_interval_ms` | 10000 / 1 | immutable 满时等待 flush |\n| `background_compaction` | true | false 时无写 stall (测试用) |\n\nSSTable / compaction / cache 字段见 [engine-storage.md](engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.\n\nFeature: `monitoring` 启用 WAL/MemTable/DB span 与 Prometheus 指标 → [observability.md](observability.md).\n\n## 测试\n\n```bash\ncargo test --test wal --test memtable --test db --test pipeline -- --test-threads=1\ncargo test --test engine --test snapshot -- --test-threads=1\n```\n\n| 测试集 | 覆盖 |\n|--------|------|\n| `tests/wal` | Record 格式, recover, BatchStart rollback, LOCK, cleanup |\n| `tests/memtable` | InternalKey, put/delete/get, freeze |\n| `tests/pipeline/wal_memtable` | recover → replay 管线 |\n| `tests/db` | DB 模块 (wal_corruption, bootstrap 等) |\n| `tests/engine` | 黑盒场景 + crash_recovery |\n| `tests/snapshot` | MVCC + compaction 并发保版本 |\n\n## 已知限制\n\n- 并发 `get` 无锁读 MemTable: WriteBatch 逐条写入 MemTable 期间, 其他线程可能看到 batch **部分** 效果 (与 LevelDB 一致). Snapshot 创建持 `write_lock`, 无此问题.\n- `iter`/`scan` 不过滤到当前 sequence, 使用 `K_MAX_SEQUENCE` 见全部已写入版本.\n- `total_key_count` 在 `write_lock` 外更新, 仅作近似统计 / metrics.\n- 数据目录格式与旧版 `aidb-oldmain` **不兼容** (文本 WAL → 二进制 WalEntry).\n\n## 待核实\n\n- 见 [ISSUES.md](../../../AiKv-Workflow/backup/ISSUES.md#issue-001-writebatch-可能跨-wal-文件边界) — WriteBatch 写入期间 WAL 可能 mid-batch rotate.\n- 见 [ISSUES.md](../../../AiKv-Workflow/backup/ISSUES.md#issue-002-大-writebatch-与-max_wal_size-轮转交互) — 大 batch 与 `max_wal_size` 轮转规格待核实.\n"
 }
 ```
@@ -2111,7 +2111,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 2/12 待开始)",
   "old_string": "**当前阶段**: Step 0 — 文档骨架待创建",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2122,7 +2122,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "new_string": "| 1 | aidb | `docs/modules/engine.md` | wal, memtable, db | ✅ 完成 | 2026-06-17 |",
   "old_string": "| 1 | aidb | `docs/modules/engine.md` | wal, memtable, db | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2133,7 +2133,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 {
   "new_string": "| `docs/modules/engine.md` | ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 已写 aidb/docs/modules/engine.md | ISSUE-001/002 |",
   "old_string": "| `docs/modules/engine.md` | 步 3 ✅ | backup/aidb/ARCHITECTURE.md, DESIGN.md; aidb-oldmain (上一代, 格式不兼容); WiQunTools 01-wal, 02-memtable, 04-db-engine, 08-snapshot | 提炼不回迁; wiqun-db≈aidb; ISSUE-001/002 | 步 4 草稿待确认 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 

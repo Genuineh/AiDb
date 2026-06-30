@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -80,7 +80,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -89,7 +89,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -98,7 +98,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -108,7 +108,7 @@
 ```json
 {
   "glob_pattern": "aidb/DEPLOYMENT.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -123,7 +123,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -133,7 +133,7 @@
 ```json
 {
   "glob_pattern": "aidb/examples/**/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -142,7 +142,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "limit": 80
 }
 ```
@@ -152,7 +152,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/DESIGN.md",
+  "path": "../../DESIGN.md",
   "limit": 80
 }
 ```
@@ -163,7 +163,7 @@
 ```json
 {
   "glob_pattern": "aidb/**/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -176,7 +176,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/AGENTS.md",
+  "path": "../../AGENTS.md",
   "limit": 120
 }
 ```
@@ -186,7 +186,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -196,7 +196,7 @@
 ```json
 {
   "glob_pattern": "aidb/build.rs",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -206,7 +206,7 @@
 ```json
 {
   "pattern": "for_high_|for_testing|pub struct Options",
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -216,7 +216,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -230,7 +230,7 @@
 ```json
 {
   "offset": 98,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -239,7 +239,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/build.rs"
+  "path": "../../build.rs"
 }
 ```
 
@@ -249,7 +249,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -259,7 +259,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/.github/README.md"
+  "path": "../../.github/README.md"
 }
 ```
 
@@ -268,7 +268,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "ISSUE-014",
   "-A": 5
 }
@@ -284,7 +284,7 @@
 ```json
 {
   "limit": 140,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -293,7 +293,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "部署|构建|feature|Options|数据目录",
   "glob": "*.md",
   "head_limit": 40
@@ -306,7 +306,7 @@
 ```json
 {
   "glob_pattern": "**/wiqun-factory/docs/{BUILD,MONITORING}.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -315,7 +315,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/rust-toolchain.toml"
+  "path": "../../rust-toolchain.toml"
 }
 ```
 
@@ -328,7 +328,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine.md",
+  "path": "../../docs/modules/engine.md",
   "pattern": "LOCK|MANIFEST|数据目录|\\.log",
   "head_limit": 20
 }
@@ -339,7 +339,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../../aikv/Cargo.toml",
   "pattern": "aidb"
 }
 ```
@@ -350,7 +350,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/wiqun-factory/docs/BUILD.md"
+  "path": "../../../wiqun-factory/docs/BUILD.md"
 }
 ```
 
@@ -363,7 +363,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "pub fn (batch|write_batch)"
 }
 ```
@@ -374,7 +374,7 @@
 ```json
 {
   "glob_pattern": "aidb-oldmain/**/*DEPLOY*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -384,7 +384,7 @@
 ```json
 {
   "glob_pattern": "aidb-oldmain/docs/**/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -397,7 +397,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "WriteBatch|fn write",
   "head_limit": 15
 }
@@ -567,7 +567,7 @@
 {
   "offset": 136,
   "limit": 200,
-  "path": "/root/code/database/aidb/src/config.rs"
+  "path": "../../src/config.rs"
 }
 ```
 
@@ -576,7 +576,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/basic.rs"
+  "path": "../../examples/basic.rs"
 }
 ```
 
@@ -585,7 +585,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/backup.rs"
+  "path": "../../examples/backup.rs"
 }
 ```
 
@@ -594,7 +594,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/examples/cluster.rs"
+  "path": "../../examples/cluster.rs"
 }
 ```
 
@@ -603,7 +603,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/.github/workflows/ci.yml"
+  "path": "../../.github/workflows/ci.yml"
 }
 ```
 
@@ -616,7 +616,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "LOCK|MANIFEST|wal_",
   "glob": "**/engine/**/*.rs",
   "head_limit": 30
@@ -629,7 +629,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -639,7 +639,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/docs/modules/backup.md"
+  "path": "../../docs/modules/backup.md"
 }
 ```
 
@@ -648,7 +648,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../../aikv/Cargo.toml",
   "limit": 55
 }
 ```
@@ -658,7 +658,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/metrics.rs",
+  "path": "../../src/metrics.rs",
   "pattern": "pub fn (init|register_into)"
 }
 ```
@@ -672,7 +672,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md",
+  "path": "../../docs/modules/engine-storage.md",
   "pattern": "数据目录|MANIFEST|CURRENT|\\.sst|LOCK"
 }
 ```
@@ -682,7 +682,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/db",
+  "path": "../../src/engine/db",
   "pattern": "fn open|LOCK"
 }
 ```
@@ -693,7 +693,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "offset": 195
 }
 ```
@@ -709,7 +709,7 @@
 {
   "limit": 80,
   "offset": 55,
-  "path": "/root/code/database/aidb/src/engine/db/inner.rs"
+  "path": "../../src/engine/db/inner.rs"
 }
 ```
 
@@ -718,7 +718,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/backup",
+  "path": "../../src/backup",
   "pattern": "RetentionPolicy|impl Default"
 }
 ```
@@ -728,7 +728,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "compression",
   "glob": "*.md",
   "head_limit": 15
@@ -746,7 +746,7 @@
 {
   "limit": 80,
   "offset": 48,
-  "path": "/root/code/database/aidb/src/backup/manager.rs"
+  "path": "../../src/backup/manager.rs"
 }
 ```
 
@@ -755,7 +755,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/src/engine/wal/manager.rs",
+  "path": "../../src/engine/wal/manager.rs",
   "pattern": "LOCK|lock_file"
 }
 ```
@@ -766,7 +766,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/docs/modules/engine.md",
+  "path": "../../docs/modules/engine.md",
   "offset": 35
 }
 ```
@@ -1020,7 +1020,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -1030,7 +1030,7 @@ db.close()?;
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/FOOLPROOF_OPS_GUIDE.md"
+  "path": "../../../aidb-oldmain/docs/FOOLPROOF_OPS_GUIDE.md"
 }
 ```
 
@@ -1040,7 +1040,7 @@ db.close()?;
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/BACKUP_RECOVERY.md"
+  "path": "../../../aidb-oldmain/docs/BACKUP_RECOVERY.md"
 }
 ```
 
@@ -1050,7 +1050,7 @@ db.close()?;
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/PERFORMANCE_TUNING.md"
+  "path": "../../../aidb-oldmain/docs/PERFORMANCE_TUNING.md"
 }
 ```
 
@@ -1060,7 +1060,7 @@ db.close()?;
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/USER_GUIDE.md"
+  "path": "../../../aidb-oldmain/docs/USER_GUIDE.md"
 }
 ```
 
@@ -1073,7 +1073,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/wiqun-factory/docs/BUILD.md"
+  "path": "../../../wiqun-factory/docs/BUILD.md"
 }
 ```
 
@@ -1082,7 +1082,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/wiqun-factory/docs/MONITORING.md"
+  "path": "../../../wiqun-factory/docs/MONITORING.md"
 }
 ```
 
@@ -1093,7 +1093,7 @@ db.close()?;
 {
   "glob": "**/wiqun-db-inventory/**",
   "head_limit": 30,
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "部署|DEPLOY|构建|feature|protoc|backup|monitoring"
 }
 ```
@@ -1105,7 +1105,7 @@ db.close()?;
 {
   "glob": "**/*",
   "head_limit": 25,
-  "path": "/root/code/database/aidb-oldmain/docs/DEVELOPMENT.md",
+  "path": "../../../aidb-oldmain/docs/DEVELOPMENT.md",
   "pattern": "feature|protoc|deploy|build",
   "-i": true
 }
@@ -1120,7 +1120,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/docs/DEVELOPMENT.md",
+  "path": "../../../aidb-oldmain/docs/DEVELOPMENT.md",
   "pattern": "feature|protoc|cargo build|deploy",
   "head_limit": 30
 }
@@ -1131,7 +1131,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb",
+  "path": "../../../AiKv-Workflow/backup/aidb",
   "pattern": "metrics-port|DEPLOY|protoc|feature",
   "glob": "*.md",
   "head_limit": 25
@@ -1143,7 +1143,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/wiqun-db",
+  "path": "../../../wiqun-db",
   "pattern": "DEPLOYMENT|部署",
   "glob": "*.md",
   "head_limit": 15
@@ -1157,7 +1157,7 @@ db.close()?;
 {
   "offset": 80,
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/PERFORMANCE_TUNING.md"
+  "path": "../../../aidb-oldmain/docs/PERFORMANCE_TUNING.md"
 }
 ```
 
@@ -1170,7 +1170,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb/src",
+  "path": "../../src",
   "pattern": "wal_sync_interval|S3|CloudStorage"
 }
 ```
@@ -1181,7 +1181,7 @@ db.close()?;
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/wiqun-db/DEPLOYMENT.md"
+  "path": "../../../wiqun-db/DEPLOYMENT.md"
 }
 ```
 
@@ -1190,7 +1190,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/docs/PERFORMANCE_TUNING.md",
+  "path": "../../../aidb-oldmain/docs/PERFORMANCE_TUNING.md",
   "pattern": "for_high_|preset|Options::"
 }
 ```
@@ -1205,7 +1205,7 @@ db.close()?;
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -1214,7 +1214,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/docs/BACKUP_RECOVERY.md",
+  "path": "../../../aidb-oldmain/docs/BACKUP_RECOVERY.md",
   "pattern": "BackupManager::new|RecoveryManager::restore|S3"
 }
 ```
@@ -1225,7 +1225,7 @@ db.close()?;
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1238,7 +1238,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "pattern": "AIDB_BENCH_PRELOAD"
 }
 ```
@@ -1248,7 +1248,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/docs/PERFORMANCE_TUNING.md",
+  "path": "../../../aidb-oldmain/docs/PERFORMANCE_TUNING.md",
   "pattern": "compaction_threads|for_high"
 }
 ```
@@ -1264,7 +1264,7 @@ db.close()?;
 {
   "offset": 78,
   "limit": 30,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1393,7 +1393,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "aidb-oldmain/Cargo.toml",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1402,7 +1402,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain",
+  "path": "../../../aidb-oldmain",
   "pattern": "admin-cli|aidb-admin|metrics-port|AIDB_OTLP|AIDB_JSON"
 }
 ```
@@ -1412,7 +1412,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "fn batch\\(|MetricsServer|register_into"
 }
 ```
@@ -1423,7 +1423,7 @@ db.close()?;
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb-oldmain/Cargo.toml"
+  "path": "../../../aidb-oldmain/Cargo.toml"
 }
 ```
 
@@ -1438,7 +1438,7 @@ db.close()?;
 {
   "offset": 70,
   "limit": 90,
-  "path": "/root/code/database/aidb-oldmain/Cargo.toml"
+  "path": "../../../aidb-oldmain/Cargo.toml"
 }
 ```
 
@@ -1447,7 +1447,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/backup",
+  "path": "../../../aidb-oldmain/src/backup",
   "pattern": "pub fn new|create_backup|restore"
 }
 ```
@@ -1457,7 +1457,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/config.rs",
+  "path": "../../../aidb-oldmain/src/config.rs",
   "pattern": "memtable_size|default\\(\\)"
 }
 ```
@@ -1468,7 +1468,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "aidb-oldmain/src/monitoring/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1481,7 +1481,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src/engine/db",
+  "path": "../../../aidb-oldmain/src/engine/db",
   "pattern": "fn scan|fn batch"
 }
 ```
@@ -1492,7 +1492,7 @@ db.close()?;
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb-oldmain/src/monitoring/server.rs"
+  "path": "../../../aidb-oldmain/src/monitoring/server.rs"
 }
 ```
 
@@ -1501,7 +1501,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/wiqun-db/Cargo.toml",
+  "path": "../../../wiqun-db/Cargo.toml",
   "pattern": "^\\[features\\]|^default|^cluster|^backup|^monitoring"
 }
 ```
@@ -1512,7 +1512,7 @@ db.close()?;
 ```json
 {
   "glob_pattern": "aidb-oldmain/examples/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1525,7 +1525,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "pub fn scan|pub fn open",
   "glob": "**/db*.rs"
 }
@@ -1537,7 +1537,7 @@ db.close()?;
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/examples/monitoring/metrics_server.rs"
+  "path": "../../../aidb-oldmain/examples/monitoring/metrics_server.rs"
 }
 ```
 
@@ -1547,7 +1547,7 @@ db.close()?;
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/build.rs"
+  "path": "../../../aidb-oldmain/build.rs"
 }
 ```
 
@@ -1560,7 +1560,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "fn scan",
   "head_limit": 10
 }
@@ -1571,7 +1571,7 @@ db.close()?;
 
 ```json
 {
-  "path": "/root/code/database/aidb-oldmain/src",
+  "path": "../../../aidb-oldmain/src",
   "pattern": "RetentionPolicy|RetentionManager",
   "head_limit": 15
 }
@@ -1714,7 +1714,7 @@ current: src/metrics.rs — LazyLock + record_* + register_into(registry)
 ```json
 {
   "offset": 170,
-  "path": "/root/code/database/aidb/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -1724,7 +1724,7 @@ current: src/metrics.rs — LazyLock + record_* + register_into(registry)
 ```json
 {
   "glob_pattern": "aikv/DEPLOYMENT.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1734,7 +1734,7 @@ current: src/metrics.rs — LazyLock + record_* + register_into(registry)
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "offset": 115
 }
 ```
@@ -2037,7 +2037,7 @@ aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 
 ```json
 {
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "contents": "# AiDb 部署与运行\n\n本文说明 **如何构建、启用 Cargo feature、作为依赖嵌入、配置数据目录与运维入口**. **是什么、怎么分层** 见 [ARCHITECTURE.md](ARCHITECTURE.md); **设计取舍** 见 [DESIGN.md](DESIGN.md); WAL/compaction/Raft 等实现细节见 [docs/modules/](docs/modules/).\n\nAiDb 是 **嵌入式 lib crate**, 无独立守护进程、无内置 HTTP listener. 需要 Redis 协议或集群运维时, 使用 [AiKv](../aikv/DEPLOYMENT.md) (该文档在 aikv 汇总阶段完善).\n\n## 系统要求\n\n| 项 | 要求 |\n|----|------|\n| Rust | **stable** (见 [rust-toolchain.toml](rust-toolchain.toml); 含 clippy、rustfmt) |\n| 操作系统 | Linux / macOS (CI 为 `ubuntu-latest`) |\n| 磁盘 | 推荐 SSD (WAL + SSTable 路径); 容量随数据量 |\n| 内存 | 与 `Options` 中 MemTable、Block Cache 等相关 (默认各 64 MiB) |\n| protoc | 仅 **`cluster` feature** 本地 clippy/测试需要; CI 通过 `apt install protobuf-compiler` 安装 |\n\n## Cargo feature 矩阵\n\n定义见 [Cargo.toml](Cargo.toml).\n\n| Feature | 默认 | 启用内容 | 典型用途 |\n|---------|------|----------|----------|\n| `backup` | ✅ | `src/backup/*`, ring/hex/serde_json | 全量备份与恢复 |\n| (engine only) | — | `src/engine/*` 始终编译 | 最小嵌入 |\n| `cluster` | ❌ | `src/cluster/*`, tonic/prost/tokio/openraft | Multi-Raft / MetaRaft |\n| `monitoring` | ❌ | `src/metrics.rs`, Prometheus 系列 | 嵌入方 scrape |\n| `compression` | ❌ | snap/lz4 依赖 | **占位; block 压缩未实现** |\n\n**常见组合**:\n\n| 场景 | 命令 / 依赖 |\n|------|-------------|\n| 单机 + 备份 (默认) | `cargo build` |\n| 最小 engine | `cargo build --no-default-features` |\n| 单机 + 指标 | `cargo build --features monitoring` |\n| 集群库开发 | `cargo build --features cluster` |\n| 集群 + 指标 | `cargo build --features cluster,monitoring` |\n\n**嵌入方 (AiKv) 传递 feature** — 见 [aikv/Cargo.toml](../aikv/Cargo.toml): `monitoring` → `aidb/monitoring`, `cluster` → `aidb/cluster`.\n\n## 构建与验证\n\n本地与 CI 门禁见 [AGENTS.md](AGENTS.md)、[.github/README.md](.github/README.md).\n\n```bash\nexport RUSTFLAGS='-D warnings'\ncargo fmt --check\ncargo clippy --all-targets\ncargo clippy --all-targets --features cluster   # 需 protoc\ncargo test -- --test-threads=1\ncargo test --features cluster -- --test-threads=1\n```\n\nCI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) 分两 job: 默认 feature 与 `cluster` (安装 protoc). **`monitoring` 无独立 CI job** — 本地可 `cargo test --test metrics --features monitoring -- --test-threads=1`.\n\n**cluster 与 protoc** ([build.rs](build.rs)): 启用 `cluster` 时编译 `proto/raft.proto`; 若系统无 `protoc` 且未设 `PROTOC`, 使用仓库内 checked-in 生成代码并打印 warning.\n\n**基准测试** (可选):\n\n```bash\ncargo bench --bench write_bench\ncargo bench --bench read_bench\ncargo bench --bench backup_bench\n# read_bench 预填充规模: AIDB_BENCH_PRELOAD=100000 cargo bench --bench read_bench\n```\n\n完整测试矩阵与 hook 说明留 [CONTRIBUTING.md](CONTRIBUTING.md) (汇总阶段) 与日后 `docs/development.md`.\n\n## 作为依赖嵌入\n\n### 声明依赖\n\n```toml\n[dependencies]\n# 版本以 crates.io / Cargo.toml 为准 (当前 0.14.x)\naidb = { version = \"0.14\", features = [\"monitoring\"] }\n\n# monorepo (AiKv)\naidb = { path = \"../aidb\" }\n```\n\n按需启用 feature: `features = [\"backup\"]` (默认已含)、`[\"cluster\"]`、`[\"monitoring\"]` 或组合.\n\n### 最小用法\n\n与 [examples/basic.rs](examples/basic.rs) 一致:\n\n```rust\nuse aidb::{DB, WriteBatch, config::Options};\n\nlet db = DB::open(\"/var/data/aidb\", Options::default())?;\n\ndb.put(b\"hello\", b\"world\")?;\nassert_eq!(db.get(b\"hello\")?, Some(b\"world\".to_vec()));\n\nlet mut batch = WriteBatch::new();\nbatch.put(b\"a\", b\"1\");\ndb.write(&batch)?;\n\nlet iter = db.scan(Some(b\"a\"), Some(b\"z\"))?;\nfor entry in iter {\n    let (k, v) = entry?;\n    let _ = (k, v);\n}\n\ndb.close()?;\n```\n\n### 多线程\n\n`DB` 为 `Send + Sync`, 可 `Arc` 在线程间共享 (见 `examples/basic.rs` 模式).\n\n### 与 AiKv 的分工\n\n| 能力 | AiDb | AiKv |\n|------|------|------|\n| LSM 存储 | `DB::put/get/...` | `AiDbEngine` + `spawn_blocking` |\n| 集群 Raft / slot | `cluster` API | `ClusterDataAdapter`, MOVED/ASK |\n| HTTP `/metrics` | `register_into` 仅注册 | HTTP 暴露与 OTel |\n\n详见 [ARCHITECTURE.md §与 AiKv 的嵌入关系](ARCHITECTURE.md#与-aikv-的嵌入关系).\n\n## 数据目录\n\n单机 `DB::open(path, opts)` 的 `path` 即数据根目录:\n\n```shell\n{db_path}/\n├── LOCK                 # 单进程独占; 多进程打开 → Error::Busy\n├── CURRENT              # 指向活跃 MANIFEST\n├── MANIFEST-*           # VersionSet 元数据\n├── {nnnnnn}_L{level}.sst\n└── wal_{n}.log\n```\n\n磁盘格式与早期 `aidb-oldmain` **不兼容** — 勿跨版本直接打开旧目录. 布局细节见 [docs/modules/engine.md](docs/modules/engine.md)、[engine-storage.md](docs/modules/engine-storage.md).\n\n## 配置 (部署向摘要)\n\n完整字段见 [src/config.rs](src/config.rs). `DB::open` 前会调用 `Options::validate()`.\n\n### 默认值 (生产起点)\n\n| 字段 | 默认 | 部署含义 |\n|------|------|----------|\n| `create_if_missing` | true | 目录不存在则创建 |\n| `memtable_size` | 64 MiB | 触发 flush 阈值 |\n| `block_cache_size` | 64 MiB | 读缓存 (0 = 禁用) |\n| `use_wal` | true | false 则 crash 不保证持久 |\n| `sync_wal` | false | true = 每条写 fsync (强持久, 低吞吐) |\n| `bloom_false_positive_rate` | 0.01 | 0.0 = 禁用 Bloom |\n| `background_compaction` | true | 测试可关 |\n| `compaction_threads` | 1 | 后台线程数 (内部 clamp 1–4) |\n\n### Preset\n\n| 方法 | 用途 | 说明 |\n|------|------|------|\n| `Options::for_testing()` | 单测 / 示例 | 小 memtable、无 bloom、关 background_compaction |\n| `Options::for_high_write_throughput()` | 写密集 | 大 memtable; 设 `CompressionType::Snap` 但 **压缩未实现** |\n| `Options::for_high_read_throughput()` | 读密集 | 大 block cache、低 bloom FP |\n\n强持久场景可在 default 或 preset 基础上设 `sync_wal: true`, 并酌情调大 `memtable_size` / `block_cache_size`.\n\n### ClusterConfig (`feature cluster`)\n\n| 方法 | group_count | replication_factor | 典型场景 |\n|------|-------------|-------------------|----------|\n| `ClusterConfig::for_production()` | 256 | 3 | 生产 (slot 路由见 cluster module) |\n| `ClusterConfig::for_testing()` | 4 | 1 | 单测 |\n\n`RaftNodeConfig` 等运行时参数见 [docs/modules/cluster.md](docs/modules/cluster.md). **集群进程启动、端口、compose** 不在 aidb — 见 [AiKv 部署](../aikv/DEPLOYMENT.md).\n\n## 示例\n\n| 示例 | 命令 | 说明 |\n|------|------|------|\n| 基本 CRUD | `cargo run --example basic` | open / put / batch / scan / snapshot |\n| 备份恢复 | `cargo run --example backup` | BackupManager + RecoveryManager |\n| 槽位路由 | `cargo run --features cluster --example cluster` | CRC16 / hash tag (**无网络、无组网**) |\n\n更多说明见 [examples/README.md](examples/README.md).\n\n## 备份与恢复\n\n默认 feature 已含 `backup`. 流程: `Checkpoint` → manifest + SHA256 → 可选保留策略.\n\n```rust\nuse std::sync::Arc;\nuse aidb::{DB, config::Options};\nuse aidb::backup::{BackupManager, LocalFileStorage, RecoveryManager, RetentionPolicy};\n\nlet db = DB::open(\"/var/data/aidb\", Options::default())?;\nlet storage = Arc::new(LocalFileStorage::new(\"/var/backups\"));\nlet manager = BackupManager::new(storage.clone(), RetentionPolicy::default());\n\nlet id = manager.create_backup(&db)?;\nlet backups = manager.list_backups()?;\n\nlet recovery = RecoveryManager::new(storage);\nassert!(recovery.verify_backup(id)?);\nrecovery.restore(id, \"/var/data/aidb-restored\")?;\n```\n\n- 仅 **`LocalFileStorage`** 内置; S3 / 增量备份未实现 — 见 [ISSUES.md#ISSUE-012](ISSUES.md#issue-012-无-backup_id-碰撞重试与压缩增量s3).\n- AiKv `BGSAVE` 直调 `Checkpoint`, 不经 `BackupManager` — 见 aikv [commands-extended.md](../aikv/docs/modules/commands-extended.md).\n- 详情见 [docs/modules/backup.md](docs/modules/backup.md).\n\n## 可观测性\n\n| 能力 | 编译 | 说明 |\n|------|------|------|\n| **Tracing** | 始终 | `tracing` crate; 嵌入方配置 `tracing-subscriber` |\n| **Prometheus** | `monitoring` feature | `DB::open` 时 `metrics::init()`; 热路径 `record_*` |\n\nAiDb **无内置 HTTP `/metrics`、无 OTLP/JSON log 环境变量**. 嵌入方创建 `prometheus::Registry` 后:\n\n```rust\naidb::metrics::register_into(&registry)?;\n// 再由 HTTP handler encode gather()\n```\n\nAiKv 在 `Metrics::new()` 内完成注册并暴露 `/metrics`. 指标列表与 PromQL 见 [docs/modules/observability.md](docs/modules/observability.md).\n\n## 集群 (库侧)\n\n构建: `cargo build --features cluster` (需 protoc, 见上).\n\naidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER 命令、节点部署** 由 AiKv 实现. 完整集群运维见 [AiKv 部署](../aikv/DEPLOYMENT.md) (aikv 文档整理步 21).\n\n库侧深入: [docs/modules/cluster.md](docs/modules/cluster.md).\n\n## 相关文档\n\n- [ARCHITECTURE.md](ARCHITECTURE.md) — 分层与数据流\n- [DESIGN.md](DESIGN.md) — 设计决策\n- [AGENTS.md](AGENTS.md) — AI 助手与 CI 速查\n- [docs/modules/](docs/modules/) — 域级实现文档\n- [ISSUES.md](ISSUES.md) — 待核实项\n\n## 待核实\n\n- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).\n"
 }
 ```
@@ -2047,7 +2047,7 @@ aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `DEPLOYMENT.md` | 待开始 | `backup/aidb/DEPLOYMENT.md` | 已移出 aidb | |",
   "new_string": "| `DEPLOYMENT.md` (汇总) | ✅ | `backup/aidb/DEPLOYMENT.md` (主, 多处过时); oldmain `BACKUP_RECOVERY`/`PERFORMANCE_TUNING` (查漏); wiqun-factory `MONITORING` (边界); oldmain FOOLPROOF/USER_GUIDE/monitoring 跳过; wiqun-db 重复跳过; oldmain `monitoring/`/`aidb-admin` 模块级对照 | 已写 `aidb/DEPLOYMENT.md` | 模块级; ISSUE-014/012 根文档一行 |"
 }
@@ -2058,7 +2058,7 @@ aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 15 | `DEPLOYMENT.md` | ⬜ 待开始 | |",
   "new_string": "| 15 | `DEPLOYMENT.md` | ✅ 完成 | 2026-06-18 |"
 }
@@ -2101,7 +2101,7 @@ aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -2111,7 +2111,7 @@ aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 ```json
 {
   "glob_pattern": "aidb/archive/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

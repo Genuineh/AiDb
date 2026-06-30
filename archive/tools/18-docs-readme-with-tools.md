@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -83,7 +83,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -92,7 +92,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -101,7 +101,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -111,7 +111,7 @@
 ```json
 {
   "glob_pattern": "aidb/docs/**/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -120,7 +120,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../README.md",
   "limit": 120
 }
 ```
@@ -137,7 +137,7 @@
 ```json
 {
   "pattern": "docs/README|文档导航|按域阅读",
-  "path": "/root/code/database",
+  "path": "<workspace>",
   "glob": "**/*.{md,MD}"
 }
 ```
@@ -147,7 +147,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/AGENTS.md",
+  "path": "../../AGENTS.md",
   "limit": 80
 }
 ```
@@ -158,7 +158,7 @@
 ```json
 {
   "glob_pattern": "**/docs/README.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -168,7 +168,7 @@
 ```json
 {
   "pattern": "§文档|docs/",
-  "path": "/root/code/database/aidb",
+  "path": "../../../aidb",
   "glob": "*.md"
 }
 ```
@@ -183,7 +183,7 @@
 ```json
 {
   "pattern": "^description:",
-  "path": "/root/code/database/aidb/docs/modules"
+  "path": "../../docs/modules"
 }
 ```
 
@@ -193,7 +193,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aidb-oldmain/INDEX.md"
+  "path": "../../../aidb-oldmain/INDEX.md"
 }
 ```
 
@@ -203,7 +203,7 @@
 ```json
 {
   "glob_pattern": "aikv/docs/README.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -213,7 +213,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -226,7 +226,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/archive",
+  "path": "../../archive",
   "pattern": "docs/README|步 18",
   "-A": 3
 }
@@ -238,7 +238,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -420,7 +420,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "glob_pattern": "aidb/*.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -430,7 +430,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../docs/modules/engine.md"
 }
 ```
 
@@ -440,7 +440,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/engine-storage.md"
+  "path": "../../docs/modules/engine-storage.md"
 }
 ```
 
@@ -450,7 +450,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -460,7 +460,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/backup.md"
+  "path": "../../docs/modules/backup.md"
 }
 ```
 
@@ -470,7 +470,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -480,7 +480,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -490,7 +490,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aidb/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -500,7 +500,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aidb/DEPLOYMENT.md"
+  "path": "../../DEPLOYMENT.md"
 }
 ```
 
@@ -510,7 +510,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aidb/CONTRIBUTING.md"
+  "path": "../../CONTRIBUTING.md"
 }
 ```
 
@@ -520,7 +520,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 20,
-  "path": "/root/code/database/aidb/CHANGELOG.md"
+  "path": "../../CHANGELOG.md"
 }
 ```
 
@@ -530,7 +530,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aidb/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -545,7 +545,7 @@ design: **不在主文档体系内**.
 {
   "offset": 65,
   "limit": 25,
-  "path": "/root/code/database/aidb/README.md"
+  "path": "../../README.md"
 }
 ```
 
@@ -555,7 +555,7 @@ design: **不在主文档体系内**.
 ```json
 {
   "glob_pattern": "aidb/docs/development.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -566,7 +566,7 @@ design: **不在主文档体系内**.
 {
   "offset": 50,
   "limit": 15,
-  "path": "/root/code/database/aidb/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -710,7 +710,7 @@ aidb/
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -720,7 +720,7 @@ aidb/
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/README.md",
+  "path": "../../../aidb-oldmain/README.md",
   "offset": 350
 }
 ```
@@ -732,7 +732,7 @@ aidb/
 {
   "pattern": "docs/README|文档导航|文档索引|INDEX",
   "glob": "**/*",
-  "path": "/root/code/database/wiqun-db",
+  "path": "../../../wiqun-db",
   "head_limit": 20
 }
 ```
@@ -744,7 +744,7 @@ aidb/
 {
   "pattern": "README|文档导航|docs/",
   "glob": "**/wiqun-db-inventory/**",
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "head_limit": 15
 }
 ```
@@ -755,7 +755,7 @@ aidb/
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb-oldmain/docs/DOCUMENT_STRUCTURE.md"
+  "path": "../../../aidb-oldmain/docs/DOCUMENT_STRUCTURE.md"
 }
 ```
 
@@ -769,7 +769,7 @@ aidb/
 ```json
 {
   "offset": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aidb/README.md"
+  "path": "../../../AiKv-Workflow/backup/aidb/README.md"
 }
 ```
 
@@ -779,7 +779,7 @@ aidb/
 ```json
 {
   "glob_pattern": "**/docs/README.md",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -789,7 +789,7 @@ aidb/
 ```json
 {
   "glob_pattern": "**/docs/README.md",
-  "target_directory": "/root/code/database/wiqun-db"
+  "target_directory": "../../../wiqun-db"
 }
 ```
 
@@ -800,7 +800,7 @@ aidb/
 {
   "limit": 60,
   "offset": 50,
-  "path": "/root/code/database/aidb-oldmain/INDEX.md"
+  "path": "../../../aidb-oldmain/INDEX.md"
 }
 ```
 
@@ -927,7 +927,7 @@ aidb/
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/aikv-oldmain/docs",
+  "path": "../../../aikv-oldmain/docs",
   "pattern": "文档|导航|README"
 }
 ```
@@ -938,7 +938,7 @@ aidb/
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aidb-oldmain/INDEX.md",
+  "path": "../../../aidb-oldmain/INDEX.md",
   "offset": 100
 }
 ```
@@ -953,7 +953,7 @@ aidb/
 ```json
 {
   "limit": 45,
-  "path": "/root/code/database/aikv-oldmain/docs/index.md"
+  "path": "../../../aikv-oldmain/docs/index.md"
 }
 ```
 
@@ -1170,7 +1170,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/README.md",
+  "path": "../../docs/README.md",
   "contents": "# AiDb 开发文档\n\n`docs/` 域的开发文档导航. 项目介绍与快速开始见 [README.md](../README.md).\n\n## 阅读路径\n\n- **首次了解** — [README.md](../README.md) → [ARCHITECTURE.md](../ARCHITECTURE.md) → 按需打开下方 modules\n- **改某域代码** — 查 [按域阅读](#按域阅读-modules) WHEN → 对应 module; 跨域边界见 module 内「不覆盖」\n- **构建 / 测试 / PR** — [DEPLOYMENT.md](../DEPLOYMENT.md) + [CONTRIBUTING.md](../CONTRIBUTING.md); AI 助手速览见 [AGENTS.md](../AGENTS.md)\n\n## 汇总文档\n\n| 文档 | 内容 |\n|------|------|\n| [ARCHITECTURE.md](../ARCHITECTURE.md) | 分层、数据流、与 AiKv 边界 |\n| [DESIGN.md](../DESIGN.md) | 跨模块设计决策 (why) |\n| [DEPLOYMENT.md](../DEPLOYMENT.md) | 构建、feature、嵌入、数据目录与运维 |\n| [CONTRIBUTING.md](../CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |\n| [CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |\n| [AGENTS.md](../AGENTS.md) | AI 助手与 CI 入口 |\n| [ISSUES.md](../ISSUES.md) | 待核实与已知疑点 |\n\n## 按域阅读 (modules)\n\n| Module | 何时读 |\n|--------|--------|\n| [engine.md](modules/engine.md) | 改 `engine/{wal,memtable,db}`; 写路径、WAL 恢复、MemTable flush、Snapshot |\n| [engine-storage.md](modules/engine-storage.md) | 改 SSTable / compaction / Bloom / cache / checkpoint; flush 或读放大 |\n| [cluster.md](modules/cluster.md) | 改 `cluster/*`; MetaRaft / Multi-Raft / slot 路由 / 迁移 (`cluster` feature) |\n| [backup.md](modules/backup.md) | 改 `backup/*`; BackupManager、恢复、保留策略 |\n| [observability.md](modules/observability.md) | 改 `metrics.rs` / cluster metrics; 嵌入方注册 `aidb_*` (`monitoring` feature) |\n\n依赖顺序: engine → engine-storage; cluster / backup / observability 相对独立.\n\n## 构建与测试\n\n构建、Cargo feature 与完整测试矩阵见 [DEPLOYMENT.md](../DEPLOYMENT.md) 与 [CONTRIBUTING.md](../CONTRIBUTING.md).\n\n## 待核实\n\n详情见 [ISSUES.md](../ISSUES.md) (module 内一行引用, 不在此展开).\n"
 }
 ```
@@ -1180,7 +1180,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../README.md",
   "old_string": "## 文档\n\n| 文档 | 内容 |",
   "new_string": "## 文档\n\n开发文档 hub: [docs/README.md](docs/README.md) (汇总文档 + modules WHEN 路由).\n\n| 文档 | 内容 |"
 }
@@ -1191,7 +1191,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `CHANGELOG.md` | ✅ | `backup/aidb/CHANGELOG.md` | 已写 `aidb/CHANGELOG.md` | 保留 0.0.1–0.14.10; [Unreleased] 空 |\n\n### aidb 旧文档来源速查",
   "new_string": "| `CHANGELOG.md` | ✅ | `backup/aidb/CHANGELOG.md` | 已写 `aidb/CHANGELOG.md` | 保留 0.0.1–0.14.10; [Unreleased] 空 |\n| `docs/README.md` (导航) | ✅ | `backup/aidb/README.md` §设计文档; oldmain `INDEX.md` + `DOCUMENT_STRUCTURE.md` (分组查漏); aikv-oldmain `docs/index.md` (形态参考); WiQunTools/wiqun-db 跳过 | 已写 `aidb/docs/README.md` | 纯链接 hub; modules WHEN; A1 无 development.md; C1 README hub 链 |\n\n### aidb 旧文档来源速查"
 }
@@ -1202,7 +1202,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 ✅ 完成 — 可进入阶段 2a (aidb 汇总)",
   "new_string": "**当前阶段**: 阶段 2a ✅ 完成 — 可进入阶段 2b (aikv 汇总, 步 19+)"
 }
@@ -1213,7 +1213,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 18 | `docs/README.md` (导航) | ⬜ 待开始 | |\n\n`docs/development.md` 可在 Step 0 占位后任意步 1 前完善.",
   "new_string": "| 18 | `docs/README.md` (导航) | ✅ 完成 | 2026-06-18 |\n\n`docs/development.md`: 未单独创建; hub 链 DEPLOYMENT + CONTRIBUTING (步 18 A1)."
 }
@@ -1224,7 +1224,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "- [ ] 阶段 2: aidb / aikv 根文档与 `docs/README.md` 全部 ✅",
   "new_string": "- [x] 阶段 2a: aidb 根文档与 `docs/README.md` 全部 ✅\n- [ ] 阶段 2b: aikv 根文档与 `docs/README.md` 全部 ✅"
 }
@@ -1241,7 +1241,7 @@ aidb/
 {
   "new_string": "- [x] aidb: 新建根目录文档 (README, ARCHITECTURE, DESIGN, DEPLOYMENT, CHANGELOG, CONTRIBUTING) — 可先占位\n- [x] aidb: `docs/README.md` (hub); `docs/development.md` 未建 (hub 链 DEPLOYMENT + CONTRIBUTING)\n- [x] aidb: `docs/modules/` — engine, engine-storage, cluster, backup, observability (5 篇)",
   "old_string": "- [ ] aidb: 新建根目录文档 (README, ARCHITECTURE, DESIGN, DEPLOYMENT, CHANGELOG, CONTRIBUTING) — 可先占位\n- [ ] aidb: `docs/README.md`, `docs/development.md`\n- [ ] aidb: `docs/modules/` — engine, engine-storage, cluster, backup, observability (5 篇)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1294,7 +1294,7 @@ aidb/
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -1304,7 +1304,7 @@ aidb/
 ```json
 {
   "glob_pattern": "aidb/archive/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
