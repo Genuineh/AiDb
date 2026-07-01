@@ -127,14 +127,11 @@ impl Writer {
         }
 
         // 计算 CRC32: 覆盖 Length(2B) + Type(1B) + Data
-        let crc = crc32fast::hash(
-            &[
-                &(data_len as u16).to_le_bytes()[..],
-                &[record_type as u8],
-                data,
-            ]
-            .concat(),
-        );
+        let mut h = crc32fast::Hasher::new();
+        h.update(&(data_len as u16).to_le_bytes());
+        h.update(&[record_type as u8]);
+        h.update(data);
+        let crc = h.finalize();
 
         self.file.write_all(&crc.to_le_bytes())?; // 4B CRC32
         self.file.write_all(&(data_len as u16).to_le_bytes())?; // 2B Length

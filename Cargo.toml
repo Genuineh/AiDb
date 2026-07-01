@@ -41,6 +41,9 @@ bincode = "1"
 # File locking
 fs2 = "0.4"
 
+# Fast hashing (for cache shard index, etc.)
+rustc-hash = "2"
+
 # Backup feature (optional)
 ring = { version = "0.17", optional = true }
 hex = { version = "0.4", optional = true }

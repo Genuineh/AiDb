@@ -125,14 +125,11 @@ impl Reader {
         self.block_offset += length;
 
         // 验证 CRC
-        let expected_crc = crc32fast::hash(
-            &[
-                &(length as u16).to_le_bytes()[..],
-                &[record_type_val],
-                &data,
-            ]
-            .concat(),
-        );
+        let mut h = crc32fast::Hasher::new();
+        h.update(&(length as u16).to_le_bytes());
+        h.update(&[record_type_val]);
+        h.update(&data);
+        let expected_crc = h.finalize();
 
         if checksum != expected_crc {
             tracing::warn!(target: "wal", "wal.crc.mismatch");

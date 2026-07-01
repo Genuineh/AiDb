@@ -115,7 +115,9 @@ impl SSTableBuilder {
 
         if self.enable_bloom {
             if self.bloom_filter.is_none() {
-                self.bloom_filter = Some(BloomFilter::default_with_keys(10_000));
+                // Safety net: callers should use set_expected_keys() for optimal size.
+                // This fallback is only triggered if add() is called before set_expected_keys().
+                self.bloom_filter = Some(BloomFilter::default_with_keys(128));
             }
             let user_key = extract_user_key(key);
             self.bloom_filter.as_mut().unwrap().add(user_key);

@@ -116,8 +116,16 @@ impl Filter for BloomFilter {
     }
 
     fn add(&mut self, key: &[u8]) {
-        let positions: Vec<usize> = self.hash_positions(key).collect();
-        for pos in positions {
+        let num_hashes = self.num_hashes;
+        let num_bits = self.num_bits;
+        let h1 = fnv1a_like(key, 0xbc9f1d34);
+        let mut h2 = fnv1a_like(key, 0xd0e89c7b);
+        if h2.is_multiple_of(2) {
+            h2 = h2.wrapping_add(1);
+        }
+        for i in 0..num_hashes {
+            let hash = h1.wrapping_add(i.wrapping_mul(h2));
+            let pos = (hash as usize) % num_bits;
             self.bits[pos / 8] |= 1 << (pos % 8);
         }
     }

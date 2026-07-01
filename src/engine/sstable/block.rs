@@ -79,7 +79,7 @@ impl BlockBuilder {
         }
         self.buffer
             .extend_from_slice(&(self.restarts.len() as u32).to_le_bytes());
-        self.buffer.clone().freeze()
+        std::mem::take(&mut self.buffer).freeze()
     }
 }
 

@@ -25,8 +25,12 @@ pub fn write_block<W: Write>(
     compression: CompressionType,
 ) -> Result<()> {
     let compression_byte = compression_to_byte(compression)?;
-    let data = compress_block(block_data, compression)?;
-    writer.write_all(&data)?;
+    if compression == CompressionType::None {
+        writer.write_all(block_data)?;
+    } else {
+        let data = compress_block(block_data, compression)?;
+        writer.write_all(&data)?;
+    }
     writer.write_all(&[compression_byte])?;
     let mut hasher = Crc32Hasher::new();
     hasher.update(block_data);

@@ -1,7 +1,7 @@
 //! Sharded LRU Block Cache with O(1) operations and hit/miss statistics.
 
 use std::collections::{HashMap, VecDeque};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytes::Bytes;
@@ -41,7 +41,7 @@ impl CacheStats {
 
 /// Compute shard index for a given cache key.
 pub fn shard_index(key: &CacheKey) -> usize {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = rustc_hash::FxHasher::default();
     key.hash(&mut hasher);
     (hasher.finish() as usize) & SHARD_MASK
 }

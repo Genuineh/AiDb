@@ -75,13 +75,8 @@ impl IndexBlock {
     /// 定位可能包含 `seek_key` 的 Data Block.
     pub fn find_block(&self, seek_key: &[u8]) -> Result<BlockHandle> {
         let entries = self.entries()?;
-        find_block_handle(
-            &entries
-                .iter()
-                .map(|e| (e.key.clone(), e.handle))
-                .collect::<Vec<_>>(),
-            seek_key,
-        )
+        let tuples: Vec<_> = entries.into_iter().map(|e| (e.key, e.handle)).collect();
+        find_block_handle(&tuples, seek_key)
     }
 }
 
