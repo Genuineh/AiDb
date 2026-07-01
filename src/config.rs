@@ -104,7 +104,7 @@ impl Default for Options {
             block_size: 4 * 1024,
             block_restart_interval: 16,
             block_cache_size: 64 * 1024 * 1024,
-            compression: CompressionType::None,
+            compression: CompressionType::Snap,
             bloom_false_positive_rate: 0.01,
             use_wal: true,
             sync_wal: false,
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(opts.max_write_buffer_number, 2);
         assert_eq!(opts.min_write_buffer_number_to_merge, 1);
         assert_eq!(opts.block_restart_interval, 16);
-        assert_eq!(opts.compression, CompressionType::None);
+        assert_eq!(opts.compression, CompressionType::Snap);
         assert!((opts.bloom_false_positive_rate - 0.01).abs() < 1e-6);
         assert_eq!(opts.level0_compaction_trigger, 4);
         assert_eq!(opts.max_bytes_for_level_base, 256 * 1024 * 1024);

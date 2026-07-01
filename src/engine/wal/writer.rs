@@ -18,19 +18,11 @@ pub const BLOCK_SIZE: usize = 32768;
 pub struct Writer {
     file: std::fs::File,
     block_offset: usize,
-    sync_wal: bool,
 }
 
 impl Writer {
-    /// 创建 Writer, 打开或创建 WAL 文件
     #[tracing::instrument(name = "wal_writer_open", skip(path))]
     pub fn open(path: &Path) -> Result<Self> {
-        Self::open_with_sync(path, false)
-    }
-
-    /// 创建 Writer, 指定是否每次写入后 sync
-    #[tracing::instrument(name = "wal_writer_open_with_sync", skip(path))]
-    pub fn open_with_sync(path: &Path, sync_wal: bool) -> Result<Self> {
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -40,8 +32,13 @@ impl Writer {
         Ok(Writer {
             file,
             block_offset,
-            sync_wal,
         })
+    }
+
+    /// 兼容旧接口: sync_wal 由上层 WALManager 管理, Writer 不再负责 syncing.
+    #[tracing::instrument(name = "wal_writer_open_with_sync", skip(path))]
+    pub fn open_with_sync(path: &Path, _sync_wal: bool) -> Result<Self> {
+        Self::open(path)
     }
 
     /// 单条 Record 的 data 最大长度 (Length 字段为 u16)
@@ -139,10 +136,6 @@ impl Writer {
         self.file.write_all(data)?; // Data
 
         self.block_offset += HEADER_SIZE + data_len;
-
-        if self.sync_wal {
-            self.file.sync_all()?;
-        }
 
         tracing::debug!(
           target: "wal",
