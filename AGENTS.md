@@ -66,6 +66,12 @@ cargo test -- --ignored --test-threads=1
 
 修 bug **必带** 回归测: 见 [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带).
 
+## Span 级别约定
+
+**热路径函数** (put/get/write/WAL/MemTable/SSTable/block/Raft apply/propose) 的 `#[tracing::instrument]` 级别为 **`level = "debug"`**. 原因: OTLP 开启时每个 span 被 `tracing_opentelemetry` layer 转换为 OTel span, per-span 生命周期回调累积 ~0.5-1ms 开销. 生产 `RUST_LOG=info` 不创建热路径 span, 需调试时可设 `RUST_LOG=debug`.
+
+非热路径 (如 backup, checkpoint, compaction 控制面) 保持默认 INFO 级别.
+
 ## 已知限制
 
 - OpenRaft / 快照 API 随上游演进, 升级需适配.

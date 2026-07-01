@@ -329,7 +329,7 @@ impl OpenRaftNode {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "debug", skip(self))]
     pub async fn propose(&self, request: Request) -> Result<Response> {
         let t0 = std::time::Instant::now();
         self.check_entry_size(&request)?;

@@ -77,7 +77,7 @@ impl MemTable {
         self.size.load(AtomicOrdering::Relaxed)
     }
 
-    #[tracing::instrument(
+    #[tracing::instrument(level = "debug",
     name = "mem_put",
     skip(self, key, value),
     fields(key_size = key.len(), value_size = value.len())
@@ -107,7 +107,7 @@ impl MemTable {
         Ok(())
     }
 
-    #[tracing::instrument(name = "mem_get", skip(self, key))]
+    #[tracing::instrument(level = "debug", name = "mem_get", skip(self, key))]
     pub fn get(&self, key: &[u8], snapshot_seq: u64) -> Result<Option<Vec<u8>>> {
         let seek_key = encode_internal_key(key, snapshot_seq, ValueType::TypePut);
         match self.search(&seek_key)? {
@@ -126,7 +126,7 @@ impl MemTable {
         }
     }
 
-    #[tracing::instrument(name = "mem_search", skip(self, seek_key))]
+    #[tracing::instrument(level = "debug", name = "mem_search", skip(self, seek_key))]
     pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Arc<[u8]>, ValueType)>> {
         let bound = InternalKeyBytes::from_slice(seek_key);
         let Some(entry) = self.table.lower_bound(Bound::Included(&bound)) else {

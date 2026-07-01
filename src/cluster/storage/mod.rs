@@ -114,7 +114,7 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         Ok(self.state.read().vote)
     }
 
-    #[instrument(name = "raft_append_log", skip(self, entries))]
+    #[instrument(level = "debug", name = "raft_append_log", skip(self, entries))]
     async fn append_to_log<I>(
         &mut self,
         entries: I,
@@ -157,7 +157,7 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         Ok((state.last_applied, membership))
     }
 
-    #[instrument(name = "raft_apply_sm", skip(self, entries), fields(entry_count = entries.len()))]
+    #[instrument(level = "debug", name = "raft_apply_sm", skip(self, entries), fields(entry_count = entries.len()))]
     async fn apply_to_state_machine(
         &mut self,
         entries: &[Entry<TypeConfig>],

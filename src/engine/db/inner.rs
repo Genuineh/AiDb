@@ -378,7 +378,7 @@ impl DB {
         }
     }
 
-    #[tracing::instrument(name = "db_put", skip(self, key, value))]
+    #[tracing::instrument(level = "debug", name = "db_put", skip(self, key, value))]
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
@@ -407,7 +407,7 @@ impl DB {
         Ok(())
     }
 
-    #[tracing::instrument(name = "db_get", skip(self, key))]
+    #[tracing::instrument(level = "debug", name = "db_get", skip(self, key))]
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
@@ -500,7 +500,7 @@ impl DB {
         Ok(())
     }
 
-    #[tracing::instrument(name = "db_write_batch", skip(self, batch))]
+    #[tracing::instrument(level = "debug", name = "db_write_batch", skip(self, batch))]
     pub fn write(&self, batch: &WriteBatch) -> Result<()> {
         if batch.is_empty() {
             return Ok(());
