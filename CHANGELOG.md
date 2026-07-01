@@ -32,6 +32,19 @@
 - **WriteBatch / WAL 边界 (ISSUE-001, ISSUE-002)**: batch 写入前预检空间并在必要时先 rotate; 写入期间禁用 `max_wal_size` auto-rotate; 允许单文件临时超过 `max_wal_size`. 回归: `tests/modules/wal/write_batch_boundary.rs`, `tests/engine/wal_write_batch_boundary.rs`.
 - **数据 Group apply 原子 WriteBatch (ISSUE-005)**: `apply_data_entry_atomic` / `apply_membership_entry_atomic` 将 SM ops (或 membership) 与 `last_applied` 合并为单次 `DB::write`, 对齐 Meta `apply_meta_entry`. 回归: `tests/modules/cluster/group_apply_batch.rs`.
 
+### Changed
+
+- **Raft apply 批量合并 (ISSUE-020)**: `apply_entries_internal` 将连续的 Normal data entry 合并到单个 WriteBatch, 一次性写入 SM + `last_applied`. 移除 `apply_data_entry_atomic`. Membership / Meta / Blank entry 保持独立原子写. 回归: `tests/modules/cluster/group_apply_batch.rs`.
+- **Block Cache LRU 双计数器 (ISSUE-021)**: LRU 队列 O(n) `VecDeque::retain` 替换为双计数器 `(key, counter)` 方案, `get()` 触达 + 惰性清理 stale entry 均为 O(1).
+- **写入路径免全 LSM 读 (ISSUE-022)**: `put()` / `write()` 的 key 存在性检查改用 active MemTable 查找, 移除写锁外的全 LSM `get()` 调用.
+- **Compaction 单次遍历 (ISSUE-023)**: `run_single` 合并 `count_dedup_entries` 的计数遍历和写入遍历, Bloom filter 预期 key 数改用文件大小粗估.
+- **MemTable 零拷贝**: `search()` 返回 `Option<(Arc<[u8]>, ValueType)>` 替代 `Option<(Vec<u8>, ValueType)>`, 仅在最终返回时 `to_vec()`.
+
+### Fixed
+
+- **Raft apply 错误处理**: 修复内层 batching loop 中 `append_request_to_batch` 失败时错误 entry 的 log_id 被写入 `last_applied` 的 bug (apply.rs).
+- **Block Cache LRU 惰性清理**: 修复纯读负载下 `lru_queue` 因 `get()` 不断追加但从不清理 stale entry 而无限增长的 bug (block_cache.rs).
+
 ## [0.14.10] - 2026-06-10
 
 ### Added

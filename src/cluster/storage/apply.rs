@@ -54,11 +54,16 @@ impl OpenRaftStorage {
             "apply_entries_internal: applying batch",
         );
 
-        for entry in entries {
+        let mut i = 0;
+        while i < entries.len() {
+            let entry = &entries[i];
+
+            // 跳过已 apply 的 entry
             if let Some(ref applied) = last_applied {
                 if entry.log_id.index <= applied.index {
                     tracing::trace!(index = entry.log_id.index, "skipping already-applied entry",);
                     responses.push(Response::Ok);
+                    i += 1;
                     continue;
                 }
             }
@@ -70,26 +75,113 @@ impl OpenRaftStorage {
               "applying entry",
             );
 
-            let response = match &entry.payload {
-                EntryPayload::Normal(request) => match request {
-                    Request::Meta(meta_req)
-                        if self.group_id == METARAFT_GROUP_ID && self.meta_state.is_some() =>
-                    {
-                        self.apply_meta_entry(meta_req, &entry.log_id)?
+            match &entry.payload {
+                EntryPayload::Normal(Request::Meta(meta_req))
+                    if self.group_id == METARAFT_GROUP_ID && self.meta_state.is_some() =>
+                {
+                    let response = self.apply_meta_entry(meta_req, &entry.log_id)?;
+                    last_applied = Some(entry.log_id);
+                    responses.push(response);
+                    i += 1;
+                }
+                EntryPayload::Normal(_request) => {
+                    // 将连续的 data entry 批量合并到一个 WriteBatch
+                    let t0 = std::time::Instant::now();
+                    let mut batch = WriteBatch::new();
+                    let mut batched_responses: Vec<Response> = Vec::new();
+                    let batch_start = i;
+                    let mut last_log_id = entry.log_id;
+                    // true 表示内层循环遇到了错误, 响应已推入 responses, 无需走 batch 写入逻辑.
+                    let mut errored_empty = false;
+
+                    while i < entries.len() {
+                        let e = &entries[i];
+                        if let Some(ref applied) = last_applied {
+                            if e.log_id.index <= applied.index {
+                                break; // 已 skip 的不纳入当前批
+                            }
+                        }
+                        match &e.payload {
+                            EntryPayload::Normal(Request::Meta(_)) => break,
+                            EntryPayload::Membership(_) => break,
+                            EntryPayload::Blank => break,
+                            EntryPayload::Normal(req) => {
+                                match self.append_request_to_batch(&mut batch, req) {
+                                    Ok(response) => {
+                                        batched_responses.push(response);
+                                        last_log_id = e.log_id;
+                                        i += 1;
+                                    }
+                                    Err(err) => {
+                                        if batch.is_empty() {
+                                            // 第一个 entry 就失败: 错误已记入 responses,
+                                            // 不写 last_applied (失败 entry 不应标记为已 apply)
+                                            responses.push(Response::Error(err.to_string()));
+                                            last_applied = Some(e.log_id);
+                                            i += 1;
+                                            errored_empty = true;
+                                        } else {
+                                            // batch 中有成功 entry: 错误加入 batched_responses,
+                                            // 与成功 entry 一起写 last_applied
+                                            batched_responses.push(Response::Error(err.to_string()));
+                                            last_log_id = e.log_id;
+                                            i += 1;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
-                    _ => self.apply_data_entry_atomic(request, &entry.log_id)?,
-                },
+
+                    if errored_empty {
+                        // 第一个 entry 失败, 不写任何数据
+                        continue;
+                    }
+
+                    if !batch.is_empty() {
+                        batch.put(
+                            last_applied_key(self.group_id),
+                            Self::serialize_last_applied(&last_log_id)?,
+                        );
+                        self.db
+                            .write(&batch)
+                            .map_err(|e| Error::Cluster(map_db_err(e)))?;
+                        self.state.write().last_applied = Some(last_log_id);
+
+                        let count = batched_responses.len();
+                        tracing::info!(
+                            target: "perf",
+                            group_id = self.group_id,
+                            batch_size = count,
+                            from_index = entries[batch_start].log_id.index,
+                            to_index = last_log_id.index,
+                            ms = t0.elapsed().as_millis(),
+                            "raft_apply_batch",
+                        );
+
+                        responses.extend(batched_responses);
+                        last_applied = Some(last_log_id);
+                    } else {
+                        // 所有 entry 都是 PutConditional 跳过: 只需写 last_applied
+                        self.persist_last_applied_atomic(&last_log_id)?;
+                        responses.extend(batched_responses);
+                        last_applied = Some(last_log_id);
+                    }
+                }
                 EntryPayload::Membership(m) => {
-                    self.apply_membership_entry_atomic(m, &entry.log_id)?
+                    let response = self.apply_membership_entry_atomic(m, &entry.log_id)?;
+                    last_applied = Some(entry.log_id);
+                    responses.push(response);
+                    i += 1;
                 }
                 EntryPayload::Blank => {
                     self.persist_last_applied_atomic(&entry.log_id)?;
-                    Response::Ok
+                    responses.push(Response::Ok);
+                    last_applied = Some(entry.log_id);
+                    i += 1;
                 }
-            };
-
-            last_applied = Some(entry.log_id);
-            responses.push(response);
+            }
         }
 
         Ok(responses)
@@ -167,26 +259,6 @@ impl OpenRaftStorage {
             .map_err(|e| Error::Cluster(map_db_err(e)))?;
         self.state.write().last_applied = Some(*log_id);
         Ok(())
-    }
-
-    fn apply_data_entry_atomic(
-        &self,
-        request: &Request,
-        log_id: &LogId<crate::cluster::types::NodeId>,
-    ) -> Result<Response> {
-        let t0 = std::time::Instant::now();
-        let mut batch = WriteBatch::new();
-        let response = self.append_request_to_batch(&mut batch, request)?;
-        batch.put(
-            last_applied_key(self.group_id),
-            Self::serialize_last_applied(log_id)?,
-        );
-        self.db
-            .write(&batch)
-            .map_err(|e| Error::Cluster(map_db_err(e)))?;
-        self.state.write().last_applied = Some(*log_id);
-        tracing::info!(target: "perf", group_id = self.group_id, index = log_id.index, ms = t0.elapsed().as_millis(), "raft_apply_entry");
-        Ok(response)
     }
 
     fn apply_membership_entry_atomic(

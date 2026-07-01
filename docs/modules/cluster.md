@@ -83,7 +83,8 @@ flowchart TB
 ```
 
 - 数据 Group 的用户 key 在 apply 时写入 `sm_key(group_id, user_key)` (`storage/apply.rs`)
-- Meta / 数据 Group apply 均单 WriteBatch 原子写 SM (或 meta/membership keys) + `last_applied` (`apply_meta_entry`, `apply_data_entry_atomic`)
+- Meta / Membership / Blank entry 保持独立 WriteBatch 原子写入 (`apply_meta_entry`, `apply_membership_entry_atomic`)
+- **连续的 Normal data entry 合并为单个 WriteBatch, 一次性写入 SM + `last_applied`** (`apply_entries_internal` 批量合并逻辑, 2026-07-01 重构)
 
 ## 关键 invariant (勿破坏)
 
@@ -114,7 +115,7 @@ sequenceDiagram
   Note over ORN: 单 WriteBatch 写 meta keys + last_applied
 ```
 
-数据 Group apply 同样逐 entry 单 WriteBatch (SM ops + last_applied), 见 `apply_data_entry_atomic`.
+数据 Group apply 将连续的 Normal entry 合并到单个 WriteBatch (SM ops + last_applied), 见 `apply_entries_internal`; Membership/Blank entry 仍独立原子写入.
 
 ### 单 key 写入 (数据 Group)
 

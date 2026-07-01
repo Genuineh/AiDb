@@ -35,7 +35,7 @@ impl ImmutableMemTable {
         self.table.get_latest(key)
     }
 
-    pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Vec<u8>, ValueType)>> {
+    pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Arc<[u8]>, ValueType)>> {
         self.table.search(seek_key)
     }
 
@@ -113,7 +113,7 @@ impl MemTable {
         match self.search(&seek_key)? {
             Some((value, ValueType::TypePut)) => {
                 tracing::debug!(target: "mem", "mem.get.hit");
-                Ok(Some(value))
+                Ok(Some(value.as_ref().to_vec()))
             }
             Some((_, ValueType::TypeDelete)) => {
                 tracing::debug!(target: "mem", "mem.get.miss");
@@ -127,7 +127,7 @@ impl MemTable {
     }
 
     #[tracing::instrument(name = "mem_search", skip(self, seek_key))]
-    pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Vec<u8>, ValueType)>> {
+    pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Arc<[u8]>, ValueType)>> {
         let bound = InternalKeyBytes::from_slice(seek_key);
         let Some(entry) = self.table.lower_bound(Bound::Included(&bound)) else {
             return Ok(None);
@@ -142,7 +142,7 @@ impl MemTable {
             return Ok(None);
         }
         let value_type = extract_value_type(entry_key)?;
-        Ok(Some((entry.value().as_ref().to_vec(), value_type)))
+        Ok(Some((Arc::clone(entry.value()), value_type)))
     }
 
     #[tracing::instrument(

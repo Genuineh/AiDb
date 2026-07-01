@@ -1,4 +1,4 @@
-//! Sharded LRU Block Cache with hit/miss statistics.
+//! Sharded LRU Block Cache with O(1) operations and hit/miss statistics.
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -47,25 +47,41 @@ pub fn shard_index(key: &CacheKey) -> usize {
 }
 
 struct ShardInner {
-    cache: HashMap<CacheKey, Bytes>,
-    lru_queue: VecDeque<CacheKey>,
+    /// value (Bytes) + access_counter. 计数器用于检测 lru_queue 中的 stale entry.
+    cache: HashMap<CacheKey, (Bytes, u64)>,
+    /// LRU 顺序: (key, 插入/访问时的 access_counter).
+    /// 可能包含 stale entry (counter 不匹配), 在 eviction 时惰性跳过.
+    lru_queue: VecDeque<(CacheKey, u64)>,
     current_size: usize,
+    /// 单调递增计数器, 每次 get hit 或 insert 时递增.
+    next_counter: u64,
 }
 
 impl ShardInner {
-    /// Evict the LRU entry. Returns true if something was evicted.
-    fn evict_one(&mut self, evictions: &AtomicU64) -> bool {
-        let Some(victim) = self.lru_queue.pop_front() else {
-            return false;
-        };
-        if let Some(bytes) = self.cache.remove(&victim) {
-            self.current_size -= bytes.len();
-            evictions.fetch_add(1, Ordering::Relaxed);
-            tracing::debug!(target: "cache", evicted_count = 1, "cache.evict");
-            let _span = tracing::trace_span!("cache_evict", evicted_count = 1).entered();
-            true
-        } else {
-            false
+    /// Evict the LRU entry, skipping stale entries. Returns true if something was evicted.
+    fn evict_one(&mut self, evictions: &AtomicU64, look_for: Option<&CacheKey>) -> bool {
+        loop {
+            let Some((key, counter)) = self.lru_queue.pop_front() else {
+                return false;
+            };
+            // 跳过显式排除的 key (用于 insert 中覆盖旧 key 的场景)
+            if let Some(exclude) = look_for {
+                if &key == exclude {
+                    continue;
+                }
+            }
+            // counter 匹配才说明这是真正的 LRU entry
+            if let Some((_, ref stored_counter)) = self.cache.get(&key) {
+                if *stored_counter == counter {
+                    if let Some((bytes, _)) = self.cache.remove(&key) {
+                        self.current_size -= bytes.len();
+                        evictions.fetch_add(1, Ordering::Relaxed);
+                        tracing::debug!(target: "cache", evicted_count = 1, "cache.evict");
+                        return true;
+                    }
+                }
+            }
+            // stale entry 或已删除: 跳过
         }
     }
 }
@@ -75,6 +91,7 @@ struct CacheShard {
 }
 
 /// Thread-safe sharded LRU cache for SSTable Data Block payloads.
+/// 使用双计数器方案实现 O(1) 的 get/insert/eviction 操作.
 pub struct BlockCache {
     shards: Box<[CacheShard; NUM_SHARDS]>,
     /// Per-shard capacity (total capacity divided by NUM_SHARDS; each shard has its
@@ -100,6 +117,7 @@ impl BlockCache {
                     cache: HashMap::new(),
                     lru_queue: VecDeque::new(),
                     current_size: 0,
+                    next_counter: 0,
                 }),
             })),
             capacity_per_shard,
@@ -132,19 +150,39 @@ impl BlockCache {
 
         let idx = shard_index(&key);
         let mut guard = self.shards[idx].inner.lock();
-        let value = guard.cache.get(&key).cloned();
+        if let Some((value, _)) = guard.cache.get_mut(&key) {
+            let result = value.clone();
+            // O(1) LRU touch: 递增 counter 并追加到队尾
+            guard.next_counter += 1;
+            let new_counter = guard.next_counter;
+            // 更新 cache 中的 counter
+            if let Some((_, ref mut stored_counter)) = guard.cache.get_mut(&key) {
+                *stored_counter = new_counter;
+            }
+            guard.lru_queue.push_back((key.clone(), new_counter));
 
-        if let Some(bytes) = value {
-            // LRU touch: remove and push back
-            guard.lru_queue.retain(|k| k != &key);
-            guard.lru_queue.push_back(key);
+            // 惰性清理 stale entry: 从队头移除 counter 不匹配的过时条目.
+            // 每个 get hit 最多清理一个, 均摊 O(1).
+            while let Some((ref qkey, qcounter)) = guard.lru_queue.pop_front() {
+                let stale = match guard.cache.get(qkey) {
+                    Some((_, stored_counter)) => *stored_counter != qcounter,
+                    None => true,
+                };
+                if !stale {
+                    // 遇到活跃 entry, 放回队头并停止清理
+                    guard.lru_queue.push_front((qkey.clone(), qcounter));
+                    break;
+                }
+                // stale entry 已移除, 继续检查下一个
+            }
+
             drop(guard);
             self.hits.fetch_add(1, Ordering::Relaxed);
             #[cfg(feature = "monitoring")]
             crate::metrics::record_block_cache_hit();
             tracing::Span::current().record("hit", true);
             tracing::debug!(target: "cache", "cache.hit");
-            Some(bytes)
+            Some(result)
         } else {
             drop(guard);
             self.misses.fetch_add(1, Ordering::Relaxed);
@@ -174,12 +212,20 @@ impl BlockCache {
         let idx = shard_index(&key);
         let mut guard = self.shards[idx].inner.lock();
 
+        // 覆盖已有 key: 先清理旧 LRU entry (惰性, evict_one 会跳过 stale)
+        if let Some((old, _)) = guard.cache.remove(&key) {
+            guard.current_size -= old.len();
+        }
+
+        guard.next_counter += 1;
+        let counter = guard.next_counter;
+
         // Best-effort eviction loop
         let mut eviction_count = 0usize;
         while guard.current_size + value_len > self.capacity_per_shard
             && eviction_count < max_evictions
         {
-            if guard.evict_one(&self.evictions) {
+            if guard.evict_one(&self.evictions, Some(&key)) {
                 eviction_count += 1;
             } else {
                 break;
@@ -188,17 +234,20 @@ impl BlockCache {
 
         // Guaranteed eviction (locked)
         while guard.current_size + value_len > self.capacity_per_shard {
-            if !guard.evict_one(&self.evictions) {
+            if !guard.evict_one(&self.evictions, None) {
                 break;
             }
         }
 
-        if let Some(old) = guard.cache.insert(key.clone(), value) {
-            guard.current_size -= old.len();
-            guard.lru_queue.retain(|k| k != &key);
+        let inserted = guard
+            .cache
+            .insert(key.clone(), (value, counter))
+            .is_none();
+        if inserted {
+            guard.current_size += value_len;
         }
-        guard.lru_queue.push_back(key);
-        guard.current_size += value_len;
+        // 无论之前是否存在, 追加新的 LRU entry
+        guard.lru_queue.push_back((key, counter));
         self.insertions.fetch_add(1, Ordering::Relaxed);
         tracing::debug!(target: "cache", "cache.insert");
         drop(guard);

@@ -198,7 +198,7 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 - 并发 `get` 无锁读 MemTable: WriteBatch 逐条写入 MemTable 期间, 其他线程可能看到 batch **部分** 效果 (与 LevelDB 一致). Snapshot 创建持 `write_lock`, 无此问题.
 - `iter`/`scan` 不过滤到当前 sequence, 使用 `K_MAX_SEQUENCE` 见全部已写入版本.
-- `total_key_count` 在 `write_lock` 外更新, 仅作近似统计 / metrics.
+- `total_key_count` 在 `write_lock` 内通过 active MemTable 快速检查 key 存在性, 仅作近似统计 / metrics (AtomicUsize Relaxed 序, 不持久化).
 - 数据目录格式与旧版 `aidb-oldmain` **不兼容** (文本 WAL → 二进制 WalEntry).
 
 ## 待核实

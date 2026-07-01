@@ -388,10 +388,10 @@ impl DB {
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("put");
 
-        let existed = self.get(key)?.is_some();
         let _guard = self.write_lock.lock();
         let seq = self.alloc_sequence(1)?;
         self.write_put_to_wal(seq, key, value)?;
+        let existed = self.memtable.read().get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_some();
         self.memtable.read().put(key, value, seq)?;
         drop(_guard);
 
@@ -427,14 +427,14 @@ impl DB {
         let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
         if let Some((value, ty)) = self.memtable.read().search(&seek_key)? {
             return Ok(match ty {
-                ValueType::TypePut => Some(value),
+                ValueType::TypePut => Some(value.as_ref().to_vec()),
                 ValueType::TypeDelete => None,
             });
         }
         for imm in self.immutable_memtables.read().iter().rev() {
             if let Some((value, ty)) = imm.search(&seek_key)? {
                 return Ok(match ty {
-                    ValueType::TypePut => Some(value),
+                    ValueType::TypePut => Some(value.as_ref().to_vec()),
                     ValueType::TypeDelete => None,
                 });
             }
@@ -513,25 +513,7 @@ impl DB {
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("write_batch");
 
-        let mut key_delta: isize = 0;
-        for op in &batch.operations {
-            match op {
-                WriteOp::Put { key, .. } => {
-                    Self::validate_user_key(key)?;
-                    if self.get(key)?.is_none() {
-                        key_delta += 1;
-                    }
-                }
-                WriteOp::Delete { key } => {
-                    Self::validate_user_key(key)?;
-                    if self.get(key)?.is_some() {
-                        key_delta -= 1;
-                    }
-                }
-            }
-        }
-        let precheck_ms = t0.elapsed().as_millis();
-
+        // 在写锁内用 MemTable 快速检查 key 存在性 (避免全 LSM 读)
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
         let lock_acquired = std::time::Instant::now();
@@ -557,8 +539,8 @@ impl DB {
             }
         }
 
-        // Scope the read lock so it is released before maybe_freeze() which
-        // may need a write lock on the same memtable.
+        // 在 MemTable 写入前检查 key 存在性, 用 O(1) 内存操作替代 O(log N) 磁盘读
+        let mut key_delta: isize = 0;
         {
             let mt = self.memtable.read();
             for (i, op) in batch.operations.iter().enumerate() {
@@ -566,10 +548,16 @@ impl DB {
                 match op {
                     WriteOp::Put { key, value } => {
                         Self::validate_user_key(key)?;
+                        if mt.get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_none() {
+                            key_delta += 1;
+                        }
                         mt.put(key, value, seq)?;
                     }
                     WriteOp::Delete { key } => {
                         Self::validate_user_key(key)?;
+                        if mt.get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_some() {
+                            key_delta -= 1;
+                        }
                         mt.delete(key, seq)?;
                     }
                 }
@@ -600,7 +588,7 @@ impl DB {
         }
         self.maybe_freeze()?;
         let total_ms = t0.elapsed().as_millis();
-        tracing::info!(target: "perf", op_count = batch.len(), total_ms, precheck_ms, lock_hold_ms, "db_write_done");
+        tracing::info!(target: "perf", op_count = batch.len(), total_ms, lock_hold_ms, "db_write_done");
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation_duration("write_batch", op_start.elapsed().as_secs_f64());

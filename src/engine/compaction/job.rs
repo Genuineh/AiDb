@@ -165,21 +165,18 @@ impl CompactionJob {
         self.run_split(file_numbers)
     }
 
-    /// 单线程完整 compaction (原有逻辑).
+    /// 单线程完整 compaction. 合并 count_dedup_entries 的计数遍历和写入遍历, 减少一次完整 I/O.
     fn run_single(&self, file_number: u64) -> Result<CompactionResult> {
-        let count = self.count_dedup_entries()?;
-        if count == 0 {
-            return Ok(CompactionResult {
-                file_number: 0,
-                entry_count: 0,
-                output_path: sstable_path(&self.db_path, file_number, self.output_level),
-                smallest_key: vec![],
-                largest_key: vec![],
-                file_size: 0,
-            });
-        }
-
         let output_path = sstable_path(&self.db_path, file_number, self.output_level);
+
+        // 粗估条目数以设置 Bloom filter (不做精确计数, 避免双遍历)
+        let estimated_keys: usize = self
+            .all_inputs()
+            .iter()
+            .map(|r| r.file_size() as usize / 100)
+            .sum::<usize>()
+            .max(1);
+
         let mut builder = SSTableBuilder::new(
             &output_path,
             self.block_size,
@@ -188,7 +185,7 @@ impl CompactionJob {
             self.bloom_false_positive_rate,
         )?;
         if self.bloom_false_positive_rate > 0.0 {
-            builder.set_expected_keys(count);
+            builder.set_expected_keys(estimated_keys);
         }
 
         let mut merge_iter = MergeIterator::new(self.all_inputs())?;

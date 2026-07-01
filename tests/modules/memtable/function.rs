@@ -73,7 +73,7 @@ fn test_memtable_search() {
     mt.put(b"k", b"v", 5).unwrap();
     let seek = encode_internal_key(b"k", 5, ValueType::TypePut);
     let (val, ty) = mt.search(&seek).unwrap().unwrap();
-    assert_eq!(val, b"v");
+    assert_eq!(&*val, b"v");
     assert_eq!(ty, ValueType::TypePut);
 
     let seek_old = encode_internal_key(b"k", 3, ValueType::TypePut);
