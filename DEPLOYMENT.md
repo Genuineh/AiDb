@@ -24,7 +24,7 @@ AiDb 是 **嵌入式 lib crate**, 无独立守护进程、无内置 HTTP listene
 | (engine only) | — | `src/engine/*` 始终编译 | 最小嵌入 |
 | `cluster` | ❌ | `src/cluster/*`, tonic/prost/tokio/openraft | Multi-Raft / MetaRaft |
 | `monitoring` | ❌ | `src/metrics.rs`, Prometheus 系列 | 嵌入方 scrape |
-| `compression` | ❌ | snap/lz4 依赖 | **占位; block 压缩未实现** |
+| `compression` | ❌ | snap/lz4 依赖 | SSTable Data Block Snap/Lz4 压缩 (`Options::default()` 默认 Snap); aikv 生产镜像 (aifactory Dockerfile) 已默认启用 |
 
 **常见组合**:
 
@@ -157,8 +157,8 @@ db.close()?;
 | 方法 | 用途 | 说明 |
 |------|------|------|
 | `Options::for_testing()` | 单测 / 示例 | 小 memtable、无 bloom、关 background_compaction |
-| `Options::for_high_write_throughput()` | 写密集 | 大 memtable; 设 `CompressionType::Snap` 但 **压缩未实现** |
-| `Options::for_high_read_throughput()` | 读密集 | 大 block cache、低 bloom FP |
+| `Options::for_high_write_throughput()` | 写密集 | 大 memtable; `CompressionType::Snap` (需 `compression` feature) |
+| `Options::for_high_read_throughput()` | 读密集 | 大 block cache、低 bloom FP、`CompressionType::None` |
 
 强持久场景可在 default 或 preset 基础上设 `sync_wal: true`, 并酌情调大 `memtable_size` / `block_cache_size`.
 

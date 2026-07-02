@@ -88,7 +88,7 @@ aidb/src/
 | `backup` | yes | `backup::*` | 关则 mod 不存在 |
 | `cluster` | no | `cluster::*` | 需 `protoc`; `cargo build --features cluster` |
 | `monitoring` | no | `metrics`, `cluster/metrics` | Prometheus + tracing span 指标 |
-| `compression` | no | Options 占位 | Snap/Lz4 **未实现** |
+| `compression` | no | `snap`/`lz4` crate | SSTable Data Block Snap/Lz4 压缩; `Options::default()` 默认 Snap |
 
 核心 `engine` 不硬依赖 cluster / backup / monitoring 的可选 crate.
 

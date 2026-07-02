@@ -18,7 +18,7 @@
 | 全量备份与恢复 | `backup` (默认开启) | `BackupManager`, `RecoveryManager` |
 | 分布式存储 | `cluster` | MetaRaft 控制面 + Multi-Raft 数据面, 16384 slot (CRC16) |
 | Prometheus 指标 | `monitoring` | `aidb_*` 系列, `register_into` 供嵌入方 scrape |
-| 块压缩 | `compression` | 占位, 尚未实现 |
+| 块压缩 | `compression` | SSTable Data Block Snap/Lz4 压缩; `Options::default()` 默认 Snap |
 
 Feature 组合与构建命令见 [DEPLOYMENT.md](DEPLOYMENT.md).
 

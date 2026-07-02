@@ -146,7 +146,7 @@ sequenceDiagram
 └──────────────────────────┘
 ```
 
-每个 Data/Index block 后跟 5B trailer: `[type:1][crc:4]`, CRC 覆盖**未压缩** payload.
+每个 Data/Index block 磁盘布局为 `[payload][type:1][crc:4]` (5B trailer). `payload` 启用压缩时为**压缩后**字节 (Index/Meta Index block 固定不压缩); CRC32 覆盖**解压后**明文, 与压缩算法无关. `BlockHandle.size` 记录的是 `payload` 的实际字节数 (不含 5B trailer) —— 即 `write_block` 返回值, **不可**用压缩前的原始长度代替, 否则读侧会按错误偏移拆 trailer, 表现为 `Error::Corruption("block CRC mismatch")` (2026-07-02 前的 P0 bug, 已修复; 回归见下方「测试」).
 
 - 命名: `{file_number:06}_L{level}.sst`
 - 空 SST: `finish` 报错; flush 路径 `count==0` 时 `abandon`
@@ -222,7 +222,7 @@ Checkpoint::verify_openable(dest, Options::default())?;
 |----|-------------|------|
 | `block_size` | 4KB | Data Block 切分 |
 | `block_restart_interval` | 16 | restart 间隔 |
-| `compression` | `None` | Snap/Lz4 需 crate feature `compression` |
+| `compression` | `Snap` | `Options::default()`/`for_high_write_throughput()` 默认 Snap; `for_testing()`/`for_high_read_throughput()` 为 `None`. Snap/Lz4 需 crate feature `compression` |
 | `bloom_false_positive_rate` | 0.01 | `0.0` = 不写 Bloom |
 | `block_cache_size` | 64MB | `0` = 禁用 |
 | `level0_compaction_trigger` | 4 | L0 compaction |
@@ -239,7 +239,7 @@ Checkpoint::verify_openable(dest, Options::default())?;
 
 | flag | 说明 |
 |------|------|
-| `compression` | 启用 Snap/LZ4 block 压缩; `default = ["backup"]` **不含**, 需显式 `--features compression` |
+| `compression` | 启用 Snap/LZ4 block 压缩; `default = ["backup"]` **不含**, 需显式 `--features compression` (aikv 生产镜像/aifactory Dockerfile 已默认启用) |
 | `monitoring` | OTel: bloom FP, SST/compaction 指标 |
 
 ### 环境变量
@@ -255,6 +255,8 @@ cargo test --test sstable --test compaction --test filter --test cache -- --test
 cargo test --test engine compaction -- --test-threads=1
 cargo test checkpoint_consistency -- --test-threads=1
 cargo test --test regression -- --test-threads=1
+# 压缩 (Snap/Lz4) 多 block 写读 roundtrip; 默认 feature 不含 compression, 需显式加上
+cargo test --features compression --test sstable function::test_multi_block_read_with -- --test-threads=1
 ```
 
 ## 已知限制

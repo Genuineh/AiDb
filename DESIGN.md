@@ -43,7 +43,6 @@ AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs
 |----|------|
 | Column Family / 多 CF | 单 keyspace; aikv 用 `{db_index}:` 前缀区分逻辑库 |
 | 复杂事务 | 仅 WriteBatch + Snapshot MVCC |
-| Block 压缩 | `compression` feature 与 `CompressionType::Snap/Lz4` 为占位, **未实现** |
 | ThinReplication | oldmain 曾探索; **当前全量 Raft log 复制**; inventory 列为未来考量 |
 | 内置 HTTP `/metrics` | 见 [可观测性](#可观测性) 与 ISSUE-014 |
 | `aidb-admin` CLI | 用库 API 或 `examples/` |

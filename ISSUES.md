@@ -38,6 +38,17 @@
 
 <!-- 按 ISSUE-NNN 倒序追加 -->
 
+### ISSUE-020: SSTable 压缩 block CRC 损坏 (P0)
+
+- **状态**: closed (fixed 2026-07-02, commit `702b929`)
+- **发现于**: 生产集群性能优化排查 (`aidb::config::Options::default()` 默认 `CompressionType::Snap`)
+- **相关 src**: `src/engine/sstable/builder.rs` (`SSTableBuilder::flush_data_block`), `src/engine/sstable/block_io.rs` (`write_block`/`compress_block`/`decompress_block`)
+- **现象**: `flush_data_block` 用压缩**前** `block_data.len()` 计算 `BlockHandle.size` 并累加 `data_block_offset`, 但落盘的是压缩**后**的 payload; 只要一张 SST 出现第 2 个 data block, 读侧就按错误偏移拆 trailer, 读到垃圾 `compression_type`/`crc` 字段, 报 `Error::Corruption("block CRC mismatch")`. 同一批代码里还有一个被这个 bug 掩盖的独立问题: LZ4 compress 用 `prepend_size=false` 写入却用 `decompress(data, None)` 解压 (要求前缀带长度), 二者不匹配导致 LZ4 解压必然失败.
+- **影响**: `Options::default()`/`for_high_write_throughput()` 默认启用 Snap 压缩, 是生产/aikv 默认路径; 此前所有 SSTable 测试都只覆盖 `CompressionType::None`, 从未真正测过多 block 场景下的 Snap/Lz4 读写, 掩盖了两个 bug 长期存在.
+- **修复**: `write_block` 改为返回实际写入的 payload 长度, 调用方 (`flush_data_block` 及 `finish()` 中 meta_index/index block) 均改用该返回值计算 `handle.size`; LZ4 统一为 `prepend_size=true` 配 `decompress(_, None)`.
+- **回归**: `tests/modules/sstable/function.rs::test_multi_block_read_with_snap_compression` / `test_multi_block_read_with_lz4_compression`; 另在本地 6 节点集群用修复后镜像跑压测, 验证真实落盘的 ~12000 block/文件 SST 读写无 `Corruption`.
+- **下一步**: 已关闭. 详见 `CHANGELOG.md` Unreleased/Fixed.
+
 ### ISSUE-019: Block Cache capacity 未导出 OTel gauge
 
 - **状态**: closed
