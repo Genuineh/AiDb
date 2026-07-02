@@ -69,6 +69,26 @@ impl OpenRaftSnapshotBuilder {
 }
 
 impl OpenRaftStorage {
+    /// 扫描 `[start, end)` 范围内现存的 key, 把对应的 `Delete` 操作追加进
+    /// `batch` (不落盘) —— 供调用方把"清空旧范围"和"写入新数据"合并成
+    /// 同一次 `db.write()`, 参见 `install_snapshot_atomic` 顶部的说明。
+    fn append_delete_range_to_batch(
+        db: &DB,
+        batch: &mut WriteBatch,
+        start: &[u8],
+        end: &[u8],
+    ) -> Result<()> {
+        if start >= end {
+            return Ok(());
+        }
+        let iter = db.scan(Some(start), Some(end))?;
+        for item in iter {
+            let (k, _) = item?;
+            batch.delete(k);
+        }
+        Ok(())
+    }
+
     pub(crate) fn install_snapshot_atomic(
         &self,
         meta: &SnapshotMeta<NodeId, BasicNode>,
@@ -79,16 +99,29 @@ impl OpenRaftStorage {
 
         let mut batch = WriteBatch::new();
 
+        // 旧范围的删除必须和新数据的写入合入*同一个* WriteBatch, 才能保证
+        // 一次 db.write() 的原子性 —— 之前 delete_range() 是单独一次
+        // db.write() (它内部自己 scan + batch delete), 和下面新数据的
+        // db.write() 是两次独立的写. 中途 (delete 已落盘, 新数据还没写)
+        // 崩溃重启, 状态机会被永久留空: openraft 认为 snapshot 已装好
+        // (last_applied 会指向 snapshot 的 log_id), 但实际数据一条都没有,
+        // 且触发这次 snapshot 的日志很可能已经被 purge, 无法重新 apply 找回。
+        // 这里改成先把待删除的 key 收集进同一个 batch, 和新 pairs 一起
+        // 只 write 一次: 崩溃时要么全部还是旧数据, 要么全部是新数据。
         if self.group_id == METARAFT_GROUP_ID {
-            self.db
-                .delete_range(&meta_range_start(), &meta_range_end())?;
+            Self::append_delete_range_to_batch(
+                &self.db,
+                &mut batch,
+                &meta_range_start(),
+                &meta_range_end(),
+            )?;
             for (key, value) in &snapshot.pairs {
                 batch.put(key.clone(), value.clone());
             }
         } else {
             let sm_start = sm_range_start(self.group_id);
             let sm_end = sm_range_end(self.group_id);
-            self.db.delete_range(&sm_start, &sm_end)?;
+            Self::append_delete_range_to_batch(&self.db, &mut batch, &sm_start, &sm_end)?;
             for (key, value) in &snapshot.pairs {
                 batch.put(super::keys::sm_key(self.group_id, key), value.clone());
             }
@@ -201,6 +234,97 @@ mod tests {
                 .unwrap()
                 .map(|id| id.index),
             Some(5)
+        );
+    }
+
+    /// 崩溃注入回归测试: `install_snapshot_atomic` 必须把"删旧范围"和"写新数据"
+    /// 合并进同一个 WriteBatch, 才能靠 WAL 的 batch 级原子回放保证 —— 崩溃发生在
+    /// 这次写入落盘过程中的任意时刻, 重启后要么完全看不到这次写入 (回滚到旧状态),
+    /// 要么完全看到新状态, 绝不会出现"旧数据已删、新数据没写"的空洞。
+    ///
+    /// 用截断 WAL 尾部字节模拟"写入中途断电/进程被杀", 这是本仓库现有崩溃测试
+    /// (`tests/modules/db/wal_corruption.rs`) 采用的标准手法: 一次成功写入后
+    /// 截掉尾部若干字节, 相当于验证"如果这次写只有部分字节落盘会怎样"。
+    #[test]
+    fn test_install_snapshot_atomic_truncated_mid_write_never_leaves_hole() {
+        fn find_latest_wal(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+            std::fs::read_dir(dir)
+                .ok()?
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with("wal_") && n.ends_with(".log"))
+                })
+                .max_by_key(|e| {
+                    e.path()
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .and_then(|n| n.strip_prefix("wal_"))
+                        .and_then(|n| n.strip_suffix(".log"))
+                        .and_then(|n| n.parse::<u64>().ok())
+                        .unwrap_or(0)
+                })
+                .map(|e| e.path())
+        }
+
+        let dir = TempDir::new().unwrap();
+        let mut opts = Options::for_testing();
+        opts.memtable_size = 64 * 1024 * 1024; // 足够大, 不触发 flush/rotate
+        opts.sync_wal = true;
+
+        {
+            let db = DB::open(dir.path(), opts.clone()).unwrap();
+            let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
+
+            // 旧状态: snapshot 安装前 state machine 里已有的数据.
+            let mut old_batch = ThinWriteBatch::new();
+            old_batch.put(b"old1".to_vec(), b"v1".to_vec());
+            old_batch.put(b"old2".to_vec(), b"v2".to_vec());
+            storage.apply_batch_to_sm(&old_batch).unwrap();
+
+            // 新 snapshot: old1 被覆盖新值, old2 被删除 (不在新 pairs 里), 新增 new1.
+            let pairs = vec![
+                (b"old1".to_vec(), b"newv1".to_vec()),
+                (b"new1".to_vec(), b"fresh".to_vec()),
+            ];
+            let data = rmp_serde::to_vec(&SnapshotKv::new(pairs)).unwrap();
+            let log_id = LogId::new(CommittedLeaderId::new(2, 1), 5);
+            let meta = SnapshotMeta {
+                last_log_id: Some(log_id),
+                last_membership: StoredMembership::default(),
+                snapshot_id: "snap-5".into(),
+            };
+            storage.install_snapshot_atomic(&meta, &data).unwrap();
+
+            // 不 close —— 模拟进程崩溃, WAL 文件原样保留在磁盘上.
+        }
+
+        // 截断 WAL 尾部, 模拟"这次 write() 只有部分字节真正落盘"的崩溃场景.
+        let wal = find_latest_wal(dir.path()).expect("WAL file must exist after crash-drop");
+        let bytes = std::fs::read(&wal).unwrap();
+        assert!(bytes.len() > 40, "WAL must contain the snapshot batch");
+        let truncated_len = bytes.len() - 24;
+        std::fs::write(&wal, &bytes[..truncated_len]).unwrap();
+
+        // 重新打开: 不 panic, 状态机必须处于"完全旧" 或"完全新"两个一致状态之一,
+        // 绝不能是二者的混合 (old2 被删了但 new1 没写进来这种空洞).
+        let db2 = DB::open(dir.path(), opts).unwrap();
+        let storage2 = OpenRaftStorage::new(db2, DEFAULT_GROUP_ID, None).unwrap();
+
+        let old1 = storage2.get_state_machine_value(b"old1").unwrap();
+        let old2 = storage2.get_state_machine_value(b"old2").unwrap();
+        let new1 = storage2.get_state_machine_value(b"new1").unwrap();
+
+        let fully_old =
+            old1 == Some(b"v1".to_vec()) && old2 == Some(b"v2".to_vec()) && new1.is_none();
+        let fully_new =
+            old1 == Some(b"newv1".to_vec()) && old2.is_none() && new1 == Some(b"fresh".to_vec());
+
+        assert!(
+            fully_old || fully_new,
+            "snapshot install must be all-or-nothing across a crash, got old1={old1:?} old2={old2:?} new1={new1:?}"
         );
     }
 

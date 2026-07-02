@@ -102,6 +102,63 @@ fn test_snapshot_long_hold_heavy_write() {
     db.close().unwrap();
 }
 
+/// 竞态回归测试 (register 移入 write_lock 前): `db.snapshot()` 内部必须在
+/// 释放 write_lock 之前完成 `snapshots.register(seq)`, 否则在"读到 seq"和
+/// "注册保护"之间存在窗口 —— 一次恰好插进这个窗口的并发写入 + compaction
+/// 可能在 snapshot 尚未注册时把它需要的旧版本当作"无人保护"直接 GC 掉,
+/// 导致该 snapshot 存活期间前后两次读到不一致的结果。用持续高频的并发写 +
+/// flush + compaction 施加压力, 并对每个存活 snapshot 反复重读比对。
+#[test]
+fn test_snapshot_register_race_with_concurrent_write_and_compaction() {
+    let (_dir, db) = temp_db_compaction();
+    db.put(b"k", b"seed").unwrap();
+
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let db_writer = Arc::clone(&db);
+    let stop_writer = Arc::clone(&stop);
+    let writer = thread::spawn(move || {
+        let mut i: u32 = 0;
+        while !stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+            db_writer.put(b"k", &i.to_le_bytes()).unwrap();
+            db_writer
+                .put(&[b'p', (i % 8) as u8], &i.to_le_bytes())
+                .unwrap();
+            if i.is_multiple_of(3) {
+                db_writer.flush().unwrap();
+                let _ = db_writer.drain_compactions();
+            }
+            i = i.wrapping_add(1);
+        }
+    });
+
+    // 保留最近若干个存活 snapshot, 每轮都对所有存活 snapshot 重新校验:
+    // 只要某个 snapshot 曾经读到过某个值, 在它存活期间必须一直读到同一个值.
+    let mut active: std::collections::VecDeque<(aidb::Snapshot, Option<Vec<u8>>)> =
+        std::collections::VecDeque::new();
+
+    for round in 0..800u32 {
+        let snap = db.snapshot().unwrap();
+        let first_read = snap.get(b"k").unwrap();
+        active.push_back((snap, first_read));
+        if active.len() > 32 {
+            active.pop_front();
+        }
+        for (snap, expected) in active.iter() {
+            let got = snap.get(b"k").unwrap();
+            assert_eq!(
+                got, *expected,
+                "round {round}: snapshot(seq={}) 存活期间读到的版本发生变化 (expected={expected:?}, got={got:?}); \
+                 说明 register 与并发写入/compaction 之间存在竞态窗口",
+                snap.sequence()
+            );
+        }
+    }
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    writer.join().unwrap();
+    db.close().unwrap();
+}
+
 /// snapshot 保护: 快照存活期间 compaction 保留旧版本.
 #[test]
 fn test_snapshot_protects_old_versions_during_compaction() {

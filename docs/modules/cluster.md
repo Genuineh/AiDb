@@ -96,6 +96,7 @@ flowchart TB
 - **Router leader**: `observed_group_leaders` (本地 OpenRaft) 优先于 MetaRaft `ReplicaInfo.is_leader`
 - **地址**: MOVED 重定向用 `NodeInfo.client_addr`, 缺省 fallback `rpc_addr`; Raft RPC 始终 `rpc_addr`
 - **Meta 版本**: 每次成功 `apply_meta_request` 后 `ClusterMeta.version += 1`
+- **Apply fail-fast**: `apply_entries_internal` 遇到真实存储错误 (如 `PutConditional` 的 dedup 读 I/O 失败) 必须直接 `?` 向上抛, 交给 openraft 判定该 raft 实例 `Fatal` 并停止服务; **绝不能**把存储故障当作业务级 `Response::Error` 吞掉继续处理下一条, 否则 `last_applied` 会越过失败 entry 被持久化, 数据永久丢失且副本间可能分叉 (2026-07-02 修复, 见 `apply.rs`)
 
 ## 数据流
 
@@ -138,7 +139,13 @@ flowchart TD
   C -->|yes| O[open ShardedStorage + OpenRaftNode + dispatcher.register]
   M --> D{membership drift?}
   D -->|leader only| A[add_learner_nonblocking + change_membership]
+  M --> H[MultiRaftNode::supervise_groups]
+  H --> F{本地 group Fatal?}
+  F -->|yes, 退避窗口已过| RS[remove_group_inner + create_group_inner 就地重开]
+  F -->|no / 仍在退避| SKIP[跳过本 tick]
 ```
+
+- **自愈重启 (`supervise_groups`)**: 每次 lifecycle tick 扫描本地 group, 若 `raft().metrics().running_state` 为 `Err` (即上面 apply fail-fast 触发的 `Fatal`), 按 `(2s * 2^连续失败次数)` 指数退避 (上限 60s) 就地重开该 group (不影响同节点其它 group / gRPC server); 重开**不**传 `init_as_voter=true` (该 group 已是正常集群成员, 只是重新加载磁盘上的现有状态, 不是单节点 bootstrap). 健康后清零退避计数. 指标: `aidb_raft_group_fatal_total` / `aidb_raft_group_restart_total{outcome}` (2026-07-02, 见 `multi_raft_node.rs::supervise_groups`).
 
 ## 关键类型与 API
 
@@ -198,9 +205,9 @@ flowchart TD
 ### 在线 slot 迁移
 
 1. `SlotMigrationManager::start_migration(source, target, slots)` → MetaRaft `BeginSlotMigration`
-2. 后台 `SlotMigrationExecutor::execute` — scan 源 Group → `PutConditional` 到目标
-3. 进度 `UpdateMigrationProgress`; 完成 `commit_migration` → `CommitSlotMigration`
-4. 取消: `cancel_migration` → `CancelSlotMigration`
+2. 后台 `SlotMigrationExecutor::execute` (经 `run_pending_migration`) — scan 源 Group → `PutConditional` 到目标; 执行结果 `(source_group, target_group, slots, is_completed)` 记入 `last_run`
+3. 进度 `UpdateMigrationProgress`; `commit_migration` → `CommitSlotMigration`, **前置校验**: `executor` 已被消费 (即 `run_pending_migration` 跑过) 且 `last_run` 与 MetaRaft 当前迁移状态的 `(source_group, target_group, slots)` **完全一致**且 `is_completed=true`, 否则拒绝提交 (防止 `run_pending_migration` 从未执行/执行了另一批 slots/执行到一半就提交, 导致 target 数据不完整却切换所有权, 造成静默丢数据; 2026-07-02 修复, 见 `slot_migration.rs::commit_migration`)
+4. 取消: `cancel_migration` — 先扫描并删除 target_group 上属于这批 slots 的残留 key (`cleanup_target_residuals`), 再 `CancelSlotMigration`; 清理放在 propose 之前, 期间 slot 仍 `Migrating(source)` 不影响线上流量, 清理失败可安全重试. 若不清理, 同一批 slot 未来再次迁入同一 target 时 `PutConditional` 会因 key "已存在" 而跳过拷贝, 悄悄复用上次已取消、可能过期的旧值
 
 ## 配置与 feature flags
 

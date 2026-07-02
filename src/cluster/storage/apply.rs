@@ -85,14 +85,24 @@ impl OpenRaftStorage {
                     i += 1;
                 }
                 EntryPayload::Normal(_request) => {
-                    // 将连续的 data entry 批量合并到一个 WriteBatch
+                    // 将连续的 data entry 批量合并到一个 WriteBatch.
+                    //
+                    // append_request_to_batch 目前唯一可能返回 Err 的路径是
+                    // PutConditional 内部 self.db.get() 的磁盘 I/O 读取失败 —
+                    // 这是基础设施故障, 不是业务结果 (Put/Delete/WriteBatch 三个
+                    // 分支永远不失败; PutConditional "条件不满足" 本身走的是
+                    // Ok(()) 分支, 不是 Err). 因此这里的错误必须和本文件里其它
+                    // DB 写操作一样直接 `?` 向上抛, 交给 openraft 判定为该 raft
+                    // 实例的致命 StorageError 并停止服务 (对齐 etcd/TiKV: apply
+                    // 对已提交 entry 必须是确定性的, 不能把一次真实的存储故障
+                    // 悄悄当成"这条 entry 失败了但继续处理下一条", 否则
+                    // last_applied 会越过这条 entry 被持久化, 数据永久丢失且
+                    // 不同副本可能因为存储故障的偶然性而分叉.
                     let t0 = std::time::Instant::now();
                     let mut batch = WriteBatch::new();
                     let mut batched_responses: Vec<Response> = Vec::new();
                     let batch_start = i;
                     let mut last_log_id = entry.log_id;
-                    // true 表示内层循环遇到了错误, 响应已推入 responses, 无需走 batch 写入逻辑.
-                    let mut errored_empty = false;
 
                     while i < entries.len() {
                         let e = &entries[i];
@@ -106,37 +116,12 @@ impl OpenRaftStorage {
                             EntryPayload::Membership(_) => break,
                             EntryPayload::Blank => break,
                             EntryPayload::Normal(req) => {
-                                match self.append_request_to_batch(&mut batch, req) {
-                                    Ok(response) => {
-                                        batched_responses.push(response);
-                                        last_log_id = e.log_id;
-                                        i += 1;
-                                    }
-                                    Err(err) => {
-                                        if batch.is_empty() {
-                                            // 第一个 entry 就失败: 错误已记入 responses,
-                                            // 不写 last_applied (失败 entry 不应标记为已 apply)
-                                            responses.push(Response::Error(err.to_string()));
-                                            last_applied = Some(e.log_id);
-                                            i += 1;
-                                            errored_empty = true;
-                                        } else {
-                                            // batch 中有成功 entry: 错误加入 batched_responses,
-                                            // 与成功 entry 一起写 last_applied
-                                            batched_responses.push(Response::Error(err.to_string()));
-                                            last_log_id = e.log_id;
-                                            i += 1;
-                                        }
-                                        break;
-                                    }
-                                }
+                                let response = self.append_request_to_batch(&mut batch, req)?;
+                                batched_responses.push(response);
+                                last_log_id = e.log_id;
+                                i += 1;
                             }
                         }
-                    }
-
-                    if errored_empty {
-                        // 第一个 entry 失败, 不写任何数据
-                        continue;
                     }
 
                     if !batch.is_empty() {
@@ -453,6 +438,58 @@ mod tests {
                 .unwrap()
                 .map(|id| id.index),
             Some(1)
+        );
+    }
+
+    /// 回归测试: apply 过程中真实的存储故障必须直接向上抛错, 绝不能把
+    /// last_applied 悄悄推进到失败的 entry —— 这正是修复前的 P0 bug
+    /// (last_applied 越过失败 entry, 数据永久丢失且副本间可能分叉).
+    #[test]
+    fn test_apply_storage_error_does_not_advance_last_applied() {
+        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+
+        let dir = TempDir::new().unwrap();
+        let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+        let storage = OpenRaftStorage::new(db.clone(), DEFAULT_GROUP_ID, None).unwrap();
+
+        // Entry #1 applies cleanly.
+        let e1 = Entry::<TypeConfig> {
+            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+            payload: EntryPayload::Normal(Request::Put {
+                key: b"k1".to_vec(),
+                value: b"v1".to_vec(),
+            }),
+        };
+        storage.apply_entries_internal(std::slice::from_ref(&e1)).unwrap();
+        assert_eq!(
+            storage.read_last_applied_from_db().unwrap().map(|id| id.index),
+            Some(1)
+        );
+
+        // Force a genuine storage I/O failure on the *next* entry: closing the
+        // DB makes any further `db.get()`/`db.write()` return Err, simulating
+        // e.g. a disk fault hit by PutConditional's dedup read.
+        db.close().unwrap();
+
+        let e2 = Entry::<TypeConfig> {
+            log_id: LogId::new(CommittedLeaderId::new(1, 1), 2),
+            payload: EntryPayload::Normal(Request::PutConditional {
+                key: b"k2".to_vec(),
+                value: b"v2".to_vec(),
+            }),
+        };
+        let result = storage.apply_entries_internal(std::slice::from_ref(&e2));
+        assert!(
+            result.is_err(),
+            "a genuine storage error must propagate as Err, not be swallowed as a per-entry business Response::Error"
+        );
+
+        // In-memory last_applied must still be at index 1 — the failed entry
+        // #2 was never marked as applied, in memory or (transitively) on disk.
+        assert_eq!(
+            storage.state.read().last_applied.map(|id| id.index),
+            Some(1),
+            "last_applied must not advance past the entry that failed to apply"
         );
     }
 

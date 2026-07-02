@@ -112,7 +112,7 @@ flowchart TD
   VS2 --> WALGC[try_cleanup_wals]
 ```
 
-Dedup: 同 user_key 取高 seq; `key.seq >= min_snapshot_sequence` 时保留旧版本.
+Dedup: 同 user_key 分组内最新版本无条件保留; 从新到旧扫描, 一旦出现 `seq <= min_snapshot_sequence` 的"边界穿越版本"即保留它 (所有活跃 Snapshot 都能读到这个版本), 更老的版本一律丢弃 —— 而不是逐条独立判断 `seq >= min_snapshot_sequence` (该写法在 snapshot 边界与该 key 版本不精确对齐时会保留冗余版本、误删边界外真正被需要的版本).
 
 ### Checkpoint
 

@@ -12,6 +12,46 @@ use crate::error::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// 追踪同一个 user_key 分组内是否已经保留过"跨越 `min_snapshot_sequence`
+/// 边界"的版本 (即 sequence <= `min_snapshot_sequence` 的版本)。
+///
+/// 正确的多版本保留规则是: 对同一个 user_key, 从最新版本开始往老版本扫描,
+/// 一旦保留了某个 sequence <= min_snapshot_sequence 的版本, 该版本就是所有
+/// 活跃快照 (其边界 >= min_snapshot_sequence) 都能落到的"边界穿越版本",
+/// 更老的版本无论 sequence 是多少都不再被任何快照需要, 可以安全丢弃。
+///
+/// 之前的实现用 `sequence >= min_snapshot_sequence` 作为无状态的逐条判断,
+/// 语义反了: 会保留边界*以上*、其实没有任何快照需要的冗余版本, 却在
+/// snapshot 边界与该 key 自身版本不精确对齐时 (只要期间有别的 key 写入,
+/// 全局 sequence 前进但这个 key 没变, 这种情况在真实工作负载里几乎必然
+/// 发生), 把边界*以下*那个真正被需要的版本当成"不受保护"直接丢弃,
+/// 导致存活的 snapshot 在 compaction 后读到错误结果 (缺失或读到更新版本)。
+#[derive(Default)]
+struct SnapshotDedupTracker {
+    crossed: bool,
+}
+
+impl SnapshotDedupTracker {
+    /// 开始处理一个新的 user_key 分组 (遇到和上一条不同的 user_key 时调用).
+    fn start_key(&mut self) {
+        self.crossed = false;
+    }
+
+    /// 本条 entry (无论是否被保留进输出) 是否已经跨过快照保护边界:
+    /// 一旦某条 sequence <= min_snapshot_sequence 的版本被观察到, 同一个
+    /// user_key 分组内更老的版本都不再需要保留.
+    fn observe(&mut self, sequence: u64, min_snapshot_sequence: u64) {
+        if sequence <= min_snapshot_sequence {
+            self.crossed = true;
+        }
+    }
+
+    /// 是否已经跨过边界 (跨过之后, 后续更老的重复版本应直接丢弃).
+    fn already_crossed(&self) -> bool {
+        self.crossed
+    }
+}
+
 pub struct CompactionJob {
     pub inputs: Vec<Arc<SSTableReader>>,
     pub expanded_inputs: Vec<Arc<SSTableReader>>,
@@ -71,32 +111,30 @@ impl CompactionJob {
         all
     }
 
-    /// 检查 entry 是否因快照保护而必须保留.
-    fn snapshot_protected(&self, key: &[u8]) -> Result<bool> {
-        if self.min_snapshot_sequence == u64::MAX {
-            return Ok(false);
-        }
-        Ok(extract_sequence(key)? >= self.min_snapshot_sequence)
-    }
-
     fn count_dedup_entries(&self) -> Result<usize> {
         let mut merge_iter = MergeIterator::new(self.all_inputs())?;
         let mut count = 0usize;
         let mut last_user_key: Option<Vec<u8>> = None;
+        let mut tracker = SnapshotDedupTracker::default();
         while let Some((key, _)) = merge_iter.next_entry()? {
             let user_key = user_key_from_internal(&key)?;
+            let seq = extract_sequence(&key)?;
             if last_user_key.as_deref() == Some(user_key) {
-                if self.snapshot_protected(&key)? {
-                    count += 1; // 快照可能可见, 保留
+                if !tracker.already_crossed() {
+                    count += 1; // 边界穿越版本或更新的重复版本, 快照可能需要
+                    tracker.observe(seq, self.min_snapshot_sequence);
                 }
                 continue;
             }
+            tracker.start_key();
             if self.output_level > 0 && extract_value_type(&key)? == ValueType::TypeDelete {
                 last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
             }
             count += 1;
             last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, self.min_snapshot_sequence);
         }
         Ok(count)
     }
@@ -122,12 +160,15 @@ impl CompactionJob {
         let mut count = 0usize;
         let mut last_user_key: Option<Vec<u8>> = None;
         let mut splits: Vec<Vec<u8>> = Vec::new();
+        let mut tracker = SnapshotDedupTracker::default();
 
         while let Some((key, _)) = merge_iter.next_entry()? {
             let user_key = user_key_from_internal(&key)?;
+            let seq = extract_sequence(&key)?;
             if last_user_key.as_deref() == Some(user_key) {
-                if self.snapshot_protected(&key)? {
+                if !tracker.already_crossed() {
                     count += 1;
+                    tracker.observe(seq, self.min_snapshot_sequence);
                     if count >= next_split_at && splits.len() < num_splits - 1 {
                         splits.push(user_key.to_vec());
                         next_split_at = count + est_per_split;
@@ -135,12 +176,15 @@ impl CompactionJob {
                 }
                 continue;
             }
+            tracker.start_key();
             if self.output_level > 0 && extract_value_type(&key)? == ValueType::TypeDelete {
                 last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
             }
             count += 1;
             last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, self.min_snapshot_sequence);
 
             if count >= next_split_at && splits.len() < num_splits - 1 {
                 splits.push(user_key.to_vec());
@@ -193,27 +237,33 @@ impl CompactionJob {
         let mut last_user_key: Option<Vec<u8>> = None;
         let mut smallest_key: Option<Vec<u8>> = None;
         let mut largest_key: Option<Vec<u8>> = None;
+        let mut tracker = SnapshotDedupTracker::default();
 
         while let Some((key, value)) = merge_iter.next_entry()? {
             let user_key = user_key_from_internal(&key)?;
             let value_type = extract_value_type(&key)?;
+            let seq = extract_sequence(&key)?;
 
             if last_user_key.as_deref() == Some(user_key) {
-                if self.snapshot_protected(&key)? {
+                if !tracker.already_crossed() {
                     builder.add(&key, &value)?;
                     entry_count += 1;
+                    tracker.observe(seq, self.min_snapshot_sequence);
                 }
                 continue;
             }
 
+            tracker.start_key();
             if self.output_level > 0 && value_type == ValueType::TypeDelete {
                 last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
             }
 
             builder.add(&key, &value)?;
             entry_count += 1;
             last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, self.min_snapshot_sequence);
             if smallest_key.is_none() {
                 smallest_key = Some(key.clone());
             }
@@ -377,10 +427,12 @@ fn write_sub_compaction(
     let mut last_user_key: Option<Vec<u8>> = None;
     let mut smallest_key: Option<Vec<u8>> = None;
     let mut largest_key: Option<Vec<u8>> = None;
+    let mut tracker = SnapshotDedupTracker::default();
 
     while let Some((key, value)) = merge_iter.next_entry()? {
         let user_key = user_key_from_internal(&key)?;
         let value_type = extract_value_type(&key)?;
+        let seq = extract_sequence(&key)?;
 
         // 跳过 range_start 之前的条目 (由前一个子任务处理)
         if let Some(ref start) = range_start {
@@ -390,21 +442,25 @@ fn write_sub_compaction(
         }
 
         if last_user_key.as_deref() == Some(user_key) {
-            if min_snap_seq != u64::MAX && extract_sequence(&key)? >= min_snap_seq {
+            if !tracker.already_crossed() {
                 builder.add(&key, &value)?;
                 entry_count += 1;
+                tracker.observe(seq, min_snap_seq);
             }
             continue;
         }
 
+        tracker.start_key();
         if output_level > 0 && value_type == ValueType::TypeDelete {
             last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, min_snap_seq);
             continue;
         }
 
         builder.add(&key, &value)?;
         entry_count += 1;
         last_user_key = Some(user_key.to_vec());
+        tracker.observe(seq, min_snap_seq);
         if smallest_key.is_none() {
             smallest_key = Some(key.clone());
         }

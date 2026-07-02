@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Raft group 自愈重启**: `MultiRaftNode::supervise_groups` 在 lifecycle tick 中检测本地 group 是否进入 openraft `Fatal` 状态 (apply fail-fast 触发), 按指数退避 (2s\*2^n, 上限 60s) 就地重开 group, 不影响同节点其它 group / gRPC server; 新增 `aidb_raft_group_fatal_total` / `aidb_raft_group_restart_total` OTel 指标. 回归: `multi_raft_node.rs::supervise_groups_restarts_fatal_group_and_preserves_data`.
+
+### Fixed
+
+- **Raft apply fail-fast (P0)**: `apply_entries_internal` 遇到 `append_request_to_batch` 返回的真实存储错误 (如 `PutConditional` dedup 读 I/O 失败) 时, 之前会把它当作单条业务 `Response::Error` 处理并继续推进 `last_applied`, 导致 last_applied 越过失败 entry 被持久化、数据永久丢失且不同副本可能因存储故障的偶然性而分叉; 现在直接 `?` 向上抛, 交由 openraft 判定该 raft 实例 Fatal 并停止服务 (对齐 etcd/TiKV: 已提交 entry 的 apply 必须是确定性的). 回归: `apply.rs::test_apply_storage_error_does_not_advance_last_applied`.
+- **Snapshot 安装原子性**: `install_snapshot_atomic` 之前用两次独立 `db.write()` (先 `delete_range` 清旧范围, 再写入新 pairs), 中途崩溃会让状态机永久留空 (旧数据已删、新数据未写, 且触发 snapshot 的日志很可能已被 purge 无法重新 apply); 现在把删除旧范围的操作合并进同一个 `WriteBatch` 一次性写入, 崩溃时保证要么全部回滚到旧状态要么全部是新状态. 回归 (WAL 尾部截断模拟崩溃): `snapshot.rs::test_install_snapshot_atomic_truncated_mid_write_never_leaves_hole`.
+- **Compaction 多版本保留逻辑 (P0)**: dedup 阶段之前用逐条无状态判断 `key.seq >= min_snapshot_sequence` 决定是否保留旧版本, 语义与实际保留规则相反 —— 会保留边界以上、其实没有任何快照需要的冗余版本, 却在 snapshot 边界与该 key 自身版本不精确对齐时 (真实工作负载下几乎必然发生) 把边界以下真正被需要的版本当成"不受保护"丢弃, 导致存活快照在 compaction 后读到缺失或错误的版本. 改为 `SnapshotDedupTracker` 按 user_key 分组从新到旧扫描, 保留第一个"边界穿越版本" (`seq <= min_snapshot_sequence`) 并丢弃更老版本. 影响 `count_dedup_entries` / 分片计数 / `run_single` / `write_sub_compaction` 四处一致的旧逻辑.
+- **Snapshot register / compaction min_snapshot_sequence pin (MVCC 竞态)**: `DB::snapshot()` 之前在释放 `write_lock` **之后**才 `SnapshotList::register(seq)`, 存在"读到 seq"与"完成 register"之间的窗口; 若一次新写入 (及其触发的 compaction) 恰好插进这个窗口, `min_snapshot_sequence()` 还看不到即将返回的这个 snapshot, 可能误判其保护的旧版本"无人需要"而 GC 掉. 现在 register 移到释放锁之前完成; 同时 compaction 读取 `min_snapshot_sequence()` 也短暂持有同一把 `write_lock`, 与 snapshot 创建之间建立严格 happens-before.
+- **Block Cache LRU 队列热点 key 无界增长**: 之前的队头惰性清理只能清掉排在队头的连续 stale entry; 若某个"冷" key 从未被再次访问而长期卡在队头, 后面热点 key 反复访问产生的 stale 副本会一直堆积在队列中部, 永远清不到, 队列长度随访问次数线性增长。新增 `compact_lru_queue_if_needed`: 队列长度超过 `存活 key 数 * 4` (且 ≥ 256) 阈值时做一次 O(n) 全量整理, 分摊后仍是 O(1). 回归: `block_cache.rs::test_lru_queue_bounded_under_hot_key_access`.
+- **在线 slot 迁移 commit 校验**: `commit_migration` 之前只检查"当前是否存在 executor", 而 `run_pending_migration` 无论跑没跑过都会 `take()` 掉 executor, 导致 `CLUSTER SETSLOT ... STABLE` 可以在从未真正拷贝数据、或只拷贝了另一批 slots、或拷贝到一半被取消的情况下直接提交, target 上数据不完整却原子切换所有权, 造成静默丢数据. 现在改为记录 `(source_group, target_group, slots, is_completed)` 的 `last_run`, `commit_migration` 从 MetaRaft 权威迁移状态读取当前签名并要求二者完全匹配且 `is_completed=true` 才允许提交. `cancel_migration` 同时改为先清理 target 上属于这批 slots 的残留 key 再提交取消, 避免同一批 slot 未来再次迁入同一 target 时因 `PutConditional` 的"key 已存在即跳过"语义悄悄复用上次已取消的旧值.
+- **`MultiRaftNode::scan_keys` 返回带内部前缀的 key (P0)**: 之前直接返回 DB 原始编码 key (带 `\x01sm/{gid}/` 前缀), 导致所有基于返回值计算 `key_to_slot()` 的调用方 (slot 迁移 executor 的 slot 过滤、`cleanup_target_residuals`, aikv `CLUSTER COUNTKEYSINSLOT`/`GETKEYSINSLOT`) 全部算出错误的 slot, 实质上从未按预期工作过. 现在按 `sm_key(group_id, ..)` 编码范围扫描并用 `user_key_from_sm_key` 剥离前缀, 返回值与调用方写入时传入的 user key 完全一致 (与 `scan_local_pairs` 语义对齐).
+
 ### Changed
 
 - **Raft log 读写性能**: `get_log_entries` 改为按 index 点查 (避免 log 累积后 O(总条数) prefix scan); `purge_logs_upto` 改为 `delete_range` 批量删除并记录 `raft_purge_logs` perf 日志.

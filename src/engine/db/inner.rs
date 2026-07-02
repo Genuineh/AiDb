@@ -625,8 +625,16 @@ impl DB {
         self.check_not_closed()?;
         let _guard = self.write_lock.lock();
         let seq = self.sequence.load(AtomicOrdering::SeqCst);
-        drop(_guard);
+        // register 必须在 write_lock 释放前完成: 否则在"读到 seq"和"注册
+        // 保护"之间存在窗口, 一次新写入 (及其可能触发的 compaction) 可以
+        // 插进来, 这时 min_snapshot_sequence() 还看不到这个即将返回的
+        // snapshot, compaction 可能误判"没有活跃 snapshot 需要 seq 以下的
+        // 旧版本"而把它 GC 掉 —— 等 snapshot 真正返回给调用方并读取时,
+        // 它所需的旧版本已经不在了。锁内注册可以保证: 任何在此之后才发生的
+        // 写入 (以及它可能触发的 compaction) 一定能在 min_snapshot_sequence()
+        // 里看到这个 seq。
         let snapshot_id = self.snapshots.register(seq);
+        drop(_guard);
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("snapshot");
         tracing::Span::current().record("sequence", seq);
@@ -788,7 +796,23 @@ impl DB {
 
         #[cfg(feature = "monitoring")]
         let run_start = std::time::Instant::now();
-        let min_snap_seq = self.snapshots.min_snapshot_sequence();
+        // "Pin": 读取 min_snapshot_sequence() 时短暂持有 write_lock, 和
+        // snapshot() 内"读 seq + register"共享同一把锁, 二者之间就有了严格
+        // 的 happens-before 关系 —— 不会读到一个"snapshot 的 seq 已经确定,
+        // 但 register 还没做完"的中间状态。没有这层同步的话, min_snap_seq
+        // 是对 snapshots 列表的独立、无锁读取, 理论上可能和 snapshot() 内部
+        // "拿到 seq"与"完成 register"之间的极短窗口交错, 读到一个还没反映
+        // 出即将返回的那个 snapshot 的过期阈值。
+        //
+        // 对于 compaction 开始*之后*才创建的 snapshot 不需要这层保护:
+        // 它们的 seq 必然 >= 当前 compaction 输入文件里的最大 sequence
+        // (这些文件在 claim 时已经是不可变的已 flush 数据), 而每个 key
+        // 的最新版本本来就无条件保留, 所以这类新 snapshot 总能读到正确
+        // 版本, 不依赖 min_snap_seq 是否够新。
+        let min_snap_seq = {
+            let _guard = self.write_lock.lock();
+            self.snapshots.min_snapshot_sequence()
+        };
         let num_splits = self.compute_subcompaction_splits(&task);
         // Pre-allocate all needed file numbers to avoid concurrent allocation races
         let file_numbers: Vec<u64> = (0..num_splits)

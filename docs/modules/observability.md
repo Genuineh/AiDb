@@ -102,8 +102,10 @@ flowchart LR
 |------|--------|------|
 | `aidb_raft_rpc_total` | `aidb.raft.rpc.type`=vote/append_entries/install_snapshot, `aidb.raft.rpc.direction`=incoming/outgoing | `cluster/network.rs` |
 | `aidb_raft_log_entries_total` | — | AppendEntries 入站 entry 数 |
+| `aidb_raft_group_fatal_total` | `aidb.raft.group.id` | Lifecycle tick 检测到本地 group 进入 openraft `Fatal` 状态 (apply fail-fast 触发, 见 `multi_raft_node.rs::supervise_groups`) |
+| `aidb_raft_group_restart_total` | `aidb.raft.group.id`, `aidb.raft.group.restart.outcome`=success/failure | 自愈就地重启该 group 后的结果 |
 
-**Grafana**: `aidb_raft_rpc_total` / `aidb_raft_log_entries_total` 在 AiFactory **Cluster** 行 (Raft RPC); 引擎 LSM/cache/compaction 见 **Engine** 行 — [`monitor/config/grafana/dashboards/README.md`](../../../aifactory/monitor/config/grafana/dashboards/README.md).
+**Grafana**: `aidb_raft_rpc_total` / `aidb_raft_log_entries_total` / `aidb_raft_group_fatal_total` / `aidb_raft_group_restart_total` 在 AiFactory **Cluster** 行 (Raft RPC); 引擎 LSM/cache/compaction 见 **Engine** 行 — [`monitor/config/grafana/dashboards/README.md`](../../../aifactory/monitor/config/grafana/dashboards/README.md).
 
 ## Tracing 索引 (按域)
 
