@@ -137,11 +137,14 @@ impl SSTableBuilder {
             b.finish()
         };
         let offset = self.data_block_offset;
-        write_block(&mut self.writer, &block_data, self.compression)?;
-        let data_size = block_data.len() as u64;
+        // `payload_len` 是压缩后 (或未压缩时原样) 实际落盘的字节数, **不能**用
+        // `block_data.len()` (压缩前长度) 代替 —— 二者在启用压缩时不相等,
+        // 用错会导致 handle.size / 后续 block offset 全部错位, 读侧拆 trailer
+        // 时越界, 表现为 `Corruption("block CRC mismatch")` (回归 2026-07-02).
+        let payload_len = write_block(&mut self.writer, &block_data, self.compression)?;
         let handle = BlockHandle {
             offset,
-            size: data_size + super::BLOCK_TRAILER_SIZE as u64,
+            size: payload_len + super::BLOCK_TRAILER_SIZE as u64,
         };
         self.data_block_offset += handle.size;
         self.pending_handle = Some(handle);
@@ -192,23 +195,24 @@ impl SSTableBuilder {
 
         let meta_index_data = meta_index_builder.finish();
         let meta_index_offset = self.data_block_offset;
-        write_block(
+        let meta_index_payload_len = write_block(
             &mut self.writer,
             meta_index_data.as_ref(),
             CompressionType::None,
         )?;
         let meta_index_handle = BlockHandle {
             offset: meta_index_offset,
-            size: meta_index_data.len() as u64 + super::BLOCK_TRAILER_SIZE as u64,
+            size: meta_index_payload_len + super::BLOCK_TRAILER_SIZE as u64,
         };
         self.data_block_offset += meta_index_handle.size;
 
         let index_data = self.index_block_builder.finish();
         let index_offset = self.data_block_offset;
-        write_block(&mut self.writer, index_data.as_ref(), CompressionType::None)?;
+        let index_payload_len =
+            write_block(&mut self.writer, index_data.as_ref(), CompressionType::None)?;
         let index_handle = BlockHandle {
             offset: index_offset,
-            size: index_data.len() as u64 + super::BLOCK_TRAILER_SIZE as u64,
+            size: index_payload_len + super::BLOCK_TRAILER_SIZE as u64,
         };
 
         let footer = Footer::new(meta_index_handle, index_handle);

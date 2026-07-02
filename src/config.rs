@@ -35,7 +35,8 @@ pub struct Options {
     pub block_restart_interval: usize,
     /// Block cache 容量 (默认 64 MiB)
     pub block_cache_size: usize,
-    /// 压缩算法 (注意: Snap/Lz4 仅定义占位, 实际未实现, 使用 None)
+    /// 压缩算法 (Snap/Lz4 需要 `compression` feature, 否则读写均报
+    /// `InvalidArgument`; 默认 None 不压缩)
     pub compression: CompressionType,
     /// Bloom Filter 目标假阳性率 (0.0 表示禁用, 默认 0.01)
     pub bloom_false_positive_rate: f64,

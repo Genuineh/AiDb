@@ -19,23 +19,31 @@ fn skip_checksum() -> bool {
     std::env::var("AIDB_SKIP_CHECKSUM").ok().as_deref() == Some("1")
 }
 
+/// 落盘一个 block, 返回 **实际写入磁盘的 payload 长度** (不含 trailer).
+///
+/// 压缩启用时 payload 是压缩后数据, 长度可能小于 `block_data.len()`; 调用方
+/// 必须用这个返回值 (而非 `block_data.len()`) 计算 `BlockHandle.size`/累加
+/// `data_block_offset`, 否则读侧会按错误的偏移拆 trailer, 读到垃圾
+/// `compression_type`/`crc` 并报 `Corruption`.
 pub fn write_block<W: Write>(
     writer: &mut W,
     block_data: &[u8],
     compression: CompressionType,
-) -> Result<()> {
+) -> Result<u64> {
     let compression_byte = compression_to_byte(compression)?;
-    if compression == CompressionType::None {
+    let payload_len = if compression == CompressionType::None {
         writer.write_all(block_data)?;
+        block_data.len() as u64
     } else {
         let data = compress_block(block_data, compression)?;
         writer.write_all(&data)?;
-    }
+        data.len() as u64
+    };
     writer.write_all(&[compression_byte])?;
     let mut hasher = Crc32Hasher::new();
     hasher.update(block_data);
     writer.write_all(&hasher.finalize().to_le_bytes())?;
-    Ok(())
+    Ok(payload_len)
 }
 
 /// 带 BlockCache 的 Data Block 读取; miss 时读盘并 insert.
@@ -127,8 +135,10 @@ fn compress_block(data: &[u8], compression: CompressionType) -> Result<Vec<u8>> 
         CompressionType::Snap => snap::raw::Encoder::new()
             .compress_vec(data)
             .map_err(|e| Error::InvalidArgument(format!("Snap compress failed: {e}"))),
+        // `prepend_size = true`: 把原始长度写进压缩数据头部, 使解压端能在不
+        // 知道 uncompressed_size 的情况下正确分配缓冲区 (见 decompress_block).
         #[cfg(feature = "compression")]
-        CompressionType::Lz4 => lz4::block::compress(data, None, false)
+        CompressionType::Lz4 => lz4::block::compress(data, None, true)
             .map_err(|e| Error::InvalidArgument(format!("LZ4 compress failed: {e}"))),
         #[cfg(not(feature = "compression"))]
         CompressionType::Snap | CompressionType::Lz4 => Err(Error::InvalidArgument(
@@ -145,6 +155,8 @@ fn decompress_block(data: &[u8], compression: CompressionType) -> Result<Vec<u8>
         CompressionType::Snap => snap::raw::Decoder::new()
             .decompress_vec(data)
             .map_err(|e| Error::Corruption(format!("Snap decompress failed: {e}"))),
+        // `None` 让 lz4 从 compress_block 写入的前缀头里读原始长度; 与
+        // compress_block 的 `prepend_size = true` 配套, 缺一不可.
         #[cfg(feature = "compression")]
         CompressionType::Lz4 => lz4::block::decompress(data, None)
             .map_err(|e| Error::Corruption(format!("LZ4 decompress failed: {e}"))),

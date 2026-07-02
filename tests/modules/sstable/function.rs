@@ -281,6 +281,81 @@ fn test_multi_block_read() {
     assert_eq!(v, b"val_25");
 }
 
+/// 回归测试 (2026-07-02): `SSTableBuilder::flush_data_block` 曾经用压缩前的
+/// `block_data.len()` 计算 `BlockHandle.size`, 与磁盘上实际落盘的压缩后 payload
+/// 长度不一致, 导致多 block SST 在读路径按错误偏移拆 trailer, 报
+/// `Corruption("block CRC mismatch")`. 此前所有 SSTable 测试都只用
+/// `CompressionType::None` (未压缩时 `data.len()` 恰好等于落盘长度, 掩盖了这个
+/// bug), 因此这里专门覆盖 `Snap`/`Lz4` 的多 block 写读 roundtrip.
+#[cfg(feature = "compression")]
+fn multi_block_read_with_compression(compression: CompressionType) {
+    let dir = tempdir().unwrap();
+    let mut entries = Vec::new();
+    // value 足够大且重复度低, 保证 Snap/Lz4 压缩后长度 < 压缩前长度,
+    // 这样才能触发 handle.size 用错长度时的偏移错位.
+    for i in 0..200u64 {
+        let uk = format!("key_{i:05}").into_bytes();
+        let val = format!("value_payload_{i:05}_{}", "x".repeat(64)).into_bytes();
+        entries.push((uk, val, i + 1));
+    }
+    let path = {
+        let path = sstable_path(dir.path(), 42, 0);
+        // 小 block_size 强制产生多个 data block (触发多次 flush_data_block).
+        let mut b = SSTableBuilder::new(&path, 512, 4, compression, 0.0).unwrap();
+        for (uk, val, seq) in &entries {
+            let ik = encode_internal_key(uk, *seq, ValueType::TypePut);
+            b.add(&ik, val).unwrap();
+        }
+        assert!(
+            b.block_count() >= 1,
+            "sanity: builder should have flushed at least one block before finish()"
+        );
+        b.finish().unwrap();
+        path
+    };
+
+    let r = SSTableReader::open(&path, None).unwrap();
+    // 校验首、中、尾各若干 key, 确保跨越多个 (可能压缩后长度各异的) data block
+    // 的偏移计算全部正确.
+    for &i in &[0u64, 1, 50, 100, 150, 198, 199] {
+        let uk = format!("key_{i:05}").into_bytes();
+        let expected_val = format!("value_payload_{i:05}_{}", "x".repeat(64)).into_bytes();
+        let seek = encode_internal_key(&uk, i + 1, ValueType::TypePut);
+        let (v, _) = r
+            .get(&seek)
+            .unwrap_or_else(|e| panic!("get({i}) failed: {e}"))
+            .unwrap_or_else(|| panic!("key {i} unexpectedly missing"));
+        assert_eq!(v, expected_val, "value mismatch at key {i}");
+    }
+
+    // 全表扫描同样应该完整无损地拿到全部 200 条, 且顺序正确.
+    let mut it = r.iter();
+    let mut count = 0u64;
+    while it.valid() {
+        let k = it.key().unwrap();
+        let uk = &k[..k.len() - 8];
+        let expected_uk = format!("key_{count:05}").into_bytes();
+        assert_eq!(uk, expected_uk.as_slice(), "scan order mismatch at {count}");
+        count += 1;
+        if !it.advance() {
+            break;
+        }
+    }
+    assert_eq!(count, entries.len() as u64);
+}
+
+#[cfg(feature = "compression")]
+#[test]
+fn test_multi_block_read_with_snap_compression() {
+    multi_block_read_with_compression(CompressionType::Snap);
+}
+
+#[cfg(feature = "compression")]
+#[test]
+fn test_multi_block_read_with_lz4_compression() {
+    multi_block_read_with_compression(CompressionType::Lz4);
+}
+
 #[test]
 fn test_iterator_full_scan() {
     let dir = tempdir().unwrap();
