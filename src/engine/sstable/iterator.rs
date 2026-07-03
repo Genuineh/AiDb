@@ -14,7 +14,7 @@ use super::handle::BlockHandle;
 pub struct SSTableIterator {
     file: Arc<File>,
     file_number: u64,
-    index_entries: Vec<(Vec<u8>, BlockHandle)>,
+    index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
     block_cache: Option<Arc<BlockCache>>,
     block_index: usize,
     block_iter: Option<BlockIterator>,
@@ -25,7 +25,7 @@ impl SSTableIterator {
     pub(crate) fn new(
         file: Arc<File>,
         file_number: u64,
-        index_entries: Vec<(Vec<u8>, BlockHandle)>,
+        index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
         block_cache: Option<Arc<BlockCache>>,
     ) -> Self {
         let mut it = Self {

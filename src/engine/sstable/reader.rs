@@ -25,7 +25,7 @@ pub struct SSTableReader {
     file: Arc<File>,
     file_number: u64,
     level: usize,
-    index_entries: Vec<(Vec<u8>, BlockHandle)>,
+    index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
     file_size: u64,
     smallest_key: Vec<u8>,
     largest_key: Vec<u8>,
@@ -50,7 +50,7 @@ impl SSTableReader {
         let footer = read_footer(&file, file_size)?;
         let index_bytes = read_block_from_file(&file, &footer.index_handle)?;
         let index_block = Block::new(Bytes::from(index_bytes))?;
-        let index_entries = load_index_entries(&index_block)?;
+        let index_entries = Arc::new(load_index_entries(&index_block)?);
 
         let meta_index_bytes = read_block_from_file(&file, &footer.meta_index_handle)?;
         let meta_index = IndexBlock::new(Bytes::from(meta_index_bytes))?;
@@ -169,7 +169,7 @@ impl SSTableReader {
         SSTableIterator::new(
             Arc::clone(&self.file),
             self.file_number,
-            self.index_entries.clone(),
+            Arc::clone(&self.index_entries),
             self.block_cache.clone(),
         )
     }
