@@ -58,6 +58,9 @@ pub struct DB {
     group_commit_lock: Mutex<()>,
     /// Group commit: last synced sequence number (monotonic)
     group_commit_synced_seq: AtomicU64,
+    /// L0 SSTable count for lock-free stall checks (F-050/051/054).
+    /// Maintained atomically inside all `sstables.write()` critical sections.
+    l0_sstable_count: AtomicUsize,
 }
 
 impl DB {
@@ -134,6 +137,8 @@ impl DB {
             update_sstable_metrics(&sstables);
         }
 
+        let l0_sstable_count_init = sstables[0].len();
+
         let db = Arc::new(DB {
             path,
             options,
@@ -159,6 +164,7 @@ impl DB {
             snapshots: SnapshotList::new(),
             group_commit_lock: Mutex::new(()),
             group_commit_synced_seq: AtomicU64::new(0),
+            l0_sstable_count: AtomicUsize::new(l0_sstable_count_init),
         });
 
         db.start_flush_thread();
@@ -417,7 +423,7 @@ impl DB {
         }
 
         // === L0 文件数 stall (现有逻辑不变) ===
-        let l0_count = self.sstables.read()[0].len();
+        let l0_count = self.l0_sstable_count.load(AtomicOrdering::Relaxed);
         let opts = &self.options;
 
         // stop: 轮询等待 until L0 回到 slowdown 阈值以下
@@ -519,9 +525,16 @@ impl DB {
 
     fn get_from_sstables(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
         let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
-        let tables = self.sstables.read();
+        let l0_readers: Vec<Arc<SSTableReader>>;
+        let l1_plus_readers: Vec<Vec<Arc<SSTableReader>>>;
+        {
+            let tables = self.sstables.read();
+            l0_readers = tables[0].clone();
+            l1_plus_readers = tables.iter().skip(1).cloned().collect();
+        } // 读锁释放 — I/O 在无锁下进行 (F-050)
+
         // Level 0: newest SSTable first (insert at head on load / flush).
-        for reader in &tables[0] {
+        for reader in &l0_readers {
             if let Some((value, ty)) = reader.get(&seek_key)? {
                 return Ok(match ty {
                     ValueType::TypePut => Some(value),
@@ -529,7 +542,7 @@ impl DB {
                 });
             }
         }
-        for level in tables.iter().skip(1) {
+        for level in &l1_plus_readers {
             if let Some(reader) = find_sstable_for_key(level, key) {
                 if let Some((value, ty)) = reader.get(&seek_key)? {
                     return Ok(match ty {
@@ -970,6 +983,14 @@ impl DB {
                 })?;
                 sst_guard[task.output_level].retain(|f| f.file_number() != num);
             }
+            let l0_output_count = results.iter().filter(|r| r.entry_count > 0 && task.output_level == 0).count();
+            if task.level == 0 {
+                self.l0_sstable_count.fetch_sub(task.inputs.len(), AtomicOrdering::Relaxed);
+            }
+            if task.output_level == 0 {
+                self.l0_sstable_count.fetch_sub(task.expanded_inputs.len(), AtomicOrdering::Relaxed);
+                self.l0_sstable_count.fetch_add(l0_output_count, AtomicOrdering::Relaxed);
+            }
             #[cfg(feature = "monitoring")]
             {
                 crate::metrics::record_compaction("apply");
@@ -1072,6 +1093,12 @@ impl DB {
                 file_number,
             })?;
             sst_guard[task.level].retain(|f| f.file_number() != file_number);
+            if task.level == 0 {
+                self.l0_sstable_count.fetch_sub(1, AtomicOrdering::Relaxed);
+            }
+            if task.output_level == 0 {
+                self.l0_sstable_count.fetch_add(1, AtomicOrdering::Relaxed);
+            }
         }
 
         update_sstable_metrics(&self.sstables.read());
@@ -1265,6 +1292,7 @@ impl DB {
         {
             let mut tables = self.sstables.write();
             tables[0].insert(0, Arc::clone(&reader));
+            self.l0_sstable_count.fetch_add(1, AtomicOrdering::Relaxed);
             let mut vs = self.version_set.write();
             vs.apply_edit(&VersionEdit::AddFile {
                 level: 0,
