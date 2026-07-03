@@ -56,6 +56,18 @@ impl ThinWriteBatch {
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
+
+    /// 估算 rmp_serde 序列化后的大小.
+    pub fn estimated_serialized_size(&self) -> usize {
+        self.ops
+            .iter()
+            .map(|op| match op {
+                ThinWriteOp::Put { key, value } => key.len() + value.len() + 16,
+                ThinWriteOp::Delete { key } => key.len() + 10,
+            })
+            .sum::<usize>()
+            + 10 // vec header overhead
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +96,19 @@ impl Request {
             }
             Request::PutConditional { .. } | Request::Meta(_) => ThinWriteBatch::new(),
             Request::WriteBatch(batch) => batch,
+        }
+    }
+
+    /// 估算 rmp_serde 序列化后的大小, 避免完整序列化后丢弃.
+    /// 上界估计 (保守略大), 用于 max_entry_size 校验.
+    pub fn estimated_serialized_size(&self) -> usize {
+        match self {
+            Request::Put { key, value } | Request::PutConditional { key, value } => {
+                key.len() + value.len() + 16
+            }
+            Request::Delete { key } => key.len() + 10,
+            Request::WriteBatch(batch) => batch.estimated_serialized_size(),
+            Request::Meta(_) => 512,
         }
     }
 }

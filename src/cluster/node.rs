@@ -317,9 +317,7 @@ impl OpenRaftNode {
     }
 
     fn check_entry_size(&self, request: &Request) -> Result<()> {
-        let size = rmp_serde::to_vec(request)
-            .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?
-            .len() as u64;
+        let size = request.estimated_serialized_size() as u64;
         if size > self.max_entry_size {
             return Err(Error::Cluster(ClusterError::InvalidConfig(format!(
                 "entry size {size} exceeds max_entry_size {}",
