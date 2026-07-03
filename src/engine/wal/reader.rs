@@ -170,7 +170,7 @@ mod tests {
         let path = dir.path().join("test.log");
         let mut writer = Writer::open(&path).unwrap();
         writer.write_record(RecordType::Full, data).unwrap();
-        writer.sync_all().unwrap();
+        writer.sync_data().unwrap();
         drop(writer);
 
         let mut reader = Reader::open(&path).unwrap();
@@ -209,7 +209,7 @@ mod tests {
 
         // 再写一条小记录, 应在新 block
         writer.write_record(RecordType::Full, b"cross").unwrap();
-        writer.sync_all().unwrap();
+        writer.sync_data().unwrap();
         drop(writer);
 
         // 读取第一条
@@ -248,7 +248,7 @@ mod tests {
         // 写一条正常记录
         let mut w = Writer::open(&path).unwrap();
         w.write_record(RecordType::Full, b"data").unwrap();
-        w.sync_all().unwrap();
+        w.sync_data().unwrap();
         drop(w);
 
         // 篡改 CRC 字节 (第 0-3 字节)
@@ -273,7 +273,7 @@ mod tests {
         // 写一条记录后篡改 type 字节 (第 6 字节) 为 0xFF
         let mut w = Writer::open(&path).unwrap();
         w.write_record(RecordType::Full, b"data").unwrap();
-        w.sync_all().unwrap();
+        w.sync_data().unwrap();
         drop(w);
 
         let mut content = std::fs::read(&path).unwrap();
@@ -297,7 +297,7 @@ mod tests {
         // 写入一条长度 > 0 的记录, 然后截断文件
         let mut w = Writer::open(&path).unwrap();
         w.write_record(RecordType::Full, b"complete_data").unwrap();
-        w.sync_all().unwrap();
+        w.sync_data().unwrap();
         let _full_size = w.file_size().unwrap();
         drop(w);
 
@@ -323,7 +323,7 @@ mod tests {
         // 70000 > 32761 (block payload max), 应分片
         let large_data = vec![0xAB; 70000];
         writer.write_record(RecordType::Full, &large_data).unwrap();
-        writer.sync_all().unwrap();
+        writer.sync_data().unwrap();
         drop(writer);
 
         // 读取并重组所有分片
@@ -369,7 +369,7 @@ mod tests {
         writer.write_record(RecordType::Full, b"first").unwrap();
         writer.write_record(RecordType::Full, b"second").unwrap();
         writer.write_record(RecordType::Full, b"third").unwrap();
-        writer.sync_all().unwrap();
+        writer.sync_data().unwrap();
         drop(writer);
 
         let mut reader = Reader::open(&path).unwrap();

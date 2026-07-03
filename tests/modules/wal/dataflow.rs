@@ -12,7 +12,7 @@ fn test_wal_event_order() {
     let events = capture_events_under_lock(|| {
         let mut w = Writer::open(&path).unwrap();
         w.write_record(RecordType::Full, b"t").unwrap();
-        w.sync_all().unwrap();
+        w.sync_data().unwrap();
     });
 
     let pos = |needle: &str| -> Option<usize> { events.iter().position(|e| e.contains(needle)) };

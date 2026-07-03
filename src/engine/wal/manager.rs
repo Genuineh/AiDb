@@ -101,7 +101,7 @@ impl WALManager {
         // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
         let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());
         writer.write_record(RecordType::Full, &file_header)?;
-        writer.sync_all()?;
+        writer.sync_data()?;
 
         #[cfg(feature = "monitoring")]
         crate::metrics::set_wal_size(writer.file_size().unwrap_or(0));
@@ -219,7 +219,7 @@ impl WALManager {
     /// fsync 当前 WAL
     #[tracing::instrument(name = "wal_sync", skip(self))]
     pub fn sync(&mut self) -> Result<()> {
-        self.writer.sync_all()?;
+        self.writer.sync_data()?;
         Ok(())
     }
 
@@ -228,7 +228,7 @@ impl WALManager {
     pub fn rotate(&mut self, next_sequence: u64) -> Result<()> {
         tracing::debug!(target: "wal", "wal.rotate: old={} new={}", self.file_number, self.file_number + 1);
         // 关闭当前 WAL (sync + 记录元数据)
-        self.writer.sync_all()?;
+        self.writer.sync_data()?;
         let file_size = self.writer.file_size()?;
 
         self.wals.push(WalMeta {
@@ -247,7 +247,7 @@ impl WALManager {
         // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
         let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());
         self.writer.write_record(RecordType::Full, &file_header)?;
-        self.writer.sync_all()?;
+        self.writer.sync_data()?;
 
         #[cfg(feature = "monitoring")]
         crate::metrics::set_wal_size(self.writer.file_size().unwrap_or(0));
@@ -268,7 +268,7 @@ impl WALManager {
         self.writer.seek(SeekFrom::End(0))?;
         self.writer.write_all(&self.max_seq.to_be_bytes())?;
         self.writer.write_all(&inv.to_be_bytes())?;
-        self.writer.sync_all()?;
+        self.writer.sync_data()?;
 
         let file_size = self.writer.file_size()?;
         self.wals.push(WalMeta {

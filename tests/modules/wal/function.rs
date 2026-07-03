@@ -20,7 +20,7 @@ fn test_writer_sync() {
     let path = d.path().join("sync.log");
     let mut w = Writer::open(&path).unwrap();
     w.write_record(RecordType::Full, b"sync_test").unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     drop(w);
     assert!(std::fs::metadata(&path).unwrap().len() >= 16);
 }
@@ -31,7 +31,7 @@ fn test_zero_length_record_skipped() {
     let path = d.path().join("zero.log");
     let mut w = Writer::open(&path).unwrap();
     w.write_record(RecordType::Full, b"valid").unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     drop(w);
     match Reader::open(&path).unwrap().read_record().unwrap() {
         ReadStatus::Record(_, data) => assert_eq!(data, b"valid"),
@@ -60,7 +60,7 @@ fn test_block_trailer_skip() {
     w.write_record(RecordType::Full, &vec![0xFF; 32761])
         .unwrap();
     w.write_record(RecordType::Full, b"after").unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     drop(w);
     let mut r = Reader::open(&path).unwrap();
     match r.read_record().unwrap() {
@@ -79,7 +79,7 @@ fn test_strict_wal_recovery() {
     let path = d.path().join("strict.log");
     let mut w = Writer::open(&path).unwrap();
     w.write_record(RecordType::Full, b"d").unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     drop(w);
     let mut c = std::fs::read(&path).unwrap();
     if c.len() > 4 {
@@ -115,7 +115,7 @@ fn test_file_header_version_reject() {
         .encode(),
     )
     .unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     drop(w);
     assert!(WALManager::recover(d.path(), test_opts()).is_err());
 }
@@ -125,7 +125,7 @@ fn test_empty_write_batch() {
     let d = tempdir().unwrap();
     let path = d.path().join("empty.log");
     let mut w = Writer::open(&path).unwrap();
-    w.sync_all().unwrap();
+    w.sync_data().unwrap();
     let s = w.file_size().unwrap();
     drop(w);
     assert_eq!(s, 0);

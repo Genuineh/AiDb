@@ -15,6 +15,9 @@ use std::path::Path;
 /// WAL 默认 block 大小
 pub const BLOCK_SIZE: usize = 32768;
 
+/// 预分配零填充 buffer, 避免每次 padding 分配 vec (F-014).
+static ZEROS: [u8; BLOCK_SIZE] = [0u8; BLOCK_SIZE];
+
 pub struct Writer {
     file: std::fs::File,
     block_offset: usize,
@@ -61,8 +64,7 @@ impl Writer {
             if self.block_offset + HEADER_SIZE >= BLOCK_SIZE {
                 let remaining = BLOCK_SIZE - self.block_offset;
                 if remaining > 0 {
-                    let padding = vec![0u8; remaining];
-                    self.file.write_all(&padding)?;
+                    self.file.write_all(&ZEROS[..remaining])?;
                 }
                 self.block_offset = 0;
             }
@@ -117,8 +119,7 @@ impl Writer {
         if BLOCK_SIZE - self.block_offset < needed {
             let remaining = BLOCK_SIZE - self.block_offset;
             if remaining > 0 {
-                let padding = vec![0u8; remaining];
-                self.file.write_all(&padding)?;
+                self.file.write_all(&ZEROS[..remaining])?;
             }
             self.block_offset = 0;
         }
@@ -130,10 +131,13 @@ impl Writer {
         h.update(data);
         let crc = h.finalize();
 
-        self.file.write_all(&crc.to_le_bytes())?; // 4B CRC32
-        self.file.write_all(&(data_len as u16).to_le_bytes())?; // 2B Length
-        self.file.write_all(&[record_type as u8])?; // 1B Type
-        self.file.write_all(data)?; // Data
+        // 合并 header + data 为单次 write (F-012): 4 次 write_all → 1 次 syscall
+        let mut buf = Vec::with_capacity(HEADER_SIZE + data_len);
+        buf.extend_from_slice(&crc.to_le_bytes());
+        buf.extend_from_slice(&(data_len as u16).to_le_bytes());
+        buf.extend_from_slice(&[record_type as u8]);
+        buf.extend_from_slice(data);
+        self.file.write_all(&buf)?;
 
         self.block_offset += HEADER_SIZE + data_len;
 
@@ -156,11 +160,11 @@ impl Writer {
         Ok(())
     }
 
-    /// fsync
+    /// fdatasync — 仅 data+size, 跳过 mtime 元数据同步 (F-013)
     #[tracing::instrument(skip(self))]
-    pub fn sync_all(&mut self) -> Result<()> {
+    pub fn sync_data(&mut self) -> Result<()> {
         tracing::debug!(target: "wal", "wal.sync.start");
-        self.file.sync_all()?;
+        self.file.sync_data()?;
         tracing::debug!(target: "wal", "wal.sync.complete");
         Ok(())
     }
@@ -243,7 +247,7 @@ mod tests {
         let mut writer = Writer::open(&path).unwrap();
         assert!(path.exists());
         writer.write_record(RecordType::Full, b"hello").unwrap();
-        writer.sync_all().unwrap();
+        writer.sync_data().unwrap();
         assert!(writer.file_size().unwrap() > 0);
     }
 
