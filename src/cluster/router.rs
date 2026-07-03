@@ -85,18 +85,27 @@ pub fn key_to_slot(key: &[u8]) -> u16 {
 // Router
 // ---------------------------------------------------------------------------
 
+/// 路由数据快照 (4 个映射的原子集合).
+///
+/// 由于 `refresh_from_data` 需要对 slot_table、group_nodes、node_addrs
+/// 和 group_leaders 同时更新, 将它们放入单个结构体以便通过一次写锁完成原子替换,
+/// 避免读者看到部分更新 (F-001).
+#[derive(Clone, Default)]
+pub struct RouteSnapshot {
+    slot_table: SlotTable,
+    group_nodes: HashMap<u64, Vec<NodeId>>,
+    node_addrs: HashMap<NodeId, String>,
+    group_leaders: HashMap<u64, NodeId>,
+}
+
 /// 数据面路由表.
 ///
 /// 持有槽表、Group-ID 到 Node 列表的映射、Node-ID 到地址的映射,
 /// 以及每个 Group 的当前 leader.
-/// 所有内部状态通过 `Arc<RwLock<...>>` 保护, 支持运行时原子刷新.
+/// 4 个路由映射通过 `Arc<RwLock<RouteSnapshot>>` 原子更新.
 #[derive(Clone)]
 pub struct Router {
-    slot_table: Arc<RwLock<SlotTable>>,
-    group_nodes: Arc<RwLock<HashMap<u64, Vec<NodeId>>>>,
-    node_addrs: Arc<RwLock<HashMap<NodeId, String>>>,
-    /// group_id → current leader node_id (from MetaRaft ReplicaInfo.is_leader).
-    group_leaders: Arc<RwLock<HashMap<u64, NodeId>>>,
+    data: Arc<RwLock<RouteSnapshot>>,
     /// group_id → leader from local MultiRaft observation (优先于 MetaRaft 缓存).
     observed_group_leaders: Arc<RwLock<HashMap<u64, NodeId>>>,
 }
@@ -109,10 +118,12 @@ impl Router {
         node_addrs: HashMap<NodeId, String>,
     ) -> Self {
         Self {
-            slot_table: Arc::new(RwLock::new(table)),
-            group_nodes: Arc::new(RwLock::new(group_nodes)),
-            node_addrs: Arc::new(RwLock::new(node_addrs)),
-            group_leaders: Arc::new(RwLock::new(HashMap::new())),
+            data: Arc::new(RwLock::new(RouteSnapshot {
+                slot_table: table,
+                group_nodes,
+                node_addrs,
+                group_leaders: HashMap::new(),
+            })),
             observed_group_leaders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -137,8 +148,8 @@ impl Router {
                 slot, SLOT_COUNT
             )));
         }
-        let table = self.slot_table.read();
-        match &table[idx] {
+        let data = self.data.read();
+        match &data.slot_table[idx] {
             SlotStatus::Unallocated => Err(ClusterError::InvalidState(format!(
                 "slot {} is not allocated to any group",
                 slot
@@ -206,27 +217,23 @@ impl Router {
         if let Some(&leader) = self.observed_group_leaders.read().get(&group_id) {
             return Some(leader);
         }
-        // 优先从 group_leaders 缓存读取 (由 LifecycleManager tick 刷新).
-        if let Some(&leader) = self.group_leaders.read().get(&group_id) {
+        let data = self.data.read();
+        if let Some(&leader) = data.group_leaders.get(&group_id) {
             return Some(leader);
         }
-        // 回退: 节点列表的第一个.
-        let groups = self.group_nodes.read();
-        groups
+        data.group_nodes
             .get(&group_id)
             .and_then(|nodes| nodes.first().copied())
     }
 
     /// 获取 Group 的所有节点.
     pub fn get_group_nodes(&self, group_id: u64) -> Option<Vec<NodeId>> {
-        let groups = self.group_nodes.read();
-        groups.get(&group_id).cloned()
+        self.data.read().group_nodes.get(&group_id).cloned()
     }
 
     /// 获取节点的网络地址.
     pub fn get_node_addr(&self, node_id: NodeId) -> Option<String> {
-        let addrs = self.node_addrs.read();
-        addrs.get(&node_id).cloned()
+        self.data.read().node_addrs.get(&node_id).cloned()
     }
 
     /// 更新单个 group 的 leader 缓存 (来自本地 Raft 观测, 不等待 MetaRaft 提交).
@@ -238,7 +245,8 @@ impl Router {
 
     /// 原子刷新路由表的所有数据.
     ///
-    /// 同时更新 slot table、group->nodes 映射、group->leader 映射和 node->addr 映射.
+    /// slot_table、group_nodes、node_addrs、group_leaders 在一次写锁内原子替换,
+    /// 读者要么看到全部旧数据, 要么看到全部新数据 (F-001).
     pub fn refresh_from_data(
         &self,
         table: SlotTable,
@@ -246,29 +254,20 @@ impl Router {
         node_addrs: HashMap<NodeId, String>,
         group_leaders: HashMap<u64, NodeId>,
     ) {
-        *self.slot_table.write() = table;
-        *self.group_nodes.write() = group_nodes;
-        *self.node_addrs.write() = node_addrs;
-        *self.group_leaders.write() = group_leaders.clone();
+        let mut data = self.data.write();
+        data.slot_table = table;
+        data.group_nodes = group_nodes;
+        data.node_addrs = node_addrs;
+        data.group_leaders = group_leaders.clone();
         // MetaRaft 已追平时清除过期的本地观测.
         self.observed_group_leaders
             .write()
             .retain(|gid, leader| group_leaders.get(gid) != Some(leader));
     }
 
-    /// 返回 slot table 的只读引用 (Arc).
-    pub fn slot_table(&self) -> Arc<RwLock<SlotTable>> {
-        Arc::clone(&self.slot_table)
-    }
-
-    /// 返回 group->nodes 映射的只读引用 (Arc).
-    pub fn group_nodes_map(&self) -> Arc<RwLock<HashMap<u64, Vec<NodeId>>>> {
-        Arc::clone(&self.group_nodes)
-    }
-
-    /// 返回 node->addr 映射的只读引用 (Arc).
-    pub fn node_addrs_map(&self) -> Arc<RwLock<HashMap<NodeId, String>>> {
-        Arc::clone(&self.node_addrs)
+    /// 返回路由数据的只读引用 (Arc).
+    pub fn data_arc(&self) -> Arc<RwLock<RouteSnapshot>> {
+        Arc::clone(&self.data)
     }
 }
 
