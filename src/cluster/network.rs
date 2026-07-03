@@ -1,5 +1,6 @@
 //! gRPC network layer for Raft.
 
+use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -304,7 +305,7 @@ pub struct RaftNetworkClientFactory {
     nodes: Arc<RwLock<HashMap<NodeId, String>>>,
     /// gRPC channel 连接池 — 按 node_id 缓存, 避免每次 RPC 都重新 TCP + HTTP/2 握手.
     /// Docker 容器 DNS 解析 (aikv-N) 每次 50-100ms, 复用 channel 可消除此开销.
-    channels: Arc<RwLock<HashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>>>,
+    channels: Arc<DashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>>,
 }
 
 impl RaftNetworkClientFactory {
@@ -315,7 +316,7 @@ impl RaftNetworkClientFactory {
             rpc_timeout_ms,
             max_message_size,
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            channels: Arc::new(RwLock::new(HashMap::new())),
+            channels: Arc::new(DashMap::new()),
         }
     }
 
@@ -333,12 +334,12 @@ impl RaftNetworkClientFactory {
     pub fn add_node(&self, node_id: NodeId, address: String) {
         self.nodes.write().insert(node_id, address);
         // 地址变更时清除旧 channel, 下次 RPC 自动重连
-        self.channels.write().remove(&node_id);
+        self.channels.remove(&node_id);
     }
 
     pub fn remove_node(&self, node_id: NodeId) {
         self.nodes.write().remove(&node_id);
-        self.channels.write().remove(&node_id);
+        self.channels.remove(&node_id);
     }
 
     pub fn list_nodes(&self) -> Vec<(NodeId, String)> {
@@ -356,14 +357,12 @@ impl RaftNetworkClientFactory {
         addr: &str,
         max_message_size: usize,
     ) -> std::result::Result<RaftServiceClient<tonic::transport::Channel>, NetworkError> {
-        // Fast path: read lock check
-        {
-            let cache = self.channels.read();
-            if let Some(client) = cache.get(&target) {
-                return Ok(client.clone());
-            }
+        // DashMap 内置分片锁, get/insert 无全局锁竞争
+        if let Some(client) = self.channels.get(&target) {
+            return Ok(client.clone());
         }
-        // Slow path: connect + cache
+        // Slow path: connect + cache (多个并发 miss 可能重复 connect,
+        // 后 insert 覆盖前 insert; tonic Channel 基于 Arc, 旧的 clone 不受影响)
         let normalized = normalize_grpc_addr(addr);
         tracing::debug!(%target, %normalized, "gRPC: establishing new channel for peer");
         let client = RaftServiceClient::connect(normalized)
@@ -371,7 +370,7 @@ impl RaftNetworkClientFactory {
             .map_err(|e| NetworkError::new(&Unreachable::new(&e)))?
             .max_decoding_message_size(max_message_size)
             .max_encoding_message_size(max_message_size);
-        self.channels.write().insert(target, client.clone());
+        self.channels.insert(target, client.clone());
         Ok(client)
     }
 }
