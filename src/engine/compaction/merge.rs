@@ -15,7 +15,7 @@ struct MergeEntry {
 
 impl PartialEq for MergeEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.key == other.key && self.iterator_index == other.iterator_index
+        self.key == other.key
     }
 }
 
