@@ -519,8 +519,9 @@ impl SlotMigrationManager {
     /// 早已过期的旧值。
     ///
     /// 清理放在 propose(CancelSlotMigration) *之前*: 清理期间 slot 仍处于
-    /// `Migrating(source_group)`, 读写仍全部路由到 source (见 router.rs 的
-    /// ASK 收窄修复), 不影响线上流量; 若清理中途失败, meta 状态仍是
+    /// `Migrating(source_group)`, 读仍路由到 source (source 保有完整数据),
+    /// 写已 ASK 重定向到 target (见 router.rs 的 ASK-Redirect-Migrate), 不
+    /// 影响线上流量; 若清理中途失败, meta 状态仍是
     /// `Migrating`, 可以安全重试 cancel, 不会把一个"target 数据不完整"的
     /// 迁移错误地回滚成"看起来已清理干净"。
     #[instrument(skip(self))]
