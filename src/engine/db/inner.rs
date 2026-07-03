@@ -54,6 +54,10 @@ pub struct DB {
     total_key_count: AtomicUsize,
     block_cache: Arc<BlockCache>,
     pub(crate) snapshots: Arc<SnapshotList>,
+    /// Group commit: leader election mutex
+    group_commit_lock: Mutex<()>,
+    /// Group commit: last synced sequence number (monotonic)
+    group_commit_synced_seq: AtomicU64,
 }
 
 impl DB {
@@ -153,6 +157,8 @@ impl DB {
             total_key_count: AtomicUsize::new(0),
             block_cache,
             snapshots: SnapshotList::new(),
+            group_commit_lock: Mutex::new(()),
+            group_commit_synced_seq: AtomicU64::new(0),
         });
 
         db.start_flush_thread();
@@ -388,12 +394,22 @@ impl DB {
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("put");
 
-        let _guard = self.write_lock.lock();
-        let seq = self.alloc_sequence(1)?;
-        self.write_put_to_wal(seq, key, value)?;
+        // Phase 1: WAL append (in write_lock, no sync)
+        let seq;
+        {
+            let _guard = self.write_lock.lock();
+            seq = self.alloc_sequence(1)?;
+            self.write_put_to_wal(seq, key, value, false)?;
+        }
+
+        // Phase 2: wait for WAL persistence (if sync_wal)
+        if self.options.sync_wal {
+            self.wait_group_commit_sync(seq)?;
+        }
+
+        // Phase 3: MemTable (after WAL is durable)
         let existed = self.memtable.read().contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
         self.memtable.read().put(key, value, seq)?;
-        drop(_guard);
 
         if !existed {
             self.total_key_count.fetch_add(1, AtomicOrdering::Relaxed);
@@ -478,11 +494,22 @@ impl DB {
         crate::metrics::record_operation("delete");
 
         let existed = self.get(key)?.is_some();
-        let _guard = self.write_lock.lock();
-        let seq = self.alloc_sequence(1)?;
-        self.write_delete_to_wal(seq, key)?;
+
+        // Phase 1: WAL append (in write_lock, no sync)
+        let seq;
+        {
+            let _guard = self.write_lock.lock();
+            seq = self.alloc_sequence(1)?;
+            self.write_delete_to_wal(seq, key, false)?;
+        }
+
+        // Phase 2: wait for WAL persistence (if sync_wal)
+        if self.options.sync_wal {
+            self.wait_group_commit_sync(seq)?;
+        }
+
+        // Phase 3: MemTable (after WAL is durable)
         self.memtable.read().delete(key, seq)?;
-        drop(_guard);
 
         if existed {
             self.total_key_count
@@ -534,9 +561,6 @@ impl DB {
                 encoded.push(wal_entry_for_op(op, base + i as u64)?.encode());
             }
             wal.append_encoded_write_batch(&encoded, base)?;
-            if self.options.sync_wal {
-                wal.sync()?;
-            }
         }
 
         // 在 MemTable 写入前检查 key 存在性, 用 O(1) 内存操作替代 O(log N) 磁盘读
@@ -566,6 +590,12 @@ impl DB {
         // Release the write lock before maybe_freeze to prevent holding both
         // locks simultaneously if a freeze is triggered.
         drop(_guard);
+
+        if self.options.sync_wal {
+            let last_seq = base + n - 1;
+            self.wait_group_commit_sync(last_seq)?;
+        }
+
         let lock_hold_ms = lock_acquired.elapsed().as_millis();
         if key_delta > 0 {
             self.total_key_count
@@ -997,7 +1027,7 @@ impl DB {
         Ok(())
     }
 
-    fn write_put_to_wal(&self, seq: u64, key: &[u8], value: &[u8]) -> Result<()> {
+    fn write_put_to_wal(&self, seq: u64, key: &[u8], value: &[u8], sync_now: bool) -> Result<()> {
         if !self.options.use_wal {
             return Ok(());
         }
@@ -1011,13 +1041,13 @@ impl DB {
         let mut wal = self.wal.write();
         wal.append(&entry.encode())?;
         wal.note_appended_sequence(seq);
-        if self.options.sync_wal {
+        if self.options.sync_wal && sync_now {
             wal.sync()?;
         }
         Ok(())
     }
 
-    fn write_delete_to_wal(&self, seq: u64, key: &[u8]) -> Result<()> {
+    fn write_delete_to_wal(&self, seq: u64, key: &[u8], sync_now: bool) -> Result<()> {
         if !self.options.use_wal {
             return Ok(());
         }
@@ -1031,9 +1061,45 @@ impl DB {
         let mut wal = self.wal.write();
         wal.append(&entry.encode())?;
         wal.note_appended_sequence(seq);
-        if self.options.sync_wal {
+        if self.options.sync_wal && sync_now {
             wal.sync()?;
         }
+        Ok(())
+    }
+
+    /// Group commit synchronization.
+    ///
+    /// When sync_wal is true, multiple concurrent writers cooperate so that
+    /// a single fdatasync covers all outstanding WAL records.  The first writer
+    /// to acquire group_commit_lock becomes the leader and performs the sync;
+    /// subsequent writers double-check synced_seq and return immediately.
+    fn wait_group_commit_sync(&self, my_seq: u64) -> Result<()> {
+        // Fast path: already covered by a previous sync
+        if self.group_commit_synced_seq.load(AtomicOrdering::Acquire) >= my_seq {
+            return Ok(());
+        }
+
+        let _lock = self.group_commit_lock.lock();
+
+        // Double-check: another leader might have completed while we waited
+        if self.group_commit_synced_seq.load(AtomicOrdering::Acquire) >= my_seq {
+            return Ok(());
+        }
+
+        // Optional batching window
+        if self.options.group_commit_batch_us > 0 {
+            std::thread::sleep(Duration::from_micros(self.options.group_commit_batch_us));
+        }
+
+        // One fdatasync covers all records appended so far
+        let synced_seq = {
+            let mut wal = self.wal.write();
+            let max = wal.max_seq();
+            wal.sync()?;
+            max
+        };
+
+        self.group_commit_synced_seq.store(synced_seq, AtomicOrdering::Release);
         Ok(())
     }
 

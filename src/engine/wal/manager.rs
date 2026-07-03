@@ -125,6 +125,11 @@ impl WALManager {
         }
     }
 
+    /// 获取当前 WAL 文件已记录的最大 sequence (用于 group commit).
+    pub fn max_seq(&self) -> u64 {
+        self.max_seq
+    }
+
     pub fn data_path(&self) -> &Path {
         &self.path
     }

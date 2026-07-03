@@ -50,6 +50,9 @@ pub struct Options {
     pub strict_wal_recovery: bool,
     /// WAL 文件超过此字节数时自动轮转 (默认 64 MiB, 0 = 不自动轮转)
     pub max_wal_size: u64,
+    /// Group commit batching window (microseconds).  Leader waits this long before
+    /// fsync to collect more concurrent writers.  0 = no additional wait (default).
+    pub group_commit_batch_us: u64,
 
     // === Compaction ===
     /// Level 0 文件数触发 Compaction 的阈值
@@ -111,6 +114,7 @@ impl Default for Options {
             sync_wal: false,
             strict_wal_recovery: false,
             max_wal_size: 64 * 1024 * 1024,
+            group_commit_batch_us: 0,
             level0_compaction_trigger: 4,
             level0_slowdown_writes_trigger: 8,
             level0_stop_writes_trigger: 16,
@@ -158,6 +162,7 @@ impl Options {
             sync_wal: false,
             strict_wal_recovery: true,
             max_wal_size: 0,
+            group_commit_batch_us: 0,
             level0_compaction_trigger: 2,
             level0_slowdown_writes_trigger: 4,
             level0_stop_writes_trigger: 8,
