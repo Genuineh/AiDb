@@ -354,10 +354,69 @@ impl DB {
 
     /// Level 0 文件过多时 stall 写入, 等待 compaction 消化.
     /// 仅在 `background_compaction = true` 时生效 (测试模式手动触发 compaction).
+    ///
+    /// 现在也检查 MemTable 总内存 (F-020):
+    /// - Slowdown 阶段始于 60% 的 `max_write_buffer_number * memtable_size`
+    /// - Stop 阶段始于 80%, 优于 `wait_for_memtable_slot()` 的硬上限, 形成梯度保护.
     fn check_write_stall(&self) {
         if !self.options.background_compaction {
             return;
         }
+
+        // === MemTable 总内存 stall (F-020) — 优先于 L0 检查 ===
+        // MemTable 内存问题 (OOM 风险) > L0 文件数问题 (读放大).
+        let mt_mem = self
+            .approximate_memory_bytes()
+            .saturating_sub(self.block_cache_size());
+        let mt_limit =
+            (self.options.memtable_size * self.options.max_write_buffer_number) as u64;
+
+        if mt_mem > mt_limit.saturating_mul(4) / 5 {
+            // stop: MemTable 总内存超过 80% 量级硬上限, 主动 freeze + flush 释放.
+            let mut fail_count = 0u32;
+            loop {
+                if self.memtable.read().approximate_size() > 0 {
+                    let _ = self.freeze_active_if_nonempty();
+                }
+                if let Err(e) = self.flush_pending() {
+                    fail_count += 1;
+                    tracing::warn!(target: "db", error = %e, fail_count,
+                        "memtable stall flush failed");
+                    if fail_count >= 3 {
+                        break; // 持久性失败, 避免死循环
+                    }
+                } else {
+                    fail_count = 0;
+                }
+                if self
+                    .approximate_memory_bytes()
+                    .saturating_sub(self.block_cache_size())
+                    <= mt_limit.saturating_mul(3) / 5
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(
+                    self.options.write_stall_poll_ms,
+                ));
+            }
+            return;
+        }
+
+        if mt_mem > mt_limit.saturating_mul(3) / 5 {
+            // slowdown: MemTable 总内存超 60% 硬上限, 按超出比例线性 sleep.
+            let excess =
+                (mt_mem - mt_limit.saturating_mul(3) / 5) as f64;
+            let span = (mt_limit.saturating_mul(4) / 5)
+                .saturating_sub(mt_limit.saturating_mul(3) / 5) as f64;
+            let sleep_ms = if span > 0.0 {
+                (excess / span * self.options.write_stall_slowdown_max_ms as f64) as u64
+            } else {
+                0
+            };
+            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+        }
+
+        // === L0 文件数 stall (现有逻辑不变) ===
         let l0_count = self.sstables.read()[0].len();
         let opts = &self.options;
 
