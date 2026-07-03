@@ -1,7 +1,7 @@
 //! MemTable — 内存写入缓冲 (SkipMap).
 
 use super::internal_key::{
-    check_sequence, encode_internal_key, extract_sequence, extract_user_key, extract_value_type,
+    check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence, extract_user_key, extract_value_type,
     ValueType, K_MAX_SEQUENCE,
 };
 use super::iterator::MemTableIterator;
@@ -88,8 +88,7 @@ impl MemTable {
   )]
     pub fn put(&self, key: &[u8], value: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
-        let encoded = encode_internal_key(key, sequence, ValueType::TypePut);
-        let ik = InternalKeyBytes::from_slice(&encoded);
+        let ik = InternalKeyBytes(encode_internal_key_arc(key, sequence, ValueType::TypePut));
         let val = Arc::from(value);
         self.table.insert(ik, val);
         self.size
@@ -102,8 +101,7 @@ impl MemTable {
     #[tracing::instrument(name = "mem_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
-        let encoded = encode_internal_key(key, sequence, ValueType::TypeDelete);
-        let ik = InternalKeyBytes::from_slice(&encoded);
+        let ik = InternalKeyBytes(encode_internal_key_arc(key, sequence, ValueType::TypeDelete));
         self.table.insert(ik, Arc::from(&[] as &[u8]));
         self.size.fetch_add(key.len(), AtomicOrdering::Relaxed);
         tracing::debug!(target: "mem", "mem.delete");
