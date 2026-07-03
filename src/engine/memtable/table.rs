@@ -31,6 +31,10 @@ impl ImmutableMemTable {
         self.table.get(key, snapshot_seq)
     }
 
+    pub fn contains_key(&self, key: &[u8], snapshot_seq: u64) -> Result<bool> {
+        self.table.contains_key(key, snapshot_seq)
+    }
+
     pub fn get_latest(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.table.get_latest(key)
     }
@@ -143,6 +147,16 @@ impl MemTable {
         }
         let value_type = extract_value_type(entry_key)?;
         Ok(Some((Arc::clone(entry.value()), value_type)))
+    }
+
+    /// 检查 key 是否存在 (不拷贝 value).
+    /// 内部调用 `search()`, 仅返回 bool.
+    pub fn contains_key(&self, key: &[u8], snapshot_seq: u64) -> Result<bool> {
+        let seek_key = encode_internal_key(key, snapshot_seq, ValueType::TypePut);
+        match self.search(&seek_key)? {
+            Some((_, ValueType::TypePut)) => Ok(true),
+            _ => Ok(false),
+        }
     }
 
     #[tracing::instrument(

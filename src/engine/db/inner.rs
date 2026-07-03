@@ -391,7 +391,7 @@ impl DB {
         let _guard = self.write_lock.lock();
         let seq = self.alloc_sequence(1)?;
         self.write_put_to_wal(seq, key, value)?;
-        let existed = self.memtable.read().get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_some();
+        let existed = self.memtable.read().contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
         self.memtable.read().put(key, value, seq)?;
         drop(_guard);
 
@@ -548,14 +548,14 @@ impl DB {
                 match op {
                     WriteOp::Put { key, value } => {
                         Self::validate_user_key(key)?;
-                        if mt.get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_none() {
+                        if !mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
                             key_delta += 1;
                         }
                         mt.put(key, value, seq)?;
                     }
                     WriteOp::Delete { key } => {
                         Self::validate_user_key(key)?;
-                        if mt.get(key, crate::engine::memtable::K_MAX_SEQUENCE)?.is_some() {
+                        if mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
                             key_delta -= 1;
                         }
                         mt.delete(key, seq)?;
