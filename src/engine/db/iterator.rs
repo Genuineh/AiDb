@@ -1,9 +1,9 @@
 //! DB 多路归并迭代器 (拥有层数据, 无自引用).
 
-use crate::engine::memtable::ImmutableMemTable;
 use crate::engine::memtable::{
+    ImmutableMemTable,
     encode_internal_key, extract_sequence, extract_user_key, extract_value_type, MemTable,
-    MemTableIterator, ValueType, K_MAX_SEQUENCE,
+    MemTableIterator, ValueType, InternalKeyBytes, K_MAX_SEQUENCE,
 };
 use crate::engine::sstable::{SSTableIterator, SSTableReader};
 use crate::error::Result;
@@ -18,7 +18,7 @@ struct LayerEntry {
 
 enum LayerIterInner {
     MemEntries {
-        entries: Vec<(Vec<u8>, Vec<u8>)>,
+        entries: Vec<(InternalKeyBytes, Arc<[u8]>)>,
         index: usize,
     },
     Sstable(SSTableIterator),
@@ -34,7 +34,7 @@ impl LayerIter {
         it.seek_to_first();
         let mut entries = Vec::new();
         while it.valid() {
-            entries.push((it.key().to_vec(), it.value().to_vec()));
+            entries.push((it.key_bytes().clone(), it.value_arc().clone()));
             it.next();
         }
         Self {
@@ -61,7 +61,7 @@ impl LayerIter {
         let (key, value) = match &self.inner {
             LayerIterInner::MemEntries { entries, index } => {
                 let (k, v) = entries.get(*index)?;
-                (k.as_slice(), v.as_slice())
+                (k.as_ref(), v.as_ref())
             }
             LayerIterInner::Sstable(it) if it.valid() => {
                 let k = it.key()?;
@@ -137,10 +137,10 @@ impl LayerIter {
                 // Scan backwards from current index
                 let mut i = *index;
                 while let Some((k, _)) = entries.get(i) {
-                    if extract_user_key(k) != user_key {
+                    if extract_user_key(k.as_ref()) != user_key {
                         break;
                     }
-                    if let Ok(ValueType::TypeDelete) = extract_value_type(k) {
+                    if let Ok(ValueType::TypeDelete) = extract_value_type(k.as_ref()) {
                         return true;
                     }
                     if i == 0 {
@@ -152,10 +152,10 @@ impl LayerIter {
                 let mut i = *index + 1;
                 while i < entries.len() {
                     let (k, _) = &entries[i];
-                    if extract_user_key(k) != user_key {
+                    if extract_user_key(k.as_ref()) != user_key {
                         break;
                     }
-                    if let Ok(ValueType::TypeDelete) = extract_value_type(k) {
+                    if let Ok(ValueType::TypeDelete) = extract_value_type(k.as_ref()) {
                         return true;
                     }
                     i += 1;
@@ -201,7 +201,7 @@ impl LayerIter {
                 let seek = encode_internal_key(target_user_key, K_MAX_SEQUENCE, ValueType::TypePut);
                 *index = entries
                     .iter()
-                    .position(|(k, _)| k.as_slice() >= seek.as_slice())
+                    .position(|(k, _)| k.as_ref() >= seek.as_slice())
                     .unwrap_or(entries.len());
             }
             LayerIterInner::Sstable(it) => {

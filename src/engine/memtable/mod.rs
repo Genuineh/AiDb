@@ -10,5 +10,6 @@ pub use internal_key::{
     extract_sequence, extract_user_key, extract_value_type, ValueType, K_MAX_SEQUENCE, K_TYPE_SEEK,
     SEQUENCE_LIMIT,
 };
+pub(crate) use key_bytes::InternalKeyBytes;
 pub use iterator::MemTableIterator;
 pub use table::{ImmutableMemTable, MemTable};
