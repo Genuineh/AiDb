@@ -7,6 +7,7 @@ use super::record::{OpType, RecordType, WalEntry};
 use super::writer::Writer;
 use crate::config::Options;
 use crate::error::{Error, Result};
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -97,8 +98,8 @@ impl WALManager {
         let wal_path = wal_path(path, file_number);
         let mut writer = Writer::open_with_sync(&wal_path, options.sync_wal)?;
 
-        // 写入 FileHeader
-        let file_header = Self::make_file_header(next_sequence, u64::MAX, current_timestamp());
+        // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
+        let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());
         writer.write_record(RecordType::Full, &file_header)?;
         writer.sync_all()?;
 
@@ -243,8 +244,8 @@ impl WALManager {
         let wal_path = wal_path(&self.path, new_file_number);
         self.writer = Writer::open_with_sync(&wal_path, self.options.sync_wal)?;
 
-        // 写入 FileHeader
-        let file_header = Self::make_file_header(next_sequence, u64::MAX, current_timestamp());
+        // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
+        let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());
         self.writer.write_record(RecordType::Full, &file_header)?;
         self.writer.sync_all()?;
 
@@ -261,36 +262,13 @@ impl WALManager {
     /// 关闭当前 WAL
     #[tracing::instrument(name = "wal_close", skip(self))]
     pub fn close(&mut self) -> Result<()> {
-        // 回填 FileHeader 的 max_seq
-        // FileHeader Record 布局:
-        //   CRC(4) + Length(2) + Type(1) + WalEntry(44B)
-        //   WalEntry: sequence(8) + op_type(1) + has_value(1) + key_len(2) + key(3)
-        //             + value_len(4) + value[version(1) + min_seq(8) + max_seq(8) + create_ts(8)]
-        // max_seq 在文件中的偏移: 4+2+1 + 8+1+1+2+3+4 + 1+8 = 35
-        // CRC 在文件中的偏移: 0
-        const MAX_SEQ_OFFSET: u64 = 35;
-        const CRC_OFFSET: u64 = 0;
-        use std::io::{Read, Seek, SeekFrom, Write};
-
-        if self.writer.file_size().unwrap_or(0) > MAX_SEQ_OFFSET + 8 {
-            // 步骤 1-2: 写 max_seq + sync (确保 data 落盘)
-            self.writer.seek(SeekFrom::Start(MAX_SEQ_OFFSET))?;
-            self.writer.write_all(&self.max_seq.to_be_bytes())?;
-            self.writer.sync_all()?;
-
-            // 步骤 3-4: 重算 CRC + 覆写 CRC
-            let mut crc_input = vec![0u8; 47];
-            let mut f = self.writer.try_clone_file()?;
-            f.seek(SeekFrom::Start(4))?;
-            f.read_exact(&mut crc_input)?;
-            let new_crc = crc32fast::hash(&crc_input);
-
-            self.writer.seek(SeekFrom::Start(CRC_OFFSET))?;
-            self.writer.write_all(&new_crc.to_le_bytes())?;
-
-            // 步骤 5: sync 确保 CRC 落盘
-            self.writer.sync_all()?;
-        }
+        // 在文件末尾写入自校验 trailer: max_seq (8B) || !max_seq (8B)
+        // 替代原有的 CRC 回填两步操作, 消除 CRC 重算的崩溃窗口.
+        let inv = !self.max_seq;
+        self.writer.seek(SeekFrom::End(0))?;
+        self.writer.write_all(&self.max_seq.to_be_bytes())?;
+        self.writer.write_all(&inv.to_be_bytes())?;
+        self.writer.sync_all()?;
 
         let file_size = self.writer.file_size()?;
         self.wals.push(WalMeta {
@@ -519,6 +497,23 @@ impl WALManager {
                     }
                     ReadStatus::CorruptionFatal => {
                         return Err(Error::Corruption("Fatal corruption".into()))
+                    }
+                }
+            }
+            // 读取 trailer: 新格式文件末尾 16 字节自校验 max_seq (F-009 fix)
+            // trailer = max_seq (8B BE) || !max_seq (8B BE)
+            {
+                use std::io::{Read, Seek, SeekFrom};
+                if let Ok(mut f) = std::fs::File::open(&wal_path) {
+                    if f.seek(SeekFrom::End(-16)).is_ok() {
+                        let mut buf = [0u8; 16];
+                        if f.read_exact(&mut buf).is_ok() {
+                            let seq = u64::from_be_bytes(buf[0..8].try_into().unwrap());
+                            let inv = u64::from_be_bytes(buf[8..16].try_into().unwrap());
+                            if inv == !seq {
+                                wal.max_seq = wal.max_seq.max(seq);
+                            }
+                        }
                     }
                 }
             }
