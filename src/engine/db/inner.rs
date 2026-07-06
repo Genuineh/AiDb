@@ -9,8 +9,8 @@ use crate::config::Options;
 use crate::engine::cache::{BlockCache, CacheStats};
 use crate::engine::compaction::{
     current_exists, load_sstables_from_version, remove_orphan_sstables,
-    scan_version_edits_from_dir, CompactionJob, CompactionPicker, CompactionTask, VersionEdit,
-    VersionSet,
+    scan_version_edits_from_dir, CompactionFilter, CompactionJob, CompactionPicker, CompactionTask,
+    VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
     encode_internal_key, extract_sequence, ImmutableMemTable, MemTable, ValueType, SEQUENCE_LIMIT,
@@ -50,6 +50,8 @@ pub struct DB {
     compaction_handles: Mutex<Vec<JoinHandle<()>>>,
     compacting: Mutex<HashSet<u64>>,
     closed: AtomicBool,
+    /// Compaction 过滤器: 在 entry 写入输出 SST 前判断是否保留.
+    compaction_filter: RwLock<Option<Arc<dyn CompactionFilter>>>,
     checkpoint_in_progress: AtomicBool,
     total_key_count: AtomicUsize,
     block_cache: Arc<BlockCache>,
@@ -158,6 +160,7 @@ impl DB {
             compaction_handles: Mutex::new(Vec::new()),
             compacting: Mutex::new(HashSet::new()),
             closed: AtomicBool::new(false),
+            compaction_filter: RwLock::new(None),
             checkpoint_in_progress: AtomicBool::new(false),
             total_key_count: AtomicUsize::new(0),
             block_cache,
@@ -219,6 +222,11 @@ impl DB {
 
     pub fn options(&self) -> &Arc<Options> {
         &self.options
+    }
+
+    /// 设置 compaction 过滤器. 在下次 compaction 时生效.
+    pub fn set_compaction_filter(&self, filter: Option<Arc<dyn CompactionFilter>>) {
+        *self.compaction_filter.write() = filter;
     }
 
     pub fn use_wal(&self) -> bool {
@@ -935,6 +943,7 @@ impl DB {
             self.options.bloom_false_positive_rate,
         )
         .with_snapshot_threshold(min_snap_seq)
+        .with_filter(self.compaction_filter.read().clone())
         .run(&file_numbers)?;
 
         #[cfg(feature = "monitoring")]

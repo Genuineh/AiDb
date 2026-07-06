@@ -6,6 +6,7 @@
 use super::helpers::user_key_from_internal;
 use super::merge::MergeIterator;
 use crate::config::CompressionType;
+use crate::engine::compaction::filter::{CompactionFilter, FilterDecision};
 use crate::engine::memtable::{extract_sequence, extract_value_type, ValueType};
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::error::Result;
@@ -63,6 +64,8 @@ pub struct CompactionJob {
     pub bloom_false_positive_rate: f64,
     /// 活跃快照中的最小 sequence. 低于此值的旧版本可安全 dedup.
     pub min_snapshot_sequence: u64,
+    /// 可选的 compaction 过滤器.
+    pub compaction_filter: Option<Arc<dyn CompactionFilter>>,
 }
 
 pub struct CompactionResult {
@@ -96,6 +99,7 @@ impl CompactionJob {
             compression,
             bloom_false_positive_rate,
             min_snapshot_sequence: u64::MAX, // 默认无活跃快照
+            compaction_filter: None,
         }
     }
 
@@ -105,10 +109,21 @@ impl CompactionJob {
         self
     }
 
+    /// 设置 compaction 过滤器.
+    pub fn with_filter(mut self, filter: Option<Arc<dyn CompactionFilter>>) -> Self {
+        self.compaction_filter = filter;
+        self
+    }
+
     fn all_inputs(&self) -> Vec<Arc<SSTableReader>> {
         let mut all = self.inputs.clone();
         all.extend(self.expanded_inputs.clone());
         all
+    }
+
+    /// 检查 entry 是否应被 filter 丢弃.
+    fn should_filter(&self, key: &[u8], value: &[u8]) -> bool {
+        should_filter_impl(&self.compaction_filter, self.output_level, key, value)
     }
 
     fn count_dedup_entries(&self) -> Result<usize> {
@@ -246,8 +261,10 @@ impl CompactionJob {
 
             if last_user_key.as_deref() == Some(user_key) {
                 if !tracker.already_crossed() {
-                    builder.add(&key, &value)?;
-                    entry_count += 1;
+                    if !self.should_filter(&key, &value) {
+                        builder.add(&key, &value)?;
+                        entry_count += 1;
+                    }
                     tracker.observe(seq, self.min_snapshot_sequence);
                 }
                 continue;
@@ -260,8 +277,10 @@ impl CompactionJob {
                 continue;
             }
 
-            builder.add(&key, &value)?;
-            entry_count += 1;
+            if !self.should_filter(&key, &value) {
+                builder.add(&key, &value)?;
+                entry_count += 1;
+            }
             last_user_key = Some(user_key.to_vec());
             tracker.observe(seq, self.min_snapshot_sequence);
             if smallest_key.is_none() {
@@ -325,6 +344,7 @@ impl CompactionJob {
         let compression = self.compression;
         let bloom_fpr = self.bloom_false_positive_rate;
         let min_snap_seq = self.min_snapshot_sequence;
+        let compaction_filter = self.compaction_filter.clone();
 
         let results: Vec<Result<CompactionResult>> = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(split_keys.len() + 1);
@@ -342,6 +362,7 @@ impl CompactionJob {
                 };
                 let readers = Arc::clone(&all_readers);
                 let path = db_path.clone();
+                let filter = compaction_filter.clone();
                 // 最后一段取剩余估算
                 let expected = if i < split_keys.len() {
                     est_per_range
@@ -363,6 +384,7 @@ impl CompactionJob {
                         bloom_fpr,
                         min_snap_seq,
                         expected,
+                        filter.clone(),
                     )
                 }));
             }
@@ -377,6 +399,20 @@ impl CompactionJob {
 /// 单个子 compaction 任务: 以 `range_end` 为界的 `MergeIterator` 遍历输入,
 /// 仅输出在 `[range_start, range_end)` 范围内的条目.
 #[allow(clippy::too_many_arguments)]
+/// 检查 entry 是否应被 compaction filter 丢弃.
+/// 与 `CompactionJob::should_filter` 语义相同, 但以函数形式供 `write_sub_compaction` 使用.
+fn should_filter_impl(
+    filter: &Option<Arc<dyn CompactionFilter>>,
+    level: usize,
+    key: &[u8],
+    value: &[u8],
+) -> bool {
+    match filter {
+        Some(f) => f.filter(level, key, value) == FilterDecision::Remove,
+        None => false,
+    }
+}
+
 fn write_sub_compaction(
     readers: &[Arc<SSTableReader>],
     file_number: u64,
@@ -390,6 +426,7 @@ fn write_sub_compaction(
     bloom_fpr: f64,
     min_snap_seq: u64,
     expected_keys: usize,
+    compaction_filter: Option<Arc<dyn CompactionFilter>>,
 ) -> Result<CompactionResult> {
     let output_path = sstable_path(db_path, file_number, output_level);
 
@@ -443,8 +480,10 @@ fn write_sub_compaction(
 
         if last_user_key.as_deref() == Some(user_key) {
             if !tracker.already_crossed() {
-                builder.add(&key, &value)?;
-                entry_count += 1;
+                if !should_filter_impl(&compaction_filter, output_level, &key, &value) {
+                    builder.add(&key, &value)?;
+                    entry_count += 1;
+                }
                 tracker.observe(seq, min_snap_seq);
             }
             continue;
@@ -457,8 +496,10 @@ fn write_sub_compaction(
             continue;
         }
 
-        builder.add(&key, &value)?;
-        entry_count += 1;
+        if !should_filter_impl(&compaction_filter, output_level, &key, &value) {
+            builder.add(&key, &value)?;
+            entry_count += 1;
+        }
         last_user_key = Some(user_key.to_vec());
         tracker.observe(seq, min_snap_seq);
         if smallest_key.is_none() {

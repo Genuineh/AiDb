@@ -20,6 +20,7 @@ use crate::cluster::router::Router;
 use crate::cluster::sharded_storage::ShardedStorage;
 use crate::cluster::types::{ClusterError, NodeId, RaftNodeConfig, Request, Response};
 use crate::config::Options;
+use crate::engine::compaction::CompactionFilter;
 use crate::error::Result;
 
 /// 多 Group Raft 节点管理器
@@ -50,6 +51,8 @@ pub struct LifecycleConfig {
     pub data_dir: std::path::PathBuf,
     pub raft_node_config: RaftNodeConfig,
     pub options: Options,
+    /// 可选的 compaction 过滤器 (如 TTL 过期自动删除).
+    pub compaction_filter: Option<Arc<dyn CompactionFilter>>,
 }
 
 /// 单个 group 的自愈重启退避状态.
@@ -397,6 +400,7 @@ impl MultiRaftNode {
         net_factory: &Arc<RwLock<RaftNetworkClientFactory>>,
     ) -> Result<(OpenRaftNode, ShardedStorage)> {
         let storage = ShardedStorage::open(&cfg.data_dir, group_id, cfg.options.clone())?;
+        storage.set_compaction_filter(cfg.compaction_filter.clone());
         let db = storage.db().clone();
         let mut config = cfg.raft_node_config.clone();
         config.group_id = group_id;
@@ -928,6 +932,7 @@ mod tests {
                 ..RaftNodeConfig::default()
             },
             options: Options::for_testing(),
+            compaction_filter: None,
         };
         let net_factory = Arc::new(RwLock::new(RaftNetworkClientFactory::new(
             1,

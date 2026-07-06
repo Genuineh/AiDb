@@ -141,6 +141,7 @@ async fn setup(
             ..Default::default()
         },
         options: Options::for_testing(),
+        compaction_filter: None,
     });
 
     // 等两个 group 都在本地创建出来并选出 leader.

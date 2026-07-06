@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Options;
+use crate::engine::compaction::CompactionFilter;
 use crate::error::Result;
 use crate::DB;
 
@@ -65,5 +66,10 @@ impl ShardedStorage {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// 设置 compaction 过滤器, 在下次 compaction 时生效.
+    pub fn set_compaction_filter(&self, filter: Option<Arc<dyn CompactionFilter>>) {
+        self.db.set_compaction_filter(filter);
     }
 }
