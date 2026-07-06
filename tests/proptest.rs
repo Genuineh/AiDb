@@ -8,3 +8,9 @@ mod common;
 
 #[path = "proptest/random_ops.rs"]
 mod random_ops;
+
+#[path = "proptest/compaction_filter.rs"]
+mod compaction_filter;
+
+#[path = "proptest/recovery.rs"]
+mod recovery;

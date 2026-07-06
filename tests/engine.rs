@@ -27,3 +27,6 @@ mod dataflow;
 
 #[path = "engine/large_flush_repro.rs"]
 mod large_flush_repro;
+
+#[path = "engine/recovery_compaction.rs"]
+mod recovery_compaction;
