@@ -217,6 +217,10 @@ impl DB {
         &self.path
     }
 
+    pub fn options(&self) -> &Arc<Options> {
+        &self.options
+    }
+
     pub fn use_wal(&self) -> bool {
         self.options.use_wal
     }

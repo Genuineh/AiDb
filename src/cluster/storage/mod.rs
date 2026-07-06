@@ -21,11 +21,10 @@ use tracing::instrument;
 pub use keys::DEFAULT_GROUP_ID;
 
 use crate::cluster::meta_state_machine::MetaStateMachine;
-use crate::cluster::meta_types::METARAFT_GROUP_ID;
 use crate::cluster::storage::log::{db_to_storage_err, db_to_storage_write_err};
-use crate::cluster::storage::snapshot::SnapshotKv;
+use crate::cluster::storage::snapshot::prepare_snapshot_bundle;
 use crate::cluster::types::{NodeId, Response, TypeConfig};
-use crate::error::{ClusterError, Result};
+use crate::error::Result;
 use crate::DB;
 
 #[derive(Debug, Clone, Default)]
@@ -176,19 +175,7 @@ impl RaftStorage<TypeConfig> for OpenRaftStorage {
         };
         drop(state);
 
-        let pairs = if self.group_id == METARAFT_GROUP_ID {
-            snapshot::OpenRaftSnapshotBuilder::scan_meta_pairs(&self.db)
-                .map_err(db_to_storage_err)?
-        } else {
-            snapshot::OpenRaftSnapshotBuilder::scan_sm_pairs(&self.db, self.group_id)
-                .map_err(db_to_storage_err)?
-        };
-        let body = SnapshotKv::new(pairs);
-        let data = rmp_serde::to_vec(&body).map_err(|e| {
-            db_to_storage_write_err(crate::error::Error::Cluster(ClusterError::Serialization(
-                e.to_string(),
-            )))
-        })?;
+        let data = prepare_snapshot_bundle(&self.db).map_err(db_to_storage_err)?;
         Ok(Some(Snapshot {
             meta,
             snapshot: Box::new(Cursor::new(data)),

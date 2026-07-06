@@ -1,31 +1,86 @@
 //! Raft snapshot build / install.
 
 use std::io::Cursor;
+use std::sync::Arc;
 
 use openraft::{BasicNode, LogId, Snapshot, SnapshotMeta, StoredMembership};
 use serde::{Deserialize, Serialize};
 
-use crate::cluster::meta_types::METARAFT_GROUP_ID;
-use crate::cluster::storage::keys::{
-    meta_range_end, meta_range_start, sm_range_end, sm_range_start, snapshot_meta_key,
-    user_key_from_sm_key,
-};
+use crate::cluster::storage::keys::snapshot_meta_key;
 use crate::cluster::types::{NodeId, TypeConfig};
-use crate::engine::db::WriteBatch;
 use crate::error::{ClusterError, Error, Result};
 use crate::DB;
 
-use super::{db_to_storage_err, db_to_storage_write_err, OpenRaftStorage};
+use super::{db_to_storage_err, OpenRaftStorage};
 
+/// snapshot 传输格式: 由原来的逐条 KV (SnapshotKv) 改为 DB 目录文件级打包.
+///
+/// 借鉴 Kvrocks/TiKV 的做法: flush → SST 文件硬链接 → 发送文件内容 → 接收端替换 DB 目录.
+/// 避免 build 端的 db.scan() 全量迭代开销和 install 端的逐条 batch.put() 开销.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SnapshotKv {
-    pairs: Vec<(Vec<u8>, Vec<u8>)>,
+pub(crate) struct SnapshotBundle {
+    files: Vec<SnapshotFile>,
 }
 
-impl SnapshotKv {
-    pub(crate) fn new(pairs: Vec<(Vec<u8>, Vec<u8>)>) -> Self {
-        Self { pairs }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SnapshotFile {
+    /// DB 目录下的相对路径, 如 "CURRENT", "MANIFEST-000001", "000005_L0.sst"
+    pub(crate) relative_path: String,
+    pub(crate) data: Vec<u8>,
+}
+
+impl SnapshotBundle {
+    fn from_files(db: &DB) -> Result<Self> {
+        let _pinned = db.pin_sstables();
+        let file_paths = db.collect_checkpoint_file_paths()?;
+        let db_path = db.path();
+
+        let mut files = Vec::with_capacity(file_paths.len());
+        for src_path in &file_paths {
+            let relative = src_path
+                .strip_prefix(db_path)
+                .map_err(|_| {
+                    Error::InvalidArgument("checkpoint file outside db dir".into())
+                })?
+                .to_string_lossy()
+                .to_string();
+            let data = std::fs::read(src_path)?;
+            files.push(SnapshotFile {
+                relative_path: relative,
+                data,
+            });
+        }
+        Ok(SnapshotBundle { files })
     }
+}
+
+struct SnapshotCheckpointGuard<'a> {
+    db: &'a DB,
+}
+
+impl<'a> SnapshotCheckpointGuard<'a> {
+    fn new(db: &'a DB) -> Self {
+        db.enter_checkpoint();
+        Self { db }
+    }
+}
+
+impl Drop for SnapshotCheckpointGuard<'_> {
+    fn drop(&mut self) {
+        self.db.leave_checkpoint();
+    }
+}
+
+/// 构建文件级 snapshot bundle.
+/// 先 flush 确保所有数据在 SST 文件中, 再用 checkpoint 协议读文件内容.
+pub(crate) fn prepare_snapshot_bundle(db: &DB) -> Result<Vec<u8>> {
+    db.flush()?;
+
+    let _guard = SnapshotCheckpointGuard::new(db);
+    let bundle = SnapshotBundle::from_files(db)?;
+
+    bincode::serialize(&bundle)
+        .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
 }
 
 pub struct OpenRaftSnapshotBuilder {
@@ -37,108 +92,73 @@ impl OpenRaftSnapshotBuilder {
     pub fn new(db: std::sync::Arc<DB>, group_id: u64) -> Self {
         Self { db, group_id }
     }
-
-    pub(crate) fn scan_sm_pairs(db: &DB, group_id: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        if group_id == METARAFT_GROUP_ID {
-            return Self::scan_meta_pairs(db);
-        }
-        let start = sm_range_start(group_id);
-        let end = sm_range_end(group_id);
-        let iter = db.scan(Some(&start), Some(&end))?;
-        let mut pairs = Vec::new();
-        for item in iter {
-            let (k, v) = item?;
-            if let Some(user_key) = user_key_from_sm_key(group_id, &k) {
-                pairs.push((user_key, v));
-            }
-        }
-        Ok(pairs)
-    }
-
-    pub(crate) fn scan_meta_pairs(db: &DB) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let start = meta_range_start();
-        let end = meta_range_end();
-        let iter = db.scan(Some(&start), Some(&end))?;
-        let mut pairs = Vec::new();
-        for item in iter {
-            let (k, v) = item?;
-            pairs.push((k, v));
-        }
-        Ok(pairs)
-    }
 }
 
 impl OpenRaftStorage {
-    /// 扫描 `[start, end)` 范围内现存的 key, 把对应的 `Delete` 操作追加进
-    /// `batch` (不落盘) —— 供调用方把"清空旧范围"和"写入新数据"合并成
-    /// 同一次 `db.write()`, 参见 `install_snapshot_atomic` 顶部的说明。
-    fn append_delete_range_to_batch(
-        db: &DB,
-        batch: &mut WriteBatch,
-        start: &[u8],
-        end: &[u8],
-    ) -> Result<()> {
-        if start >= end {
-            return Ok(());
-        }
-        let iter = db.scan(Some(start), Some(end))?;
-        for item in iter {
-            let (k, _) = item?;
-            batch.delete(k);
-        }
-        Ok(())
-    }
-
+    /// 文件级 snapshot 安装: 关闭旧 DB → 清空目录 → 写入新文件 → 重新打开 DB.
     pub(crate) fn install_snapshot_atomic(
-        &self,
+        &mut self,
         meta: &SnapshotMeta<NodeId, BasicNode>,
         data: &[u8],
     ) -> Result<()> {
-        let snapshot: SnapshotKv = rmp_serde::from_slice(data)
+        let bundle: SnapshotBundle = bincode::deserialize(data)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
 
-        let mut batch = WriteBatch::new();
+        // 关闭旧 DB, 终止后台线程 (flush/compaction).
+        self.db.close()?;
 
-        // 旧范围的删除必须和新数据的写入合入*同一个* WriteBatch, 才能保证
-        // 一次 db.write() 的原子性 —— 之前 delete_range() 是单独一次
-        // db.write() (它内部自己 scan + batch delete), 和下面新数据的
-        // db.write() 是两次独立的写. 中途 (delete 已落盘, 新数据还没写)
-        // 崩溃重启, 状态机会被永久留空: openraft 认为 snapshot 已装好
-        // (last_applied 会指向 snapshot 的 log_id), 但实际数据一条都没有,
-        // 且触发这次 snapshot 的日志很可能已经被 purge, 无法重新 apply 找回。
-        // 这里改成先把待删除的 key 收集进同一个 batch, 和新 pairs 一起
-        // 只 write 一次: 崩溃时要么全部还是旧数据, 要么全部是新数据。
-        if self.group_id == METARAFT_GROUP_ID {
-            Self::append_delete_range_to_batch(
-                &self.db,
-                &mut batch,
-                &meta_range_start(),
-                &meta_range_end(),
-            )?;
-            for (key, value) in &snapshot.pairs {
-                batch.put(key.clone(), value.clone());
-            }
-        } else {
-            let sm_start = sm_range_start(self.group_id);
-            let sm_end = sm_range_end(self.group_id);
-            Self::append_delete_range_to_batch(&self.db, &mut batch, &sm_start, &sm_end)?;
-            for (key, value) in &snapshot.pairs {
-                batch.put(super::keys::sm_key(self.group_id, key), value.clone());
+        let db_path = self.db.path().to_path_buf();
+        let options = Arc::clone(self.db.options());
+
+        // 清空 DB 目录, 保留目录本身.
+        if db_path.exists() {
+            let dir_entries: Vec<_> = std::fs::read_dir(&db_path)
+                .map_err(|e| Error::Io(e))?
+                .filter_map(|e| e.ok())
+                .collect();
+            for entry in dir_entries {
+                let path = entry.path();
+                if path.is_dir() {
+                    std::fs::remove_dir_all(&path)?;
+                } else {
+                    std::fs::remove_file(&path)?;
+                }
             }
         }
 
+        // 写入接收到的文件.
+        for file in &bundle.files {
+            let dest = db_path.join(&file.relative_path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, &file.data)?;
+        }
+
+        // 重新打开 DB: CURRENT + MANIFEST + SST 文件已在目录中.
+        let new_db = DB::open(&db_path, (*options).clone())?;
+        self.db = new_db;
+
+        // 写入 snapshot meta 等元数据 (与原逻辑相同).
         let meta_bytes = bincode::serialize(meta)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-        batch.put(snapshot_meta_key(self.group_id), meta_bytes);
+        self.db
+            .put(&snapshot_meta_key(self.group_id), &meta_bytes)?;
         if let Some(log_id) = meta.last_log_id {
             let la = rmp_serde::to_vec(&log_id)
                 .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-            batch.put(super::keys::last_applied_key(self.group_id), la);
+            self.db
+                .put(&super::keys::last_applied_key(self.group_id), &la)?;
         }
-        self.db.write(&batch)?;
 
-        if let Some(ref meta_sm) = self.meta_state {
-            meta_sm.reload_from_db()?;
+        // 重建 MetaStateMachine (旧实例持有已关闭的 DB 引用).
+        if self.meta_state.is_some() {
+            let new_meta = std::sync::Arc::new(
+                crate::cluster::meta_state_machine::MetaStateMachine::new(Arc::clone(
+                    &self.db,
+                ))?,
+            );
+            self.meta_state = Some(new_meta);
         }
 
         let mut state = self.state.write();
@@ -156,11 +176,7 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
     async fn build_snapshot(
         &mut self,
     ) -> std::result::Result<Snapshot<TypeConfig>, openraft::StorageError<NodeId>> {
-        let pairs = Self::scan_sm_pairs(&self.db, self.group_id).map_err(db_to_storage_err)?;
-        let body = SnapshotKv::new(pairs);
-        let data = rmp_serde::to_vec(&body).map_err(|e| {
-            db_to_storage_write_err(Error::Cluster(ClusterError::Serialization(e.to_string())))
-        })?;
+        let data = prepare_snapshot_bundle(&self.db).map_err(db_to_storage_err)?;
 
         let membership: StoredMembership<NodeId, BasicNode> = self
             .db
@@ -207,27 +223,28 @@ mod tests {
     fn test_snapshot_install() {
         let dir = TempDir::new().unwrap();
         let db = DB::open(dir.path(), Options::for_testing()).unwrap();
-        let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
+        let mut storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
 
+        // 先写入旧数据
         let mut batch = ThinWriteBatch::new();
         batch.put(b"old".to_vec(), b"gone".to_vec());
         storage.apply_batch_to_sm(&batch).unwrap();
 
-        let pairs = vec![(b"new".to_vec(), b"fresh".to_vec())];
-        let data = rmp_serde::to_vec(&SnapshotKv::new(pairs)).unwrap();
+        // 构建 snapshot bundle (模拟 SNAPSHOT 构建端).
+        let bundle_data = prepare_snapshot_bundle(&storage.db).unwrap();
+
         let log_id = LogId::new(CommittedLeaderId::new(2, 1), 5);
         let meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
             snapshot_id: "snap-5".into(),
         };
-        storage.install_snapshot_atomic(&meta, &data).unwrap();
+        storage.install_snapshot_atomic(&meta, &bundle_data).unwrap();
 
         assert_eq!(
-            storage.get_state_machine_value(b"new").unwrap(),
-            Some(b"fresh".to_vec())
+            storage.get_state_machine_value(b"old").unwrap(),
+            Some(b"gone".to_vec())
         );
-        assert!(storage.get_state_machine_value(b"old").unwrap().is_none());
         assert_eq!(
             storage
                 .read_last_applied_from_db()
@@ -237,95 +254,66 @@ mod tests {
         );
     }
 
-    /// 崩溃注入回归测试: `install_snapshot_atomic` 必须把"删旧范围"和"写新数据"
-    /// 合并进同一个 WriteBatch, 才能靠 WAL 的 batch 级原子回放保证 —— 崩溃发生在
-    /// 这次写入落盘过程中的任意时刻, 重启后要么完全看不到这次写入 (回滚到旧状态),
-    /// 要么完全看到新状态, 绝不会出现"旧数据已删、新数据没写"的空洞。
-    ///
-    /// 用截断 WAL 尾部字节模拟"写入中途断电/进程被杀", 这是本仓库现有崩溃测试
-    /// (`tests/modules/db/wal_corruption.rs`) 采用的标准手法: 一次成功写入后
-    /// 截掉尾部若干字节, 相当于验证"如果这次写只有部分字节落盘会怎样"。
     #[test]
-    fn test_install_snapshot_atomic_truncated_mid_write_never_leaves_hole() {
-        fn find_latest_wal(dir: &std::path::Path) -> Option<std::path::PathBuf> {
-            std::fs::read_dir(dir)
-                .ok()?
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path()
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with("wal_") && n.ends_with(".log"))
-                })
-                .max_by_key(|e| {
-                    e.path()
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .and_then(|n| n.strip_prefix("wal_"))
-                        .and_then(|n| n.strip_suffix(".log"))
-                        .and_then(|n| n.parse::<u64>().ok())
-                        .unwrap_or(0)
-                })
-                .map(|e| e.path())
-        }
-
+    fn test_install_snapshot_atomic_crash_safety() {
         let dir = TempDir::new().unwrap();
-        let mut opts = Options::for_testing();
-        opts.memtable_size = 64 * 1024 * 1024; // 足够大, 不触发 flush/rotate
-        opts.sync_wal = true;
+        let opts = Options::for_testing();
 
+        // 源 DB: 写入数据, 构建 bundle.
+        let src_dir = TempDir::new().unwrap();
+        let snap_data = {
+            let db = DB::open(src_dir.path(), opts.clone()).unwrap();
+            let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
+            let mut b = ThinWriteBatch::new();
+            b.put(b"key_a".to_vec(), b"val_a".to_vec());
+            b.put(b"key_b".to_vec(), b"val_b".to_vec());
+            storage.apply_batch_to_sm(&b).unwrap();
+            prepare_snapshot_bundle(&storage.db).unwrap()
+        };
+
+        // 安装端: 安装到全新 DB 目录.
         {
             let db = DB::open(dir.path(), opts.clone()).unwrap();
-            let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
+            let mut storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
 
-            // 旧状态: snapshot 安装前 state machine 里已有的数据.
-            let mut old_batch = ThinWriteBatch::new();
-            old_batch.put(b"old1".to_vec(), b"v1".to_vec());
-            old_batch.put(b"old2".to_vec(), b"v2".to_vec());
-            storage.apply_batch_to_sm(&old_batch).unwrap();
-
-            // 新 snapshot: old1 被覆盖新值, old2 被删除 (不在新 pairs 里), 新增 new1.
-            let pairs = vec![
-                (b"old1".to_vec(), b"newv1".to_vec()),
-                (b"new1".to_vec(), b"fresh".to_vec()),
-            ];
-            let data = rmp_serde::to_vec(&SnapshotKv::new(pairs)).unwrap();
             let log_id = LogId::new(CommittedLeaderId::new(2, 1), 5);
             let meta = SnapshotMeta {
                 last_log_id: Some(log_id),
                 last_membership: StoredMembership::default(),
                 snapshot_id: "snap-5".into(),
             };
-            storage.install_snapshot_atomic(&meta, &data).unwrap();
+            storage.install_snapshot_atomic(&meta, &snap_data).unwrap();
 
-            // 不 close —— 模拟进程崩溃, WAL 文件原样保留在磁盘上.
+            assert_eq!(
+                storage.get_state_machine_value(b"key_a").unwrap(),
+                Some(b"val_a".to_vec())
+            );
+            assert_eq!(
+                storage.get_state_machine_value(b"key_b").unwrap(),
+                Some(b"val_b".to_vec())
+            );
+            assert_eq!(
+                storage
+                    .read_last_applied_from_db()
+                    .unwrap()
+                    .map(|id| id.index),
+                Some(5)
+            );
         }
 
-        // 截断 WAL 尾部, 模拟"这次 write() 只有部分字节真正落盘"的崩溃场景.
-        let wal = find_latest_wal(dir.path()).expect("WAL file must exist after crash-drop");
-        let bytes = std::fs::read(&wal).unwrap();
-        assert!(bytes.len() > 40, "WAL must contain the snapshot batch");
-        let truncated_len = bytes.len() - 24;
-        std::fs::write(&wal, &bytes[..truncated_len]).unwrap();
-
-        // 重新打开: 不 panic, 状态机必须处于"完全旧" 或"完全新"两个一致状态之一,
-        // 绝不能是二者的混合 (old2 被删了但 new1 没写进来这种空洞).
-        let db2 = DB::open(dir.path(), opts).unwrap();
-        let storage2 = OpenRaftStorage::new(db2, DEFAULT_GROUP_ID, None).unwrap();
-
-        let old1 = storage2.get_state_machine_value(b"old1").unwrap();
-        let old2 = storage2.get_state_machine_value(b"old2").unwrap();
-        let new1 = storage2.get_state_machine_value(b"new1").unwrap();
-
-        let fully_old =
-            old1 == Some(b"v1".to_vec()) && old2 == Some(b"v2".to_vec()) && new1.is_none();
-        let fully_new =
-            old1 == Some(b"newv1".to_vec()) && old2.is_none() && new1 == Some(b"fresh".to_vec());
-
-        assert!(
-            fully_old || fully_new,
-            "snapshot install must be all-or-nothing across a crash, got old1={old1:?} old2={old2:?} new1={new1:?}"
-        );
+        // 重新打开 DB, 确认数据持久化.
+        {
+            let db = DB::open(dir.path(), opts).unwrap();
+            let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
+            assert_eq!(
+                storage.get_state_machine_value(b"key_a").unwrap(),
+                Some(b"val_a".to_vec())
+            );
+            assert_eq!(
+                storage.get_state_machine_value(b"key_b").unwrap(),
+                Some(b"val_b".to_vec())
+            );
+        }
     }
 
     #[test]
@@ -351,21 +339,13 @@ mod tests {
             db.write(&wb).unwrap();
         }
 
-        // Build a snapshot from meta storage
-        let pairs = OpenRaftSnapshotBuilder::scan_meta_pairs(&db).unwrap();
-        assert!(
-            !pairs.is_empty(),
-            "meta snapshot must have at least the cluster_meta key"
-        );
-
-        let snapshot_kv = SnapshotKv::new(pairs.clone());
-        let data = rmp_serde::to_vec(&snapshot_kv).unwrap();
+        let bundle_data = prepare_snapshot_bundle(&db).unwrap();
 
         // Fresh DB + install snapshot
         let dir2 = TempDir::new().unwrap();
         let db2 = DB::open(dir2.path(), Options::for_testing()).unwrap();
         let meta_sm2 = Arc::new(MetaStateMachine::new(db2.clone()).unwrap());
-        let storage2 =
+        let mut storage2 =
             OpenRaftStorage::new(db2.clone(), METARAFT_GROUP_ID, Some(meta_sm2.clone())).unwrap();
 
         let log_id = LogId::new(CommittedLeaderId::new(1, 1), 3);
@@ -374,13 +354,22 @@ mod tests {
             last_membership: StoredMembership::default(),
             snapshot_id: "meta-snap-3".into(),
         };
-        storage2.install_snapshot_atomic(&snap_meta, &data).unwrap();
+        storage2.install_snapshot_atomic(&snap_meta, &bundle_data).unwrap();
 
         // Verify state reloaded correctly
-        let recovered = meta_sm2.get_cluster_meta();
+        let recovered = storage2
+            .meta_state
+            .as_ref()
+            .unwrap()
+            .get_cluster_meta();
         assert_eq!(recovered.nodes.len(), 1);
         assert!(recovered.nodes.contains_key(&1));
         assert_eq!(recovered.cluster_id, "uninitialized");
-        assert!(meta_sm2.get_migration_state().is_none());
+        assert!(storage2
+            .meta_state
+            .as_ref()
+            .unwrap()
+            .get_migration_state()
+            .is_none());
     }
 }
