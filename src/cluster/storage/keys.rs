@@ -7,6 +7,16 @@ pub fn gid_bytes(group_id: u64) -> [u8; 8] {
     group_id.to_be_bytes()
 }
 
+pub fn last_log_id_key(group_id: u64) -> Vec<u8> {
+    let gid = gid_bytes(group_id);
+    [b"\x00raft/", gid.as_slice(), b"/last_log_id"].concat()
+}
+
+pub fn last_purged_log_id_key(group_id: u64) -> Vec<u8> {
+    let gid = gid_bytes(group_id);
+    [b"\x00raft/", gid.as_slice(), b"/last_purged_log_id"].concat()
+}
+
 pub fn vote_key(group_id: u64) -> Vec<u8> {
     let gid = gid_bytes(group_id);
     [b"\x00raft/", gid.as_slice(), b"/vote"].concat()

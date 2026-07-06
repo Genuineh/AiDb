@@ -5,8 +5,9 @@ use std::ops::{Bound, RangeBounds};
 use openraft::{Entry, LogId, Vote};
 
 use crate::cluster::storage::keys::{
-    last_applied_key, log_key, log_prefix, log_range_end, membership_key, snapshot_meta_key,
-    snapshot_temp_global_end, snapshot_temp_global_start, vote_key,
+    last_applied_key, last_log_id_key, last_purged_log_id_key, log_key, log_prefix, log_range_end,
+    membership_key, snapshot_meta_key, snapshot_temp_global_end, snapshot_temp_global_start,
+    vote_key,
 };
 use crate::cluster::types::{NodeId, TypeConfig};
 use crate::error::{ClusterError, Error, Result};
@@ -70,6 +71,11 @@ impl OpenRaftStorage {
                 rmp_serde::to_vec(entry).map_err(|e| ClusterError::Serialization(e.to_string()))?;
             batch.put(key, data);
         }
+        if let Some(last) = entries.last() {
+            let data = rmp_serde::to_vec(&last.log_id)
+                .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+            batch.put(last_log_id_key(self.group_id), data);
+        }
         self.db.write(&batch)?;
         let mut state = self.state.write();
         if let Some(last) = entries.last() {
@@ -96,6 +102,7 @@ impl OpenRaftStorage {
         let mut state = self.state.write();
         if log_id.index == 0 {
             state.last_log_id = None;
+            self.db.delete(&last_log_id_key(self.group_id))?;
         } else {
             let prev = log_key(self.group_id, log_id.index - 1);
             state.last_log_id = self
@@ -103,6 +110,11 @@ impl OpenRaftStorage {
                 .get(&prev)?
                 .and_then(|data| rmp_serde::from_slice(&data).ok())
                 .map(|e: Entry<TypeConfig>| e.log_id);
+            if let Some(ref lid) = state.last_log_id {
+                let data = rmp_serde::to_vec(lid)
+                    .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+                self.db.put(&last_log_id_key(self.group_id), &data)?;
+            }
         }
         Ok(())
     }
@@ -130,6 +142,10 @@ impl OpenRaftStorage {
             "raft_purge_logs"
         );
         self.state.write().last_purged_log_id = Some(log_id);
+        let data = rmp_serde::to_vec(&log_id)
+            .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+        self.db
+            .put(&last_purged_log_id_key(self.group_id), &data)?;
         Ok(())
     }
 
@@ -160,31 +176,19 @@ impl OpenRaftStorage {
             );
         }
 
-        let prefix = log_prefix(gid);
-        let end = log_range_end(gid);
-        let mut max_index: Option<u64> = None;
-        if let Ok(iter) = self.db.scan(Some(&prefix), Some(&end)) {
-            for item in iter {
-                let (key, _) = item?;
-                if key.len() >= prefix.len() + 8 {
-                    let idx = u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap());
-                    max_index = Some(max_index.map_or(idx, |m| m.max(idx)));
-                }
+        // 优先从持久化 key 读取 last_log_id (O(1)), 不存在则 fallback 到 O(N) 扫描.
+        if let Some(data) = self.db.get(&last_log_id_key(gid))? {
+            let persisted: LogId<NodeId> = rmp_serde::from_slice(&data)
+                .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+            // 验证该 index 的 log entry 确实存在 (防止被手动删除导致的悬挂指针).
+            if self.db.get(&log_key(gid, persisted.index))?.is_some() {
+                state.last_log_id = Some(persisted);
+            } else {
+                // 持久化 key 存在但 log entry 丢失 (异常情况), 走 fallback.
+                reconstruct_last_log_id_from_scan(&self.db, gid, &mut state)?;
             }
-        }
-        // Reconstruct last_log_id from the actual log entry to preserve the
-        // correct CommittedLeaderId (term, node_id).  Using (0,0) causes the
-        // follower's log state to appear as if it belongs to a different leader,
-        // which can break replication after learner catch-up.
-        if let Some(max_idx) = max_index {
-            let leader_id = match self.db.get(&log_key(gid, max_idx)) {
-                Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
-                    Ok(entry) => entry.log_id.leader_id,
-                    Err(_) => openraft::CommittedLeaderId::new(0, 0),
-                },
-                _ => openraft::CommittedLeaderId::new(0, 0),
-            };
-            state.last_log_id = Some(openraft::LogId::new(leader_id, max_idx));
+        } else {
+            reconstruct_last_log_id_from_scan(&self.db, gid, &mut state)?;
         }
 
         tracing::debug!(
@@ -205,7 +209,9 @@ impl OpenRaftStorage {
         let _ = std::fs::remove_file(&temp_path);
 
         if self.db.get(&membership_key(gid))?.is_none() {
-            if let Some(last_idx) = state.last_applied.as_ref().map(|id| id.index).or(max_index) {
+            if let Some(last_idx) = state.last_applied.as_ref().map(|id| id.index).or(
+                state.last_log_id.map(|id| id.index),
+            ) {
                 for idx in (1..=last_idx).rev() {
                     if let Some(data) = self.db.get(&log_key(gid, idx))? {
                         if let Ok(entry) = rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
@@ -223,30 +229,13 @@ impl OpenRaftStorage {
             }
         }
 
-        if max_index.is_some() && state.last_purged_log_id.is_none() {
-            let mut first: Option<u64> = None;
-            if let Ok(iter) = self.db.scan(Some(&prefix), Some(&end)) {
-                for item in iter {
-                    let (key, _) = item?;
-                    if key.len() >= prefix.len() + 8 {
-                        let idx = u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap());
-                        first = Some(first.map_or(idx, |f| f.min(idx)));
-                    }
-                }
-            }
-            if let Some(first_idx) = first {
-                if first_idx > 0 {
-                    // Use the entry at first_idx to get the correct leader for the purged region.
-                    let leader_id = match self.db.get(&log_key(gid, first_idx)) {
-                        Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
-                            Ok(entry) => entry.log_id.leader_id,
-                            Err(_) => openraft::CommittedLeaderId::new(0, 0),
-                        },
-                        _ => openraft::CommittedLeaderId::new(0, 0),
-                    };
-                    state.last_purged_log_id = Some(openraft::LogId::new(leader_id, first_idx - 1));
-                }
-            }
+        // 优先从持久化 key 读取 last_purged_log_id (O(1)), 不存在则 fallback 到 O(N) 扫描.
+        if let Some(data) = self.db.get(&last_purged_log_id_key(gid))? {
+            state.last_purged_log_id =
+                Some(rmp_serde::from_slice(&data).map_err(|e| ClusterError::Serialization(e.to_string()))?);
+        } else if let Some(ref last_log) = state.last_log_id {
+            // Fallback: 扫描全部 log key 找第一个 index (旧数据兼容).
+            reconstruct_last_purged_log_id_from_scan(&self.db, gid, last_log.leader_id, &mut state)?;
         }
 
         Ok(())
@@ -290,6 +279,72 @@ pub(crate) fn db_to_storage_write_err(e: Error) -> openraft::StorageError<NodeId
     openraft::StorageError::IO {
         source: openraft::StorageIOError::write(openraft::AnyError::error(e.to_string())),
     }
+}
+
+/// Fallback: 扫描全部 log key 找 max_index, 用于旧数据兼容.
+fn reconstruct_last_log_id_from_scan(
+    db: &crate::DB,
+    gid: u64,
+    state: &mut super::StorageState,
+) -> Result<()> {
+    let prefix = log_prefix(gid);
+    let end = log_range_end(gid);
+    let mut max_index: Option<u64> = None;
+    if let Ok(iter) = db.scan(Some(&prefix), Some(&end)) {
+        for item in iter {
+            let (key, _) = item?;
+            if key.len() >= prefix.len() + 8 {
+                let idx = u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap());
+                max_index = Some(max_index.map_or(idx, |m| m.max(idx)));
+            }
+        }
+    }
+    if let Some(max_idx) = max_index {
+        let leader_id = match db.get(&log_key(gid, max_idx)) {
+            Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+                Ok(entry) => entry.log_id.leader_id,
+                Err(_) => openraft::CommittedLeaderId::new(0, 0),
+            },
+            _ => openraft::CommittedLeaderId::new(0, 0),
+        };
+        state.last_log_id = Some(openraft::LogId::new(leader_id, max_idx));
+    }
+    Ok(())
+}
+
+/// Fallback: 扫描全部 log key 找 min_index, 用于旧数据兼容.
+fn reconstruct_last_purged_log_id_from_scan(
+    db: &crate::DB,
+    gid: u64,
+    leader_id: openraft::CommittedLeaderId<NodeId>,
+    state: &mut super::StorageState,
+) -> Result<()> {
+    let prefix = log_prefix(gid);
+    let end = log_range_end(gid);
+    let mut first: Option<u64> = None;
+    if let Ok(iter) = db.scan(Some(&prefix), Some(&end)) {
+        for item in iter {
+            let (key, _) = item?;
+            if key.len() >= prefix.len() + 8 {
+                let idx = u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap());
+                first = Some(first.map_or(idx, |f| f.min(idx)));
+            }
+        }
+    }
+    if let Some(first_idx) = first {
+        if first_idx > 0 {
+            // Use the entry at first_idx to get the correct leader for the purged region.
+            let lid = match db.get(&log_key(gid, first_idx)) {
+                Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+                    Ok(entry) => entry.log_id.leader_id,
+                    Err(_) => leader_id,
+                },
+                _ => leader_id,
+            };
+            state.last_purged_log_id = Some(openraft::LogId::new(lid, first_idx - 1));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
