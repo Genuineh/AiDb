@@ -50,18 +50,32 @@ impl CompactionPicker {
         if levels.is_empty() {
             return None;
         }
+        // L0 优先: 文件数触发 (读写阻塞比 L1+ 写放大更紧迫)
         if levels[0].len() >= self.level0_compaction_trigger {
             return self.pick_level0(levels);
         }
+        // 选 score 最高的层级 (size / target_size).
+        // u64 as f64: 尾数 64 位 > f64 尾数 53 位, level size > 2^53 (≈ 9PB) 时精度受损,
+        // 但当前规模下该限制不构成实际问题.
+        let mut best_score = 1.0_f64;
+        let mut best_level: Option<usize> = None;
         for level in 1..self.max_levels.saturating_sub(1) {
             if level >= levels.len() {
                 break;
             }
-            if Self::calculate_level_size(&levels[level]) > self.target_size_for_level(level) {
-                return self.pick_level_n(levels, level);
+            let target = self.target_size_for_level(level);
+            let size = Self::calculate_level_size(&levels[level]);
+            let score = size as f64 / target as f64;
+            debug_assert!(score.is_finite(), "score must be finite for u64 inputs");
+            if score > best_score {
+                best_score = score;
+                best_level = Some(level);
             }
         }
-        None
+        match best_level {
+            Some(level) => self.pick_level_n(levels, level),
+            None => None,
+        }
     }
 
     fn pick_level0(&self, levels: &[Vec<Arc<SSTableReader>>]) -> Option<CompactionTask> {
@@ -89,7 +103,7 @@ impl CompactionPicker {
         if level + 1 >= levels.len() || levels[level].is_empty() {
             return None;
         }
-        let seed = levels[level][0].clone();
+        let seed = pick_seed_level_n(levels, level);
         let mut inputs = vec![seed.clone()];
         let mut expanded = overlap_with_reader(levels, level + 1, &seed);
 
@@ -166,6 +180,36 @@ fn overlap_with_reader(
     seed: &SSTableReader,
 ) -> Vec<Arc<SSTableReader>> {
     overlap_in_level(levels, level, seed.smallest_key(), seed.largest_key())
+}
+
+/// 选源层中与目标层重叠最少的文件作为 seed.
+/// `usize::MAX` 哨兵确保第一个文件总是被初始 candidate 接受;
+/// 后续文件严格按 overlap count 和 file_number tie-break 比较.
+/// 平局按 file_number 升序确定, 保证确定性.
+fn pick_seed_level_n(
+    levels: &[Vec<Arc<SSTableReader>>],
+    level: usize,
+) -> Arc<SSTableReader> {
+    let target = level + 1;
+    debug_assert!(target < levels.len(), "target level must exist");
+    let mut best = (levels[level][0].clone(), usize::MAX);
+    for f in &levels[level] {
+        let count = levels[target]
+            .iter()
+            .filter(|t| {
+                key_ranges_overlap_by_meta_raw(
+                    f.smallest_key(),
+                    f.largest_key(),
+                    t.smallest_key(),
+                    t.largest_key(),
+                )
+            })
+            .count();
+        if count < best.1 || (count == best.1 && f.file_number() < best.0.file_number()) {
+            best = (f.clone(), count);
+        }
+    }
+    best.0
 }
 
 #[cfg(test)]
@@ -363,5 +407,89 @@ mod tests {
         let z0 = encode_internal_key(b"x", 1, ValueType::TypePut);
         let z1 = encode_internal_key(b"y", 1, ValueType::TypePut);
         assert!(!key_ranges_overlap_by_meta_raw(&a0, &a1, &z0, &z1));
+    }
+
+    // --- F-026: Score 排序 ---
+
+    #[test]
+    fn test_pick_by_score_multi_level() {
+        let dir = tempdir().unwrap();
+        let mut opts = Options::for_testing();
+        opts.max_bytes_for_level_base = 500;
+        opts.max_bytes_for_level_multiplier = 10;
+        // L1 target=500, L2 target=5000
+        let picker = CompactionPicker::from_options(&opts);
+        let mut levels = empty_levels(7);
+        // L1: ~600 bytes, score 1.2
+        levels[1].push(big_file(dir.path(), 1, 1, b"a", 300));
+        levels[1].push(big_file(dir.path(), 2, 1, b"b", 300));
+        // L2: ~10000 bytes, score 2.0 — 更紧迫
+        levels[2].push(big_file(dir.path(), 3, 2, b"x", 5000));
+        levels[2].push(big_file(dir.path(), 4, 2, b"y", 5000));
+        let task = picker
+            .pick_compaction(&levels)
+            .expect("L2 has higher score, should be selected");
+        assert_eq!(task.level, 2, "should pick level 2 with higher score");
+        assert_eq!(task.output_level, 3);
+    }
+
+    // --- F-027: Seed 选择 ---
+
+    #[test]
+    fn test_pick_seed_min_overlap() {
+        let dir = tempdir().unwrap();
+        let mut opts = Options::for_testing();
+        opts.max_bytes_for_level_base = 200;
+        let picker = CompactionPicker::from_options(&opts);
+        let mut levels = empty_levels(7);
+        // L1: file("a") + file("m"), L2: file("a") + file("b")
+        levels[1].push(big_file(dir.path(), 1, 1, b"a", 300));
+        levels[1].push(file(dir.path(), 2, 1, b"m"));
+        levels[2].push(file(dir.path(), 3, 2, b"a"));
+        levels[2].push(file(dir.path(), 4, 2, b"b"));
+        let task = picker
+            .pick_compaction(&levels)
+            .expect("level1 overflow");
+        // file("a") overlaps 2, file("m") overlaps 0 → seed=file("m") → trivial move
+        assert!(task.is_trivial_move, "seed with zero overlap should be trivial move");
+    }
+
+    #[test]
+    fn test_pick_seed_tie_break_by_file_number() {
+        let dir = tempdir().unwrap();
+        let mut opts = Options::for_testing();
+        opts.max_bytes_for_level_base = 200;
+        let picker = CompactionPicker::from_options(&opts);
+        let mut levels = empty_levels(7);
+        // L1: file num=2 key="a", file num=1 key="b". L2 无重叠文件.
+        levels[1].push(big_file(dir.path(), 2, 1, b"a", 300));
+        levels[1].push(big_file(dir.path(), 1, 1, b"b", 300));
+        let task = picker
+            .pick_compaction(&levels)
+            .expect("level1 overflow");
+        assert!(task.is_trivial_move, "no overlap → trivial move");
+        // tie-break: 两者 overlap 均为 0, 选 file_number 最小的 (num=1, key="b")
+        assert_eq!(task.inputs.len(), 1);
+    }
+
+    #[test]
+    fn test_pick_seed_expansion_still_works() {
+        let dir = tempdir().unwrap();
+        let mut opts = Options::for_testing();
+        opts.max_bytes_for_level_base = 200;
+        let picker = CompactionPicker::from_options(&opts);
+        let mut levels = empty_levels(7);
+        // L1: file("a", 300B) + file("b", 300B). L2: file("a") + file("b").
+        // 两个源文件都与目标层有重叠 → 不走 trivial move → 验证 expansion.
+        levels[1].push(big_file(dir.path(), 1, 1, b"a", 300));
+        levels[1].push(big_file(dir.path(), 2, 1, b"b", 300));
+        levels[2].push(file(dir.path(), 3, 2, b"a"));
+        levels[2].push(file(dir.path(), 4, 2, b"b"));
+        let task = picker
+            .pick_compaction(&levels)
+            .expect("level1 overflow");
+        assert!(!task.is_trivial_move, "all files overlap → must do real compaction");
+        assert!(!task.inputs.is_empty(), "inputs should include overlapping files");
+        assert_eq!(task.output_level, 2);
     }
 }
