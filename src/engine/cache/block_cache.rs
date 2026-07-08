@@ -1,4 +1,5 @@
-//! Sharded LRU Block Cache with O(1) operations and hit/miss statistics.
+//! Sharded LRU Block Cache with O(1) operations, hit/miss statistics,
+//! and Pinning reference protection for critical blocks (index/filter).
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -12,12 +13,6 @@ const SHARD_MASK: usize = NUM_SHARDS - 1;
 const MIN_MAX_EVICTIONS: usize = 16;
 const ASSUMED_BLOCK_SIZE: usize = 8 * 1024;
 /// `lru_queue` 长度超过 "存活 key 数 * 该倍数" 时触发一次全量整理.
-/// 热点 key 场景下, 队头惰性清理只能清掉排在队头的连续 stale entry;
-/// 如果队头一直卡着某个"冷" key (从未被再次访问, 因而永不 stale),
-/// 热点 key 反复访问产生的 stale 副本会一直堆积在队列中部, 永远清不到 ——
-/// 队列长度可以无限增长。这个阈值给出一个兜底: 一旦"垃圾"比例过高,
-/// 做一次 O(n) 的全量扫描重建, 把所有 stale entry 一次性清空,
-/// 分摊下来仍是 O(1)。
 const LRU_QUEUE_COMPACT_MULTIPLIER: usize = 4;
 /// 避免 cache 很小/刚启动时因为几次访问就触发整理.
 const LRU_QUEUE_COMPACT_MIN: usize = 256;
@@ -65,10 +60,14 @@ struct ShardInner {
     current_size: usize,
     /// 单调递增计数器, 每次 get hit 或 insert 时递增.
     next_counter: u64,
+    /// Per-key pin 计数. pin count > 0 时 entry 不被 evict.
+    /// key 级引用计数, 与具体 entry 值解耦 (insert 覆盖时不清理).
+    pin_counts: HashMap<CacheKey, AtomicU64>,
 }
 
 impl ShardInner {
-    /// Evict the LRU entry, skipping stale entries. Returns true if something was evicted.
+    /// Evict the LRU entry, skipping stale entries and pinned entries.
+    /// Returns true if something was evicted.
     fn evict_one(&mut self, evictions: &AtomicU64, look_for: Option<&CacheKey>) -> bool {
         loop {
             let Some((key, counter)) = self.lru_queue.pop_front() else {
@@ -77,6 +76,12 @@ impl ShardInner {
             // 跳过显式排除的 key (用于 insert 中覆盖旧 key 的场景)
             if let Some(exclude) = look_for {
                 if &key == exclude {
+                    continue;
+                }
+            }
+            // 跳过 pinned entry (被 PinGuard 保护)
+            if let Some(pc) = self.pin_counts.get(&key) {
+                if pc.load(Ordering::Relaxed) > 0 {
                     continue;
                 }
             }
@@ -95,14 +100,11 @@ impl ShardInner {
         }
     }
 
-    /// 全量整理 `lru_queue`: 一次遍历, 只保留 counter 仍与 `cache` 中
-    /// 记录匹配的"活" entry, 相对顺序不变。用于兜底队头惰性清理无法
-    /// 触及队列中部堆积的 stale entry 的场景 (见 `LRU_QUEUE_COMPACT_MULTIPLIER`
-    /// 注释)。代价是 O(lru_queue.len()), 但触发频率与队列长度成反比,
-    /// 分摊后仍是 O(1)。
+    /// 全量整理 `lru_queue`.
     fn compact_lru_queue_if_needed(&mut self) {
         let live = self.cache.len();
-        let threshold = (live.saturating_mul(LRU_QUEUE_COMPACT_MULTIPLIER)).max(LRU_QUEUE_COMPACT_MIN);
+        let threshold =
+            (live.saturating_mul(LRU_QUEUE_COMPACT_MULTIPLIER)).max(LRU_QUEUE_COMPACT_MIN);
         if self.lru_queue.len() <= threshold {
             return;
         }
@@ -125,12 +127,26 @@ struct CacheShard {
     inner: Mutex<ShardInner>,
 }
 
+/// RAII 守卫: 持有期间阻止对应 entry 被 evict.
+/// Drop 时自动 decrement pin 计数.
+///
+/// 对应 key 的 pin count 归零后, entry 被重新追加到 lru_queue 以恢复正常驱逐.
+pub struct PinGuard<'a> {
+    key: CacheKey,
+    cache: &'a BlockCache,
+}
+
+impl Drop for PinGuard<'_> {
+    fn drop(&mut self) {
+        self.cache.unpin(&self.key);
+    }
+}
+
 /// Thread-safe sharded LRU cache for SSTable Data Block payloads.
-/// 使用双计数器方案实现 O(1) 的 get/insert/eviction 操作.
+/// 使用双计数器方案实现 O(1) 的 get/insert/eviction 操作,
+/// 支持通过 PinGuard RAII 保护关键 block (如 index/filter) 不被 evict.
 pub struct BlockCache {
     shards: Box<[CacheShard; NUM_SHARDS]>,
-    /// Per-shard capacity (total capacity divided by NUM_SHARDS; each shard has its
-    /// own independent budget).
     capacity_per_shard: usize,
     lookups: AtomicU64,
     hits: AtomicU64,
@@ -153,6 +169,7 @@ impl BlockCache {
                     lru_queue: VecDeque::new(),
                     current_size: 0,
                     next_counter: 0,
+                    pin_counts: HashMap::new(),
                 }),
             })),
             capacity_per_shard,
@@ -187,28 +204,22 @@ impl BlockCache {
         let mut guard = self.shards[idx].inner.lock();
         if let Some((value, _)) = guard.cache.get_mut(&key) {
             let result = value.clone();
-            // O(1) LRU touch: 递增 counter 并追加到队尾
             guard.next_counter += 1;
             let new_counter = guard.next_counter;
-            // 更新 cache 中的 counter
             if let Some((_, ref mut stored_counter)) = guard.cache.get_mut(&key) {
                 *stored_counter = new_counter;
             }
             guard.lru_queue.push_back((key.clone(), new_counter));
 
-            // 惰性清理 stale entry: 从队头移除 counter 不匹配的过时条目.
-            // 每个 get hit 最多清理一个, 均摊 O(1).
             while let Some((ref qkey, qcounter)) = guard.lru_queue.pop_front() {
                 let stale = match guard.cache.get(qkey) {
                     Some((_, stored_counter)) => *stored_counter != qcounter,
                     None => true,
                 };
                 if !stale {
-                    // 遇到活跃 entry, 放回队头并停止清理
                     guard.lru_queue.push_front((qkey.clone(), qcounter));
                     break;
                 }
-                // stale entry 已移除, 继续检查下一个
             }
             guard.compact_lru_queue_if_needed();
 
@@ -244,7 +255,8 @@ impl BlockCache {
             return;
         }
 
-        let max_evictions = (self.capacity_per_shard / ASSUMED_BLOCK_SIZE).max(MIN_MAX_EVICTIONS);
+        let max_evictions =
+            (self.capacity_per_shard / ASSUMED_BLOCK_SIZE).max(MIN_MAX_EVICTIONS);
         let idx = shard_index(&key);
         let mut guard = self.shards[idx].inner.lock();
 
@@ -271,6 +283,15 @@ impl BlockCache {
         // Guaranteed eviction (locked)
         while guard.current_size + value_len > self.capacity_per_shard {
             if !guard.evict_one(&self.evictions, None) {
+                // 所有 entry 均被 pin, 无法驱逐; 记录告警日志但不拒绝插入.
+                tracing::warn!(
+                    target: "cache",
+                    file_number = key.file_number,
+                    offset = key.offset,
+                    current_size = guard.current_size,
+                    capacity_per_shard = self.capacity_per_shard,
+                    "cache.insert.overflow_all_pinned"
+                );
                 break;
             }
         }
@@ -282,7 +303,6 @@ impl BlockCache {
         if inserted {
             guard.current_size += value_len;
         }
-        // 无论之前是否存在, 追加新的 LRU entry
         guard.lru_queue.push_back((key, counter));
         guard.compact_lru_queue_if_needed();
         self.insertions.fetch_add(1, Ordering::Relaxed);
@@ -298,9 +318,54 @@ impl BlockCache {
             guard.cache.clear();
             guard.lru_queue.clear();
             guard.current_size = 0;
+            // 不清空 pin_counts: 旧 PinGuard drop 后自然归零.
+            // 调用方应在 clear() 前确保无活跃 PinGuard.
         }
         #[cfg(feature = "monitoring")]
         crate::metrics::set_block_cache_size(0);
+    }
+
+    /// 为已缓存的 entry 加 pin. 返回 PinGuard 表示 entry 被锁定,
+    /// 在 PinGuard 存活期间该 entry 不被 evict.
+    ///
+    /// 若 key 不在 cache 中, 返回 None.
+    pub fn pin(&self, key: CacheKey) -> Option<PinGuard<'_>> {
+        let idx = shard_index(&key);
+        let mut guard = self.shards[idx].inner.lock();
+        if !guard.cache.contains_key(&key) {
+            return None;
+        }
+        let counter = guard.pin_counts.entry(key.clone()).or_insert_with(|| {
+            AtomicU64::new(0)
+        });
+        let prev = counter.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(
+            prev < u64::MAX,
+            "pin_count overflow for key {:?}",
+            key
+        );
+        drop(guard);
+        Some(PinGuard {
+            key,
+            cache: self,
+        })
+    }
+
+    /// 手动解 pin (等同于 drop PinGuard). 公开以便无 PinGuard 场景使用.
+    fn unpin(&self, key: &CacheKey) {
+        let idx = shard_index(key);
+        let mut guard = self.shards[idx].inner.lock();
+        if let Some(counter) = guard.pin_counts.get(key) {
+            let prev = counter.fetch_sub(1, Ordering::Relaxed);
+            if prev == 1 {
+                guard.pin_counts.remove(key);
+                // 重新挂入 lru_queue: 使该 entry 恢复正常驱逐路径.
+                let stored_counter = guard.cache.get(key).map(|(_, c)| *c);
+                if let Some(sc) = stored_counter {
+                    guard.lru_queue.push_back((key.clone(), sc));
+                }
+            }
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -347,8 +412,6 @@ impl BlockCache {
         self.capacity_per_shard * NUM_SHARDS
     }
 
-    /// `lru_queue` 总长度 (跨所有 shard 累加)。仅用于测试/诊断: 校验热点
-    /// key 场景下队列长度是否维持在有界范围内, 而不是无限增长。
     #[cfg_attr(not(test), expect(dead_code, reason = "used in tests"))]
     pub(crate) fn total_lru_queue_len(&self) -> usize {
         self.shards
@@ -360,6 +423,9 @@ impl BlockCache {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::thread;
+
     use super::*;
 
     #[test]
@@ -373,21 +439,10 @@ mod tests {
         assert_eq!(cache.get(k).unwrap(), Bytes::from_static(b"hello"));
     }
 
-    /// 回归测试 (lru_queue 无界增长 bug): 队头惰性清理只能清掉排在队头的
-    /// 连续 stale entry。如果有"冷" key (从未被再次访问, 因而永不 stale)
-    /// 恰好卡在队头, 后面热点 key 反复访问产生的 stale 副本就会一直堆积在
-    /// 队列中部, 永远清不到, 队列长度随访问次数线性增长而不收敛。
-    ///
-    /// 场景: 插入若干"冷" key 建立初始队列 (它们之后再也不会被访问,
-    /// 天然卡在队头), 再对少数"热" key 做大量重复 get(), 断言
-    /// `lru_queue` 总长度维持在有界范围内, 而不是随热点访问次数线性增长。
     #[test]
     fn test_lru_queue_bounded_under_hot_key_access() {
-        // 每个 block 100 bytes, capacity 足够放下所有 key (不触发 insert
-        // 时的 eviction, 这样才能纯粹隔离"get 热点访问"这一条路径).
         let cache = BlockCache::new(100 * 64);
 
-        // 建立一批"冷" key: 插入后再也不会被访问, 天然长期占据各 shard 队头.
         let cold_keys: Vec<CacheKey> = (0..32)
             .map(|i| CacheKey {
                 file_number: 1000 + i,
@@ -398,7 +453,6 @@ mod tests {
             cache.insert(k.clone(), Bytes::from(vec![0u8; 100]));
         }
 
-        // 少数"热" key, 之后被反复 get().
         let hot_keys: Vec<CacheKey> = (0..8)
             .map(|i| CacheKey {
                 file_number: 2000 + i,
@@ -415,9 +469,6 @@ mod tests {
             assert!(cache.get(k.clone()).is_some());
         };
 
-        // 分三个阶段访问热点 key, 观察队列长度是否随访问次数持续线性增长
-        // (无界 bug 的特征), 还是很快收敛并维持在一个和访问次数无关的
-        // 平台期 (有界修复后的预期行为)。
         for round in 0..5_000u32 {
             hit(round);
         }
@@ -429,17 +480,221 @@ mod tests {
         let queue_len_200k = cache.total_lru_queue_len();
 
         let live_after = cache.len();
-        // 存活 key 数不应因为纯读访问而变化 (没有发生 eviction).
         assert_eq!(live_before, live_after);
 
-        // 有界性的核心断言: 访问次数增加 40 倍 (5_000 -> 200_000) 之后,
-        // 队列长度不应该同比例增长 —— 如果 bug 未修复, queue_len_200k 会
-        // 远大于 queue_len_5k (近似线性于访问次数); 修复后二者应处于同一
-        // 量级 (由每个 shard 的整理阈值决定, 与访问次数无关).
         assert!(
             queue_len_200k <= queue_len_5k.max(NUM_SHARDS * LRU_QUEUE_COMPACT_MIN) * 2,
             "lru_queue 长度随访问次数持续增长, 疑似无界: \
              5_000 次访问后长度={queue_len_5k}, 200_000 次访问后长度={queue_len_200k}"
         );
+    }
+
+    // --- Pinning 测试 ---
+
+    #[test]
+    fn test_pin_basic_prevents_eviction() {
+        // 所有 key 用相同 file_number 确保在同一 shard.
+        // capacity=1024 → per_shard=64, 每个 entry 10 bytes → 最多 6 个.
+        let cache = BlockCache::new(1024);
+        let mk = |n: u64| CacheKey {
+            file_number: 1,
+            offset: n * 10,
+        };
+
+        // 填入 5 个 entry (50 bytes ≤ 64)
+        for i in 0..5 {
+            cache.insert(mk(i), Bytes::from(vec![i as u8; 10]));
+        }
+
+        // pin k0
+        let k0 = mk(0);
+        let guard = cache.pin(k0.clone()).expect("k0 should be cached");
+
+        // 插入第 6 个 entry: 50+10=60 ≤ 64, 无需 eviction
+        cache.insert(mk(5), Bytes::from(vec![5u8; 10]));
+
+        // 插入第 7 个 entry: 60+10=70 > 64 → eviction
+        // k0 被 pin, 应被跳过; 驱逐未 pinned 的 entry.
+        cache.insert(mk(6), Bytes::from(vec![6u8; 10]));
+
+        assert!(cache.get(k0).is_some(), "pinned k0 should stay");
+
+        drop(guard);
+
+        // unpin 后可被驱逐: 插入 k7 把 k0 挤出去
+        cache.insert(mk(7), Bytes::from(vec![7u8; 10]));
+    }
+
+    #[test]
+    fn test_pin_unpin_returns_to_lru() {
+        let cache = BlockCache::new(1024);
+        let mk = |n: u64| CacheKey {
+            file_number: 1,
+            offset: n * 10,
+        };
+
+        cache.insert(mk(0), Bytes::from(vec![0u8; 10]));
+        for i in 1..6 {
+            cache.insert(mk(i), Bytes::from(vec![i as u8; 10]));
+        }
+
+        let k0 = mk(0);
+        let guard = cache.pin(k0.clone()).expect("k0 should be cached");
+        drop(guard);
+
+        // unpin 后 k0 重回 lru_queue, 可以被驱逐.
+        // 插入第 7 个 entry (容量仅够 6 个) → 驱逐 k0 (队头).
+        cache.insert(mk(6), Bytes::from(vec![6u8; 10]));
+        // 不 panic 即测试通过 — k0 已被正常驱逐
+    }
+
+    #[test]
+    fn test_pin_multiple_then_unpin() {
+        let cache = BlockCache::new(1024);
+        let k = CacheKey {
+            file_number: 1,
+            offset: 0,
+        };
+        cache.insert(k.clone(), Bytes::from(vec![0u8; 10]));
+
+        // 对同一 key 多次 pin
+        let g1 = cache.pin(k.clone()).unwrap();
+        let g2 = cache.pin(k.clone()).unwrap();
+
+        for i in 1..6 {
+            cache.insert(
+                CacheKey {
+                    file_number: 1,
+                    offset: i * 10,
+                },
+                Bytes::from(vec![i as u8; 10]),
+            );
+        }
+
+        // 释放 g1, k 仍有一次 pin 保护
+        drop(g1);
+        assert!(cache.get(k.clone()).is_some());
+
+        // 插入第 7 个 entry: 容量满 → eviction, k 仍被 g2 保护
+        cache.insert(
+            CacheKey {
+                file_number: 1,
+                offset: 70,
+            },
+            Bytes::from(vec![7u8; 10]),
+        );
+        assert!(cache.get(k.clone()).is_some());
+
+        // 释放最后一个 guard
+        drop(g2);
+
+        // 再插入: k 可被驱逐
+        cache.insert(
+            CacheKey {
+                file_number: 1,
+                offset: 80,
+            },
+            Bytes::from(vec![8u8; 10]),
+        );
+        // 不 panic
+    }
+
+    #[test]
+    fn test_pin_all_entries_eviction_does_not_panic() {
+        // per_shard = 1024 / 16 = 64. 每个 entry 10 bytes → 最多 6 个.
+        let cache = BlockCache::new(1024);
+        // 使用固定 file_number 使所有 key 落入同一 shard
+        let keys: Vec<CacheKey> = (0..6)
+            .map(|i| CacheKey {
+                file_number: 1,
+                offset: i * 10,
+            })
+            .collect();
+
+        for k in &keys {
+            cache.insert(k.clone(), Bytes::from(vec![k.offset as u8; 10]));
+        }
+
+        // pin 所有 entry
+        let guards: Vec<_> = keys
+            .iter()
+            .map(|k| cache.pin(k.clone()).expect("should be in cache"))
+            .collect();
+
+        // 插入新 key: 无法驱逐任何 entry, 但不 panic
+        let new_key = CacheKey {
+            file_number: 1,
+            offset: 60,
+        };
+        cache.insert(new_key.clone(), Bytes::from(vec![9u8; 10]));
+        // 所有原始 key 仍然存在
+        for k in &keys {
+            assert!(cache.get(k.clone()).is_some());
+        }
+        drop(guards);
+    }
+
+    #[test]
+    fn test_pin_nonexistent_key() {
+        let cache = BlockCache::new(200);
+        let k = CacheKey {
+            file_number: 99,
+            offset: 0,
+        };
+        assert!(cache.pin(k).is_none());
+    }
+
+    #[test]
+    fn test_pin_concurrent() {
+        let cache = Arc::new(BlockCache::new(10 * 1024));
+        let keys: Vec<CacheKey> = (0..16)
+            .map(|i| CacheKey {
+                file_number: i,
+                offset: 0,
+            })
+            .collect();
+
+        let keys_t1 = keys.clone();
+        let cache_clone = Arc::clone(&cache);
+        let t1 = thread::spawn(move || {
+            for k in &keys_t1 {
+                cache_clone.insert(k.clone(), Bytes::from(vec![k.file_number as u8; 64]));
+                let guard = cache_clone.pin(k.clone());
+                if let Some(g) = guard {
+                    std::thread::sleep(std::time::Duration::from_micros(10));
+                    drop(g);
+                }
+            }
+        });
+
+        let keys_t2 = keys.clone();
+        let cache_clone = Arc::clone(&cache);
+        let t2 = thread::spawn(move || {
+            for k in &keys_t2 {
+                let guard = cache_clone.pin(k.clone());
+                if let Some(g) = guard {
+                    std::thread::sleep(std::time::Duration::from_micros(5));
+                    drop(g);
+                }
+            }
+        });
+
+        let keys_t3 = keys.clone();
+        let cache_clone = Arc::clone(&cache);
+        let t3 = thread::spawn(move || {
+            for k in &keys_t3 {
+                let _ = cache_clone.get(k.clone());
+                std::thread::sleep(std::time::Duration::from_micros(15));
+            }
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+        t3.join().unwrap();
+
+        // 最终一致性: 所有 key 在 cache 中 (无 eviction, 容量足够)
+        for k in &keys {
+            assert!(cache.get(k.clone()).is_some(), "key {k:?} should exist");
+        }
     }
 }

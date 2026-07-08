@@ -2,4 +2,4 @@
 
 pub mod block_cache;
 
-pub use block_cache::{shard_index, BlockCache, CacheKey, CacheStats};
+pub use block_cache::{shard_index, BlockCache, CacheKey, CacheStats, PinGuard};
