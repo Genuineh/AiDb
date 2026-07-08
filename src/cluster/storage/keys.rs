@@ -101,10 +101,12 @@ pub fn meta_migration_state_key() -> Vec<u8> {
     b"\x00meta_raft/migration_state".to_vec()
 }
 
+#[expect(dead_code)]
 pub fn meta_range_start() -> Vec<u8> {
     b"\x00meta_raft/".to_vec()
 }
 
+#[expect(dead_code)]
 pub fn meta_range_end() -> Vec<u8> {
     b"\x00meta_raft0".to_vec()
 }
