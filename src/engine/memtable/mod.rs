@@ -4,6 +4,8 @@ mod internal_key;
 mod iterator;
 mod key_bytes;
 mod range_tombstone;
+mod rep;
+mod skiplist_rep;
 mod table;
 
 pub use internal_key::{

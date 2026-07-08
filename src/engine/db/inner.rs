@@ -1443,7 +1443,7 @@ impl DB {
         let mut count = 0u64;
         let file_number = self.version_set.read().allocate_file_number();
         let path = sstable_path(&self.path, file_number, 0);
-        let key_count = table.map().iter().count();
+        let key_count = table.rep().inner_map().iter().count();
         let mut builder = SSTableBuilder::new(
             &path,
             self.options.block_size,
@@ -1454,7 +1454,7 @@ impl DB {
         if self.options.bloom_false_positive_rate > 0.0 {
             builder.set_expected_keys(key_count);
         }
-        for entry in table.map().iter() {
+        for entry in table.rep().inner_map().iter() {
             builder.add(entry.key().as_ref(), entry.value().as_ref())?;
             count += 1;
         }
@@ -1535,7 +1535,7 @@ fn wal_entry_for_op(op: &WriteOp, seq: u64) -> Result<WalEntry> {
 
 fn max_sequence_in_memtable(mt: &MemTable) -> u64 {
     let mut max = 0u64;
-    for entry in mt.map().iter() {
+    for entry in mt.rep().inner_map().iter() {
         if let Ok(seq) = extract_sequence(entry.key().as_ref()) {
             max = max.max(seq);
         }
@@ -1545,7 +1545,7 @@ fn max_sequence_in_memtable(mt: &MemTable) -> u64 {
 
 fn min_sequence_in_memtable(mt: &MemTable) -> Option<u64> {
     let mut min: Option<u64> = None;
-    for entry in mt.map().iter() {
+    for entry in mt.rep().inner_map().iter() {
         if let Ok(seq) = extract_sequence(entry.key().as_ref()) {
             min = Some(min.map_or(seq, |m| m.min(seq)));
         }

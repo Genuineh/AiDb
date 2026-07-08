@@ -7,11 +7,11 @@ use super::internal_key::{
 use super::iterator::MemTableIterator;
 use super::key_bytes::InternalKeyBytes;
 use super::range_tombstone::{max_covering_range_tombstone_seq, RangeTombstoneRecord};
+use super::rep::MemTableRep;
+use super::skiplist_rep::SkipMapRep;
 use crate::error::Result;
-use crossbeam_skiplist::SkipMap;
 use parking_lot::RwLock;
 use std::ops::Bound;
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 /// 同 user_key 的 point 状态 (不含 range tombstone).
@@ -80,10 +80,9 @@ impl ImmutableMemTable {
 
 /// 可变 MemTable.
 pub struct MemTable {
-    table: SkipMap<InternalKeyBytes, Arc<[u8]>>,
+    rep: SkipMapRep,
     /// Range tombstone 索引 — 仅含 delete_range 写入, 避免 GET 扫描全表.
     range_index: RwLock<Vec<RangeTombstoneRecord>>,
-    size: AtomicUsize,
 }
 
 impl Default for MemTable {
@@ -95,9 +94,8 @@ impl Default for MemTable {
 impl MemTable {
     pub fn new() -> Self {
         Self {
-            table: SkipMap::new(),
+            rep: SkipMapRep::new(),
             range_index: RwLock::new(Vec::new()),
-            size: AtomicUsize::new(0),
         }
     }
 
@@ -105,12 +103,12 @@ impl MemTable {
         !self.range_index.read().is_empty()
     }
 
-    pub(crate) fn map(&self) -> &SkipMap<InternalKeyBytes, Arc<[u8]>> {
-        &self.table
+    pub(crate) fn rep(&self) -> &SkipMapRep {
+        &self.rep
     }
 
     pub fn approximate_size(&self) -> usize {
-        self.size.load(AtomicOrdering::Relaxed)
+        self.rep.approximate_size()
     }
 
     #[tracing::instrument(level = "debug",
@@ -122,9 +120,7 @@ impl MemTable {
         check_sequence(sequence)?;
         let ik = InternalKeyBytes(encode_internal_key_arc(key, sequence, ValueType::TypePut));
         let val = Arc::from(value);
-        self.table.insert(ik, val);
-        self.size
-            .fetch_add(key.len() + value.len(), AtomicOrdering::Relaxed);
+        self.rep.insert(ik, val);
         tracing::debug!(target: "mem", "mem.put");
         self.sync_active_metric();
         Ok(())
@@ -134,8 +130,7 @@ impl MemTable {
     pub fn delete(&self, key: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
         let ik = InternalKeyBytes(encode_internal_key_arc(key, sequence, ValueType::TypeDelete));
-        self.table.insert(ik, Arc::from(&[] as &[u8]));
-        self.size.fetch_add(key.len(), AtomicOrdering::Relaxed);
+        self.rep.insert(ik, Arc::from(&[] as &[u8]));
         tracing::debug!(target: "mem", "mem.delete");
         self.sync_active_metric();
         Ok(())
@@ -148,9 +143,7 @@ impl MemTable {
         let ik =
             InternalKeyBytes(encode_internal_key_arc(start, sequence, ValueType::TypeRangeDelete));
         let val = Arc::from(end);
-        self.table.insert(ik, val);
-        self.size
-            .fetch_add(start.len() + end.len(), AtomicOrdering::Relaxed);
+        self.rep.insert(ik, val);
         self.range_index.write().push(RangeTombstoneRecord {
             start: start.to_vec(),
             end: end.to_vec(),
@@ -165,7 +158,7 @@ impl MemTable {
     pub fn point_state(&self, key: &[u8], max_seq: u64) -> Result<PointState> {
         let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
         let bound = InternalKeyBytes::from_slice(&seek_key);
-        let Some(entry) = self.table.lower_bound(Bound::Included(&bound)) else {
+        let Some(entry) = self.rep.lower_bound(Bound::Included(&bound)) else {
             return Ok(PointState::Absent);
         };
         let ik = entry.key().as_ref();
@@ -222,7 +215,7 @@ impl MemTable {
     #[tracing::instrument(level = "debug", name = "mem_search", skip(self, seek_key))]
     pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Arc<[u8]>, ValueType)>> {
         let bound = InternalKeyBytes::from_slice(seek_key);
-        let Some(entry) = self.table.lower_bound(Bound::Included(&bound)) else {
+        let Some(entry) = self.rep.lower_bound(Bound::Included(&bound)) else {
             return Ok(None);
         };
         let entry_key = entry.key().as_ref();

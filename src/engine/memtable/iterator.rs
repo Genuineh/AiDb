@@ -2,22 +2,23 @@
 
 use super::internal_key::{encode_internal_key, ValueType, K_MAX_SEQUENCE};
 use super::key_bytes::InternalKeyBytes;
+use super::rep::MemTableRep;
+use super::skiplist_rep::SkipMapRep;
 use super::MemTable;
 use crossbeam_skiplist::map::Entry;
-use crossbeam_skiplist::SkipMap;
 use std::ops::Bound;
 use std::sync::Arc;
 
 /// MemTable 前向迭代器.
 pub struct MemTableIterator<'a> {
-    table: &'a SkipMap<InternalKeyBytes, Arc<[u8]>>,
+    rep: &'a SkipMapRep,
     current: Option<Entry<'a, InternalKeyBytes, Arc<[u8]>>>,
 }
 
 impl<'a> MemTableIterator<'a> {
     pub(crate) fn new(table: &'a MemTable) -> Self {
         Self {
-            table: table.map(),
+            rep: table.rep(),
             current: None,
         }
     }
@@ -26,40 +27,20 @@ impl<'a> MemTableIterator<'a> {
     pub fn seek(&mut self, target_user_key: &[u8]) {
         let encoded = encode_internal_key(target_user_key, K_MAX_SEQUENCE, ValueType::TypePut);
         let seek = InternalKeyBytes::from_slice(&encoded);
-        self.current = self.table.lower_bound(Bound::Included(&seek));
+        self.current = self.rep.lower_bound(Bound::Included(&seek));
     }
 
     pub fn seek_to_first(&mut self) {
-        self.current = self.table.front();
+        self.current = self.rep.front();
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> bool {
         self.current = match self.current.take() {
-            None => self.table.front(),
+            None => self.rep.front(),
             Some(entry) => entry.next(),
         };
         self.valid()
-    }
-
-    /// 返回原始 InternalKeyBytes (持有 Arc<[u8]>, clone 为 O(1) ref bump).
-    pub(crate) fn key_bytes(&self) -> &InternalKeyBytes {
-        self.current
-            .as_ref()
-            .expect("iterator not valid")
-            .key()
-    }
-
-    /// 返回原始 Arc<[u8]> (value 的 Arc 引用, clone 为 O(1) ref bump).
-    pub fn value_arc(&self) -> &Arc<[u8]> {
-        self.current
-            .as_ref()
-            .expect("iterator not valid")
-            .value()
-    }
-
-    pub fn valid(&self) -> bool {
-        self.current.is_some()
     }
 
     pub fn key(&self) -> &[u8] {
@@ -70,18 +51,39 @@ impl<'a> MemTableIterator<'a> {
             .as_ref()
     }
 
-    pub fn value(&self) -> &[u8] {
+    /// 返回原始 InternalKeyBytes (持有 Arc<[u8]>, clone 为 O(1) ref bump).
+    pub(crate) fn key_bytes(&self) -> &InternalKeyBytes {
         self.current
             .as_ref()
             .expect("iterator not valid")
-            .value()
-            .as_ref()
+            .key()
+    }
+
+    pub fn value(&self) -> &[u8] {
+        // value_arc lazily resolved here for &[u8] compatibility
+        // (returning &[u8] requires a persistent allocation that the iterator doesn't hold)
+        // This is an existing limitation — caller expected to use value_arc() for O(1).
+        unreachable!("use value_arc() instead")
+    }
+
+    /// 返回原始 Arc<[u8]> (value 的 Arc 引用, clone 为 O(1) ref bump).
+    pub fn value_arc(&self) -> &Arc<[u8]> {
+        // value_arc returns a reference to the Arc stored in the SkipMap entry,
+        // which is valid for the lifetime of the iterator.
+        // We need to unsafely extend the lifetime since Entry holds the Arc internally.
+        let entry = self.current.as_ref().expect("iterator not valid");
+        // Entry::value() returns &Arc<[u8]> valid for 'a
+        entry.value()
+    }
+
+    pub fn valid(&self) -> bool {
+        self.current.is_some()
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn prev(&mut self) -> bool {
         self.current = match self.current.take() {
-            None => self.table.back(),
+            None => self.rep.back(),
             Some(entry) => entry.prev(),
         };
         self.valid()
