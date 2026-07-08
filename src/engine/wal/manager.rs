@@ -94,9 +94,9 @@ impl WALManager {
             .unwrap_or(0)
             .max(next_file_number);
 
-        // 创建新 WAL 文件, 传递 sync_wal
+        // 创建新 WAL 文件, 传递 sync_wal, 预分配磁盘空间 (F-015)
         let wal_path = wal_path(path, file_number);
-        let mut writer = Writer::open_with_sync(&wal_path, options.sync_wal)?;
+        let mut writer = Writer::open_with_sync_preallocate(&wal_path, options.sync_wal, options.max_wal_size)?;
 
         // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
         let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());
@@ -244,10 +244,10 @@ impl WALManager {
             file_size,
         });
 
-        // 创建新 WAL 文件, file_number + 1
+        // 创建新 WAL 文件, file_number + 1, 预分配磁盘空间 (F-015)
         let new_file_number = self.file_number + 1;
         let wal_path = wal_path(&self.path, new_file_number);
-        self.writer = Writer::open_with_sync(&wal_path, self.options.sync_wal)?;
+        self.writer = Writer::open_with_sync_preallocate(&wal_path, self.options.sync_wal, self.options.max_wal_size)?;
 
         // 写入 FileHeader (max_seq 写 0, close 时通过 trailer 原子写入真实值)
         let file_header = Self::make_file_header(next_sequence, 0, current_timestamp());

@@ -12,6 +12,33 @@ use crate::error::Result;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
+// `fallocate` 系统调用, 用于预分配磁盘空间.
+// `FALLOC_FL_KEEP_SIZE = 0x01` 确保分配空间但不改变文件大小.
+#[cfg(target_os = "linux")]
+extern "C" {
+    fn fallocate(fd: i32, mode: i32, offset: i64, len: i64) -> i32;
+}
+
+#[cfg(target_os = "linux")]
+const FALLOC_FL_KEEP_SIZE: i32 = 0x01;
+
+/// 预分配文件磁盘空间, 不改变文件大小.
+/// 非 Linux 平台无操作.
+#[cfg(target_os = "linux")]
+fn preallocate_file(file: &std::fs::File, size: u64) -> Result<()> {
+    use std::os::unix::io::AsRawFd;
+    let ret = unsafe { fallocate(file.as_raw_fd(), FALLOC_FL_KEEP_SIZE, 0, size as i64) };
+    if ret != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn preallocate_file(_file: &std::fs::File, _size: u64) -> Result<()> {
+    Ok(())
+}
+
 /// WAL 默认 block 大小
 pub const BLOCK_SIZE: usize = 32768;
 
@@ -26,22 +53,49 @@ pub struct Writer {
 impl Writer {
     #[tracing::instrument(name = "wal_writer_open", skip(path))]
     pub fn open(path: &Path) -> Result<Self> {
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(path)?;
-        let block_offset = (file.metadata()?.len() % BLOCK_SIZE as u64) as usize;
-        Ok(Writer {
-            file,
-            block_offset,
-        })
+        Self::open_inner(path, None)
+    }
+
+    /// 打开 WAL 文件并预分配 `preallocate_bytes` 字节磁盘空间.
+    /// `preallocate_bytes` 为 0 或 None 时跳过预分配.
+    #[tracing::instrument(name = "wal_writer_open", skip(path))]
+    pub fn open_with_preallocate(path: &Path, preallocate_bytes: u64) -> Result<Self> {
+        let pre = if preallocate_bytes > 0 {
+            Some(preallocate_bytes)
+        } else {
+            None
+        };
+        Self::open_inner(path, pre)
     }
 
     /// 兼容旧接口: sync_wal 由上层 WALManager 管理, Writer 不再负责 syncing.
     #[tracing::instrument(name = "wal_writer_open_with_sync", skip(path))]
     pub fn open_with_sync(path: &Path, _sync_wal: bool) -> Result<Self> {
         Self::open(path)
+    }
+
+    /// 兼容旧接口: sync_wal 由上层管理, 同时支持预分配.
+    #[tracing::instrument(name = "wal_writer_open_with_sync_pre", skip(path))]
+    pub fn open_with_sync_preallocate(path: &Path, _sync_wal: bool, preallocate_bytes: u64) -> Result<Self> {
+        Self::open_with_preallocate(path, preallocate_bytes)
+    }
+
+    fn open_inner(path: &Path, preallocate: Option<u64>) -> Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(path)?;
+
+        if let Some(size) = preallocate {
+            preallocate_file(&file, size)?;
+        }
+
+        let block_offset = (file.metadata()?.len() % BLOCK_SIZE as u64) as usize;
+        Ok(Writer {
+            file,
+            block_offset,
+        })
     }
 
     /// 单条 Record 的 data 最大长度 (Length 字段为 u16)
