@@ -460,6 +460,45 @@ impl DB {
                 (excess as f64 / cap as f64 * opts.write_stall_slowdown_max_ms as f64) as u64;
             std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
         }
+
+        // === L1+ level size stall (F-029) ===
+        // 检查 L1 到 L(max-2) 各层大小是否超出目标值.
+        // L0 由文件数 stall 处理, 最后一层不限制.
+        let picker = CompactionPicker::from_options(opts);
+        for level_index in 1..(opts.max_levels.saturating_sub(1)) {
+            let actual = CompactionPicker::calculate_level_size(&self.sstables.read()[level_index]);
+            let target = picker.target_size_for_level(level_index);
+            if target == 0 {
+                continue;
+            }
+
+            if actual > target.saturating_mul(4) {
+                // stop: 轮询等待, 主动触发 compaction
+                while {
+                    let tables = self.sstables.read();
+                    CompactionPicker::calculate_level_size(&tables[level_index]) > target.saturating_mul(2)
+                } {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        opts.write_stall_poll_ms,
+                    ));
+                    self.maybe_trigger_compaction();
+                }
+                return;
+            }
+
+            if actual > target.saturating_mul(2) {
+                // slowdown: 按超出比例 sleep
+                let excess = (actual - target.saturating_mul(2)) as f64;
+                let cap = (target.saturating_mul(2)) as f64;
+                let sleep_ms = if cap > 0.0 {
+                    (excess / cap * opts.write_stall_slowdown_max_ms as f64) as u64
+                } else {
+                    0
+                };
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                break; // 一次只 stall 最严重的一层
+            }
+        }
     }
 
     #[tracing::instrument(level = "debug", name = "db_put", skip(self, key, value))]
