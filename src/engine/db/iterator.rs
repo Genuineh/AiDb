@@ -1,9 +1,8 @@
 //! DB 多路归并迭代器 (拥有层数据, 无自引用).
 
 use crate::engine::memtable::{
-    ImmutableMemTable,
-    encode_internal_key, extract_sequence, extract_user_key, extract_value_type, MemTable,
-    MemTableIterator, ValueType, InternalKeyBytes, K_MAX_SEQUENCE,
+    encode_internal_key, extract_sequence, extract_user_key, extract_value_type, range_covers,
+    ImmutableMemTable, InternalKeyBytes, K_MAX_SEQUENCE, MemTable, MemTableIterator, ValueType,
 };
 use crate::engine::sstable::{SSTableIterator, SSTableReader};
 use crate::error::Result;
@@ -230,6 +229,29 @@ pub struct DBIterator {
     sequence: u64,
     layers: Vec<LayerIter>,
     end_key: Option<Vec<u8>>,
+    range_tombstones: Vec<(Vec<u8>, Vec<u8>, u64)>,
+}
+
+fn collect_all_range_tombstones(
+    memtable: &MemTable,
+    immutables: &[ImmutableMemTable],
+    sstables: &[Vec<Arc<SSTableReader>>],
+) -> Vec<(Vec<u8>, Vec<u8>, u64)> {
+    let mut out = Vec::new();
+    if let Ok(mut v) = memtable.collect_range_tombstones() {
+        out.append(&mut v);
+    }
+    for imm in immutables {
+        if let Ok(mut v) = imm.collect_range_tombstones() {
+            out.append(&mut v);
+        }
+    }
+    for level in sstables {
+        for reader in level {
+            out.extend(reader.collect_range_tombstones());
+        }
+    }
+    out
 }
 
 impl DBIterator {
@@ -257,6 +279,7 @@ impl DBIterator {
             sequence,
             layers,
             end_key: end.map(|k| k.to_vec()),
+            range_tombstones: collect_all_range_tombstones(memtable, immutables, sstables),
         };
         if let Some(start) = start {
             it.seek(start);
@@ -314,6 +337,16 @@ impl DBIterator {
         self.current.as_ref().map(|(_, v)| v.as_slice())
     }
 
+    fn max_covering_range_seq(&self, user_key: &[u8]) -> Option<u64> {
+        self.range_tombstones
+            .iter()
+            .filter(|(start, end, seq)| {
+                *seq <= self.sequence && range_covers(start, end, user_key)
+            })
+            .map(|(_, _, seq)| *seq)
+            .max()
+    }
+
     fn load_next_valid(&mut self) {
         loop {
             let min_key = self.find_min_user_key();
@@ -348,7 +381,18 @@ impl DBIterator {
                 }
                 continue;
             };
-            if best.value_type == ValueType::TypeDelete {
+            if best.value_type == ValueType::TypeDelete
+                || best.value_type == ValueType::TypeRangeDelete
+            {
+                for i in &hit_layers {
+                    self.layers[*i].advance_past_user_key(&min_key);
+                }
+                continue;
+            }
+            if self
+                .max_covering_range_seq(&min_key)
+                .is_some_and(|rs| best.sequence <= rs)
+            {
                 for i in &hit_layers {
                     self.layers[*i].advance_past_user_key(&min_key);
                 }
@@ -466,6 +510,15 @@ impl DBIterator {
 
             if has_delete {
                 // Reverse flow: skip deleted key by going backward
+                for i in &hit_layers {
+                    self.layers[*i].prev_past_user_key(&max_key);
+                }
+                continue;
+            }
+            if self
+                .max_covering_range_seq(&max_key)
+                .is_some_and(|rs| best.sequence <= rs)
+            {
                 for i in &hit_layers {
                     self.layers[*i].prev_past_user_key(&max_key);
                 }

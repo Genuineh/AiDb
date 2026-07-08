@@ -53,6 +53,40 @@ impl SnapshotDedupTracker {
     }
 }
 
+/// 追踪 compaction 归并时的活跃 range tombstone.
+#[derive(Default)]
+struct RangeTombstoneTracker {
+    items: Vec<RangeTombstoneItem>,
+}
+
+struct RangeTombstoneItem {
+    start: Vec<u8>,
+    end: Vec<u8>,
+    sequence: u64,
+}
+
+impl RangeTombstoneTracker {
+    fn add(&mut self, start: Vec<u8>, end: Vec<u8>, sequence: u64) {
+        self.items.push(RangeTombstoneItem {
+            start,
+            end,
+            sequence,
+        });
+    }
+
+    fn advance_past(&mut self, user_key: &[u8]) {
+        self.items.retain(|item| item.end.as_slice() > user_key);
+    }
+
+    fn covers(&self, user_key: &[u8], sequence: u64) -> bool {
+        self.items.iter().any(|item| {
+            item.start.as_slice() <= user_key
+                && user_key < item.end.as_slice()
+                && item.sequence >= sequence
+        })
+    }
+}
+
 pub struct CompactionJob {
     pub inputs: Vec<Arc<SSTableReader>>,
     pub expanded_inputs: Vec<Arc<SSTableReader>>,
@@ -142,7 +176,15 @@ impl CompactionJob {
                 continue;
             }
             tracker.start_key();
-            if self.output_level > 0 && extract_value_type(&key)? == ValueType::TypeDelete {
+            let value_type = extract_value_type(&key)?;
+            if value_type == ValueType::TypeRangeDelete {
+                last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
+                continue;
+            }
+            if self.output_level > 0
+                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+            {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
@@ -192,7 +234,15 @@ impl CompactionJob {
                 continue;
             }
             tracker.start_key();
-            if self.output_level > 0 && extract_value_type(&key)? == ValueType::TypeDelete {
+            let value_type = extract_value_type(&key)?;
+            if value_type == ValueType::TypeRangeDelete {
+                last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
+                continue;
+            }
+            if self.output_level > 0
+                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+            {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
@@ -253,11 +303,16 @@ impl CompactionJob {
         let mut smallest_key: Option<Vec<u8>> = None;
         let mut largest_key: Option<Vec<u8>> = None;
         let mut tracker = SnapshotDedupTracker::default();
+        let mut range_tracker = RangeTombstoneTracker::default();
 
         while let Some((key, value)) = merge_iter.next_entry()? {
             let user_key = user_key_from_internal(&key)?;
             let value_type = extract_value_type(&key)?;
             let seq = extract_sequence(&key)?;
+
+            if last_user_key.as_deref().map_or(true, |prev| prev != user_key) {
+                range_tracker.advance_past(user_key);
+            }
 
             if last_user_key.as_deref() == Some(user_key) {
                 if !tracker.already_crossed() {
@@ -271,7 +326,32 @@ impl CompactionJob {
             }
 
             tracker.start_key();
-            if self.output_level > 0 && value_type == ValueType::TypeDelete {
+
+            if value_type == ValueType::TypeRangeDelete {
+                let end_key = value.to_vec();
+                range_tracker.add(user_key.to_vec(), end_key, seq);
+                if !self.should_filter(&key, &value) {
+                    builder.add(&key, &value)?;
+                    entry_count += 1;
+                    if smallest_key.is_none() {
+                        smallest_key = Some(key.clone());
+                    }
+                    largest_key = Some(key.clone());
+                }
+                last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
+                continue;
+            }
+
+            if range_tracker.covers(user_key, seq) {
+                last_user_key = Some(user_key.to_vec());
+                tracker.observe(seq, self.min_snapshot_sequence);
+                continue;
+            }
+
+            if self.output_level > 0
+                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+            {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
                 continue;
@@ -465,6 +545,7 @@ fn write_sub_compaction(
     let mut smallest_key: Option<Vec<u8>> = None;
     let mut largest_key: Option<Vec<u8>> = None;
     let mut tracker = SnapshotDedupTracker::default();
+    let mut range_tracker = RangeTombstoneTracker::default();
 
     while let Some((key, value)) = merge_iter.next_entry()? {
         let user_key = user_key_from_internal(&key)?;
@@ -476,6 +557,10 @@ fn write_sub_compaction(
             if user_key < &start[..] {
                 continue;
             }
+        }
+
+        if last_user_key.as_deref().map_or(true, |prev| prev != user_key) {
+            range_tracker.advance_past(user_key);
         }
 
         if last_user_key.as_deref() == Some(user_key) {
@@ -490,7 +575,32 @@ fn write_sub_compaction(
         }
 
         tracker.start_key();
-        if output_level > 0 && value_type == ValueType::TypeDelete {
+
+        if value_type == ValueType::TypeRangeDelete {
+            let end_key = value.to_vec();
+            range_tracker.add(user_key.to_vec(), end_key, seq);
+            if !should_filter_impl(&compaction_filter, output_level, &key, &value) {
+                builder.add(&key, &value)?;
+                entry_count += 1;
+                if smallest_key.is_none() {
+                    smallest_key = Some(key.clone());
+                }
+                largest_key = Some(key.clone());
+            }
+            last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, min_snap_seq);
+            continue;
+        }
+
+        if range_tracker.covers(user_key, seq) {
+            last_user_key = Some(user_key.to_vec());
+            tracker.observe(seq, min_snap_seq);
+            continue;
+        }
+
+        if output_level > 0
+            && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+        {
             last_user_key = Some(user_key.to_vec());
             tracker.observe(seq, min_snap_seq);
             continue;

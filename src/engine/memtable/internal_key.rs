@@ -29,6 +29,7 @@ pub const K_TYPE_SEEK: u8 = 0;
 pub enum ValueType {
     TypePut = 0,
     TypeDelete = 1,
+    TypeRangeDelete = 2,
 }
 
 impl TryFrom<u8> for ValueType {
@@ -38,6 +39,7 @@ impl TryFrom<u8> for ValueType {
         match value {
             0 => Ok(ValueType::TypePut),
             1 => Ok(ValueType::TypeDelete),
+            2 => Ok(ValueType::TypeRangeDelete),
             _ => Err(Error::Corruption(format!("unknown ValueType: {value}"))),
         }
     }
@@ -149,5 +151,24 @@ mod tests {
         let a = encode_internal_key(b"a", 99, ValueType::TypePut);
         let b = encode_internal_key(b"b", 1, ValueType::TypePut);
         assert_eq!(compare_internal_key(&a, &b), Ordering::Less);
+    }
+
+    #[test]
+    fn test_range_delete_ordering() {
+        let put = encode_internal_key(b"k", 100, ValueType::TypePut);
+        let del = encode_internal_key(b"k", 100, ValueType::TypeDelete);
+        let rng = encode_internal_key(b"k", 100, ValueType::TypeRangeDelete);
+        assert_eq!(compare_internal_key(&put, &del), Ordering::Less);
+        assert_eq!(compare_internal_key(&del, &rng), Ordering::Less);
+        assert_eq!(compare_internal_key(&put, &rng), Ordering::Less);
+    }
+
+    #[test]
+    fn test_range_delete_decode() {
+        let enc = encode_internal_key(b"k", 100, ValueType::TypeRangeDelete);
+        let (k, seq, ty) = decode_internal_key(&enc).unwrap();
+        assert_eq!(k, b"k");
+        assert_eq!(seq, 100);
+        assert_eq!(ty, ValueType::TypeRangeDelete);
     }
 }

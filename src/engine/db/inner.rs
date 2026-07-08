@@ -13,7 +13,7 @@ use crate::engine::compaction::{
     VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
-    encode_internal_key, extract_sequence, ImmutableMemTable, MemTable, ValueType, SEQUENCE_LIMIT,
+    extract_sequence, ImmutableMemTable, MemTable, PointState, SEQUENCE_LIMIT,
 };
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::engine::wal::manager::WALManager;
@@ -517,54 +517,73 @@ impl DB {
     }
 
     pub(crate) fn get_at_sequence(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
-        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
-        if let Some((value, ty)) = self.memtable.read().search(&seek_key)? {
-            return Ok(match ty {
-                ValueType::TypePut => Some(value.as_ref().to_vec()),
-                ValueType::TypeDelete => None,
-            });
-        }
-        for imm in self.immutable_memtables.read().iter().rev() {
-            if let Some((value, ty)) = imm.search(&seek_key)? {
-                return Ok(match ty {
-                    ValueType::TypePut => Some(value.as_ref().to_vec()),
-                    ValueType::TypeDelete => None,
-                });
-            }
-        }
-        self.get_from_sstables(key, max_seq)
-    }
+        let mut best_put: Option<(Vec<u8>, u64)> = None;
+        let mut best_delete: Option<u64> = None;
+        let mut best_range: Option<u64> = None;
 
-    fn get_from_sstables(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
-        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
+        let mut absorb_point = |state: PointState| {
+            match state {
+                PointState::Put(value, seq) => {
+                    if best_put.as_ref().map_or(true, |(_, s)| seq > *s) {
+                        best_put = Some((value, seq));
+                    }
+                }
+                PointState::Delete(seq) => {
+                    if best_delete.map_or(true, |s| seq > s) {
+                        best_delete = Some(seq);
+                    }
+                }
+                PointState::Absent => {}
+            }
+        };
+
+        let mut absorb_range = |seq: Option<u64>| {
+            if let Some(s) = seq {
+                if best_range.map_or(true, |b| s > b) {
+                    best_range = Some(s);
+                }
+            }
+        };
+
+        absorb_point(self.memtable.read().point_state(key, max_seq)?);
+        absorb_range(self.memtable.read().max_range_tombstone_seq(key, max_seq)?);
+
+        for imm in self.immutable_memtables.read().iter().rev() {
+            absorb_point(imm.point_state(key, max_seq)?);
+            absorb_range(imm.max_range_tombstone_seq(key, max_seq)?);
+        }
+
         let l0_readers: Vec<Arc<SSTableReader>>;
         let l1_plus_readers: Vec<Vec<Arc<SSTableReader>>>;
         {
             let tables = self.sstables.read();
             l0_readers = tables[0].clone();
             l1_plus_readers = tables.iter().skip(1).cloned().collect();
-        } // 读锁释放 — I/O 在无锁下进行 (F-050)
+        }
 
-        // Level 0: newest SSTable first (insert at head on load / flush).
         for reader in &l0_readers {
-            if let Some((value, ty)) = reader.get(&seek_key)? {
-                return Ok(match ty {
-                    ValueType::TypePut => Some(value),
-                    ValueType::TypeDelete => None,
-                });
-            }
+            absorb_point(reader.point_state(key, max_seq)?);
+            absorb_range(reader.max_range_tombstone_seq(key, max_seq));
         }
         for level in &l1_plus_readers {
             if let Some(reader) = find_sstable_for_key(level, key) {
-                if let Some((value, ty)) = reader.get(&seek_key)? {
-                    return Ok(match ty {
-                        ValueType::TypePut => Some(value),
-                        ValueType::TypeDelete => None,
-                    });
-                }
+                absorb_point(reader.point_state(key, max_seq)?);
+                absorb_range(reader.max_range_tombstone_seq(key, max_seq));
             }
         }
-        Ok(None)
+
+        let tombstone = match (best_delete, best_range) {
+            (Some(d), Some(r)) => Some(d.max(r)),
+            (Some(d), None) => Some(d),
+            (None, Some(r)) => Some(r),
+            (None, None) => None,
+        };
+
+        Ok(match (best_put, tombstone) {
+            (Some((value, put_seq)), Some(ts)) if put_seq > ts => Some(value),
+            (Some((value, _)), None) => Some(value),
+            _ => None,
+        })
     }
 
     #[tracing::instrument(name = "db_delete", skip(self, key))]
@@ -709,29 +728,29 @@ impl DB {
         Ok(())
     }
 
-    /// 删除 `[start, end)` 半开区间内的全部 user key (scan + WriteBatch; 非 RangeTombstone).
+    /// 删除 `[start, end)` 半开区间内的全部 user key (RangeTombstone, O(1) 写入).
     #[tracing::instrument(name = "db_delete_range", skip(self, start, end))]
     pub fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {
         self.check_not_closed()?;
         if start >= end {
             return Ok(());
         }
-        let mut keys = Vec::new();
+        self.check_write_stall();
+
+        let seq;
         {
-            let iter = self.scan(Some(start), Some(end))?;
-            for item in iter {
-                let (k, _) = item?;
-                keys.push(k);
-            }
+            let _guard = self.write_lock.lock();
+            seq = self.alloc_sequence(1)?;
+            self.write_delete_range_to_wal(seq, start, end, false)?;
         }
-        if keys.is_empty() {
-            return Ok(());
+
+        if self.options.sync_wal {
+            self.wait_group_commit_sync(seq)?;
         }
-        let mut batch = WriteBatch::new();
-        for key in keys {
-            batch.delete(key);
-        }
-        self.write(&batch)
+
+        self.memtable.read().put_range_delete(start, end, seq)?;
+        self.maybe_freeze()?;
+        Ok(())
     }
 
     #[tracing::instrument(name = "db_snapshot", skip(self))]
@@ -1156,6 +1175,32 @@ impl DB {
             has_value: false,
             key: key.to_vec(),
             value: None,
+        };
+        let mut wal = self.wal.write();
+        wal.append(&entry.encode())?;
+        wal.note_appended_sequence(seq);
+        if self.options.sync_wal && sync_now {
+            wal.sync()?;
+        }
+        Ok(())
+    }
+
+    fn write_delete_range_to_wal(
+        &self,
+        seq: u64,
+        start: &[u8],
+        end: &[u8],
+        sync_now: bool,
+    ) -> Result<()> {
+        if !self.options.use_wal {
+            return Ok(());
+        }
+        let entry = WalEntry {
+            sequence: seq,
+            op_type: OpType::TypeDeleteRange,
+            has_value: true,
+            key: start.to_vec(),
+            value: Some(end.to_vec()),
         };
         let mut wal = self.wal.write();
         wal.append(&entry.encode())?;

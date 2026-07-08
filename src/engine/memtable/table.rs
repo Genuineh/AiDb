@@ -1,8 +1,8 @@
 //! MemTable — 内存写入缓冲 (SkipMap).
 
 use super::internal_key::{
-    check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence, extract_user_key, extract_value_type,
-    ValueType, K_MAX_SEQUENCE,
+    check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence, extract_user_key,
+    extract_value_type, ValueType, K_MAX_SEQUENCE,
 };
 use super::iterator::MemTableIterator;
 use super::key_bytes::InternalKeyBytes;
@@ -11,6 +11,13 @@ use crossbeam_skiplist::SkipMap;
 use std::ops::Bound;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
+
+/// 同 user_key 的 point 状态 (不含 range tombstone).
+pub enum PointState {
+    Put(Vec<u8>, u64),
+    Delete(u64),
+    Absent,
+}
 
 /// 已冻结、等待 flush 的 MemTable (无 put/delete, 仅读).
 pub struct ImmutableMemTable {
@@ -37,6 +44,18 @@ impl ImmutableMemTable {
 
     pub fn get_latest(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.table.get_latest(key)
+    }
+
+    pub fn point_state(&self, key: &[u8], snapshot_seq: u64) -> Result<PointState> {
+        self.table.point_state(key, snapshot_seq)
+    }
+
+    pub fn max_range_tombstone_seq(&self, user_key: &[u8], max_seq: u64) -> Result<Option<u64>> {
+        self.table.max_range_tombstone_seq(user_key, max_seq)
+    }
+
+    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
+        self.table.collect_range_tombstones()
     }
 
     pub fn search(&self, seek_key: &[u8]) -> Result<Option<(Arc<[u8]>, ValueType)>> {
@@ -109,6 +128,62 @@ impl MemTable {
         Ok(())
     }
 
+    /// 写入 range tombstone: InternalKey=start, value=end, 半开区间 `[start, end)`.
+    #[tracing::instrument(name = "mem_delete_range", skip(self, start, end))]
+    pub fn put_range_delete(&self, start: &[u8], end: &[u8], sequence: u64) -> Result<()> {
+        check_sequence(sequence)?;
+        let ik =
+            InternalKeyBytes(encode_internal_key_arc(start, sequence, ValueType::TypeRangeDelete));
+        let val = Arc::from(end);
+        self.table.insert(ik, val);
+        self.size
+            .fetch_add(start.len() + end.len(), AtomicOrdering::Relaxed);
+        tracing::debug!(target: "mem", "mem.put_range_delete");
+        self.sync_active_metric();
+        Ok(())
+    }
+
+    /// 同 user_key 在 `max_seq` 下的 point 状态 (不含 range tombstone 覆盖判定).
+    pub fn point_state(&self, key: &[u8], max_seq: u64) -> Result<PointState> {
+        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
+        let bound = InternalKeyBytes::from_slice(&seek_key);
+        let Some(entry) = self.table.lower_bound(Bound::Included(&bound)) else {
+            return Ok(PointState::Absent);
+        };
+        let ik = entry.key().as_ref();
+        if extract_user_key(ik) != key {
+            return Ok(PointState::Absent);
+        }
+        let seq = extract_sequence(ik)?;
+        if seq > max_seq {
+            return Ok(PointState::Absent);
+        }
+        match extract_value_type(ik)? {
+            ValueType::TypePut => Ok(PointState::Put(entry.value().as_ref().to_vec(), seq)),
+            ValueType::TypeDelete => Ok(PointState::Delete(seq)),
+            ValueType::TypeRangeDelete => Ok(PointState::Absent),
+        }
+    }
+
+    pub fn max_range_tombstone_seq(&self, user_key: &[u8], max_seq: u64) -> Result<Option<u64>> {
+        super::range_tombstone::max_covering_range_tombstone_seq(&self.table, user_key, max_seq)
+    }
+
+    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
+        let mut out = Vec::new();
+        for entry in self.table.iter() {
+            let ik = entry.key().as_ref();
+            if extract_value_type(ik)? == ValueType::TypeRangeDelete {
+                out.push((
+                    extract_user_key(ik).to_vec(),
+                    entry.value().as_ref().to_vec(),
+                    extract_sequence(ik)?,
+                ));
+            }
+        }
+        Ok(out)
+    }
+
     #[tracing::instrument(level = "debug", name = "mem_get", skip(self, key))]
     pub fn get(&self, key: &[u8], snapshot_seq: u64) -> Result<Option<Vec<u8>>> {
         let seek_key = encode_internal_key(key, snapshot_seq, ValueType::TypePut);
@@ -117,7 +192,7 @@ impl MemTable {
                 tracing::debug!(target: "mem", "mem.get.hit");
                 Ok(Some(value.as_ref().to_vec()))
             }
-            Some((_, ValueType::TypeDelete)) => {
+            Some((_, ValueType::TypeDelete)) | Some((_, ValueType::TypeRangeDelete)) => {
                 tracing::debug!(target: "mem", "mem.get.miss");
                 Ok(None)
             }

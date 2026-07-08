@@ -3,6 +3,7 @@
 mod internal_key;
 mod iterator;
 mod key_bytes;
+mod range_tombstone;
 mod table;
 
 pub use internal_key::{
@@ -10,6 +11,7 @@ pub use internal_key::{
     extract_sequence, extract_user_key, extract_value_type, ValueType, K_MAX_SEQUENCE, K_TYPE_SEEK,
     SEQUENCE_LIMIT,
 };
+pub use range_tombstone::{range_covers, user_key_successor};
 pub(crate) use key_bytes::InternalKeyBytes;
 pub use iterator::MemTableIterator;
-pub use table::{ImmutableMemTable, MemTable};
+pub use table::{ImmutableMemTable, MemTable, PointState};

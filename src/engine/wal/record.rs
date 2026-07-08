@@ -36,10 +36,11 @@ impl TryFrom<u8> for RecordType {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpType {
-    TypePut = 0,    // put(key, value), has_value=true
-    TypeDelete = 1, // delete(key), has_value=false
-    BatchStart = 2, // WriteBatch 开始标记
-    FileHeader = 3, // WAL 文件头
+    TypePut = 0,         // put(key, value), has_value=true
+    TypeDelete = 1,      // delete(key), has_value=false
+    BatchStart = 2,      // WriteBatch 开始标记
+    FileHeader = 3,      // WAL 文件头
+    TypeDeleteRange = 4, // delete_range(start, end), has_value=true
 }
 
 impl TryFrom<u8> for OpType {
@@ -51,6 +52,7 @@ impl TryFrom<u8> for OpType {
             1 => Ok(OpType::TypeDelete),
             2 => Ok(OpType::BatchStart),
             3 => Ok(OpType::FileHeader),
+            4 => Ok(OpType::TypeDeleteRange),
             _ => Err(Error::Corruption(format!("invalid op type: {}", value))),
         }
     }
@@ -182,6 +184,9 @@ impl WalEntry {
             }
             OpType::TypeDelete if has_value => {
                 return Err(Error::Corruption("TypeDelete must not have value".into()));
+            }
+            OpType::TypeDeleteRange if !has_value => {
+                return Err(Error::Corruption("TypeDeleteRange must have value".into()));
             }
             OpType::BatchStart => {
                 if !has_value {
@@ -376,6 +381,20 @@ mod tests {
         assert!(entry.validate().is_err());
         let encoded = entry.encode();
         assert!(WalEntry::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_wal_delete_range_encode_decode() {
+        let entry = WalEntry {
+            sequence: 42,
+            op_type: OpType::TypeDeleteRange,
+            has_value: true,
+            key: b"start_key".to_vec(),
+            value: Some(b"end_key".to_vec()),
+        };
+        let encoded = entry.encode();
+        let decoded = WalEntry::decode(&encoded).unwrap();
+        assert_eq!(decoded, entry);
     }
 
     #[test]

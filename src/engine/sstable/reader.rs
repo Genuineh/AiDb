@@ -10,7 +10,10 @@ use bytes::Bytes;
 
 use crate::engine::cache::BlockCache;
 use crate::engine::filter::{bloom::record_bloom_false_positive, BloomFilter, Filter};
-use crate::engine::memtable::{extract_sequence, extract_user_key, extract_value_type, ValueType};
+use crate::engine::memtable::{
+    encode_internal_key, extract_sequence, extract_user_key, extract_value_type, range_covers,
+    PointState, ValueType,
+};
 use crate::error::{Error, Result};
 
 use super::block::Block;
@@ -20,6 +23,13 @@ use super::handle::BlockHandle;
 use super::index::{find_block_handle, load_index_entries, IndexBlock};
 use super::iterator::SSTableIterator;
 use super::meta::{find_meta_block_handle, read_raw_bytes, BLOOM_META_NAME};
+
+#[derive(Clone, Debug)]
+struct RangeTombstoneEntry {
+    start: Vec<u8>,
+    end: Vec<u8>,
+    sequence: u64,
+}
 
 pub struct SSTableReader {
     file: Arc<File>,
@@ -31,6 +41,7 @@ pub struct SSTableReader {
     largest_key: Vec<u8>,
     bloom_filter: Option<BloomFilter>,
     block_cache: Option<Arc<BlockCache>>,
+    range_tombstones: Arc<Vec<RangeTombstoneEntry>>,
 }
 
 impl SSTableReader {
@@ -58,6 +69,12 @@ impl SSTableReader {
 
         let (smallest_key, largest_key) =
             read_key_range(&file, file_number, &index_entries, block_cache.as_ref())?;
+        let range_tombstones = Arc::new(load_range_tombstones(
+            &file,
+            file_number,
+            Arc::clone(&index_entries),
+            block_cache.clone(),
+        )?);
 
         Ok(Self {
             file,
@@ -69,6 +86,7 @@ impl SSTableReader {
             largest_key,
             bloom_filter,
             block_cache,
+            range_tombstones,
         })
     }
 
@@ -165,6 +183,81 @@ impl SSTableReader {
         Ok(None)
     }
 
+    /// 同 user_key 在 `max_seq` 下的 point 状态 (单文件内最新).
+    pub fn point_state(&self, key: &[u8], max_seq: u64) -> Result<PointState> {
+        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
+        let target_user = extract_user_key(&seek_key);
+        let seek_seq = extract_sequence(&seek_key)?;
+
+        let handle = match find_block_handle(&self.index_entries, &seek_key) {
+            Ok(h) => h,
+            Err(_) => return Ok(PointState::Absent),
+        };
+        let block_data = read_block_cached(
+            &self.file,
+            self.file_number,
+            &handle,
+            self.block_cache.as_ref(),
+        )?;
+        let block = Block::new(block_data)?;
+        let mut it = block.iter();
+        let mut best = PointState::Absent;
+
+        while it.valid() {
+            let ik = it.key();
+            match extract_user_key(ik).cmp(target_user) {
+                Ordering::Greater => break,
+                Ordering::Less => {
+                    if !it.advance() {
+                        break;
+                    }
+                    continue;
+                }
+                Ordering::Equal => {
+                    let seq = extract_sequence(ik)?;
+                    if seq <= seek_seq {
+                        let ty = extract_value_type(ik)?;
+                        let state = match ty {
+                            ValueType::TypePut => PointState::Put(it.value().to_vec(), seq),
+                            ValueType::TypeDelete => PointState::Delete(seq),
+                            ValueType::TypeRangeDelete => PointState::Absent,
+                        };
+                        if let PointState::Put(_, s) | PointState::Delete(s) = &state {
+                            let replace = match &best {
+                                PointState::Put(_, bs) | PointState::Delete(bs) => s > bs,
+                                PointState::Absent => true,
+                            };
+                            if replace {
+                                best = state;
+                            }
+                        }
+                    }
+                }
+            }
+            if !it.advance() {
+                break;
+            }
+        }
+        Ok(best)
+    }
+
+    pub fn max_range_tombstone_seq(&self, user_key: &[u8], max_seq: u64) -> Option<u64> {
+        self.range_tombstones
+            .iter()
+            .filter(|r| {
+                r.sequence <= max_seq && range_covers(&r.start, &r.end, user_key)
+            })
+            .map(|r| r.sequence)
+            .max()
+    }
+
+    pub(crate) fn collect_range_tombstones(&self) -> Vec<(Vec<u8>, Vec<u8>, u64)> {
+        self.range_tombstones
+            .iter()
+            .map(|r| (r.start.clone(), r.end.clone(), r.sequence))
+            .collect()
+    }
+
     pub fn iter(&self) -> SSTableIterator {
         SSTableIterator::new(
             Arc::clone(&self.file),
@@ -241,4 +334,47 @@ fn read_key_range(
         }
     }
     Ok((smallest, largest))
+}
+
+fn load_range_tombstones(
+    file: &File,
+    file_number: u64,
+    index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
+    block_cache: Option<Arc<BlockCache>>,
+) -> Result<Vec<RangeTombstoneEntry>> {
+    let mut it = SSTableIterator::new(
+        Arc::new(file.try_clone()?),
+        file_number,
+        index_entries,
+        block_cache,
+    );
+    let mut out = Vec::new();
+    while it.valid() {
+        let Some(ik) = it.key() else {
+            break;
+        };
+        let Ok(value_type) = extract_value_type(ik) else {
+            if !it.advance() {
+                break;
+            }
+            continue;
+        };
+        if value_type == ValueType::TypeRangeDelete {
+            let Some(end) = it.value() else {
+                if !it.advance() {
+                    break;
+                }
+                continue;
+            };
+            out.push(RangeTombstoneEntry {
+                start: extract_user_key(ik).to_vec(),
+                end: end.to_vec(),
+                sequence: extract_sequence(ik)?,
+            });
+        }
+        if !it.advance() {
+            break;
+        }
+    }
+    Ok(out)
 }
