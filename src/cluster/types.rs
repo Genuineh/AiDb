@@ -132,6 +132,9 @@ pub struct RaftNodeConfig {
     pub snapshot_logs_since_last: u64,
     /// 当 leader propose 成功累积的写估算字节数超此阈值时触发 snapshot (None = 禁用).
     pub snapshot_size_threshold: Option<u64>,
+    /// 是否启用 linearizable read (ReadIndex).
+    /// 启用后每次 get() 触发 quorum 心跳 + applied index 等待.
+    pub linearizable_read: bool,
     pub max_entry_size: u64,
     pub rpc_timeout_ms: u64,
     pub grpc_max_message_size: u64,
@@ -148,6 +151,7 @@ impl Default for RaftNodeConfig {
             max_payload_entries: 100,
             snapshot_logs_since_last: 1000,
             snapshot_size_threshold: None,
+            linearizable_read: false,
             max_entry_size: 8 * 1024 * 1024,
             rpc_timeout_ms: 200,
             grpc_max_message_size: 64 * 1024 * 1024,

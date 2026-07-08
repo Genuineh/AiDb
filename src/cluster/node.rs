@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openraft::{storage::Adaptor, Config, Raft, RaftMetrics};
+use openraft::error::{CheckIsLeaderError, ForwardToLeader, RaftError};
+use openraft::{storage::Adaptor, Config, Raft, RaftMetrics, TryAsRef};
 use tracing::instrument;
 
 use crate::cluster::network::{RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl};
@@ -36,6 +37,8 @@ pub struct OpenRaftNode {
     estimated_proposed_bytes_accumulated: AtomicU64,
     /// 达到此字节数后触发 snapshot (None = 禁用).
     snapshot_size_threshold: Option<u64>,
+    /// 是否启用 linearizable read (ReadIndex).
+    linearizable_read: bool,
 }
 
 impl OpenRaftNode {
@@ -110,6 +113,7 @@ impl OpenRaftNode {
             heartbeat_interval_ms,
             estimated_proposed_bytes_accumulated: AtomicU64::new(0),
             snapshot_size_threshold: config.snapshot_size_threshold,
+            linearizable_read: config.linearizable_read,
         })
     }
 
@@ -463,13 +467,19 @@ impl OpenRaftNode {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
-        if !self.is_leader().await {
-            let leader = self.get_leader().await;
-            return Err(Error::Cluster(ClusterError::NotLeader {
-                leader,
-                leader_addr: None,
-                is_ask: false,
-            }));
+        if self.linearizable_read {
+            // Linearizable read: quorum 确认当前仍是 leader + wait applied index
+            self.raft.ensure_linearizable().await.map_err(map_linearizable_error)?;
+        } else {
+            // 退化路径: 本地 leader check (保持 Redis Cluster 最终一致性)
+            if !self.is_leader().await {
+                let leader = self.get_leader().await;
+                return Err(Error::Cluster(ClusterError::NotLeader {
+                    leader,
+                    leader_addr: None,
+                    is_ask: false,
+                }));
+            }
         }
         let storage = self.storage.clone();
         tokio::task::spawn_blocking(move || storage.get_state_machine_value(&key))
@@ -536,6 +546,42 @@ impl OpenRaftNode {
     pub fn add_node_address(&self, node_id: NodeId, address: String) {
         self.network_factory.write().add_node(node_id, address);
     }
+}
+
+/// 将 OpenRaft `ensure_linearizable` 错误映射为 ClusterError.
+/// `ForwardToLeader` → `NotLeader` (客户端可做 MOVED 重定向);
+/// 其他错误 → `Internal`.
+fn map_linearizable_error(
+    e: RaftError<NodeId, CheckIsLeaderError<NodeId, openraft::BasicNode>>,
+) -> Error {
+    if let Some(leader_err) = e.try_as_ref() {
+        match leader_err {
+            ForwardToLeader {
+                leader_id: Some(leader),
+                leader_node: Some(node),
+            } => {
+                return Error::Cluster(ClusterError::NotLeader {
+                    leader: Some(*leader),
+                    leader_addr: Some(node.addr.clone()),
+                    is_ask: false,
+                });
+            }
+            ForwardToLeader {
+                leader_id: Some(leader),
+                ..
+            } => {
+                return Error::Cluster(ClusterError::NotLeader {
+                    leader: Some(*leader),
+                    leader_addr: None,
+                    is_ask: false,
+                });
+            }
+            _ => {}
+        }
+    }
+    Error::Cluster(ClusterError::Internal(format!(
+        "linearizable read failed: {e}"
+    )))
 }
 
 #[cfg(feature = "cluster")]
