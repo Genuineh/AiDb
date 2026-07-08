@@ -406,6 +406,7 @@ impl MetaRaftNode {
 mod tests {
     use super::*;
     use crate::cluster::types::RaftNodeConfig;
+    use crate::cluster::SlotStatus;
     use crate::config::Options;
     use std::collections::HashMap;
     use std::time::Duration;
@@ -611,5 +612,133 @@ mod tests {
             elapsed2 < Duration::from_millis(100),
             "confirm took {elapsed2:?}, expected <100ms"
         );
+    }
+
+    /// 并发验证: Slot 迁移 + Raft 成员变更并发场景 (F-055).
+    /// 两个 MetaRequest 通过 tokio::join! 并发 propose, MetaRaft 串行 apply.
+    #[tokio::test]
+    async fn test_concurrent_register_assign_slots() {
+        let dir = TempDir::new().unwrap();
+        let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+        let factory = RaftNetworkClientFactory::new(
+            1,
+            METARAFT_GROUP_ID,
+            RaftNodeConfig::default().rpc_timeout_ms,
+            RaftNodeConfig::default().grpc_max_message_size,
+        );
+        let cfg = RaftNodeConfig {
+            node_id: 1,
+            group_id: METARAFT_GROUP_ID,
+            election_timeout_min: 500,
+            election_timeout_max: 1000,
+            heartbeat_interval: 50,
+            ..Default::default()
+        };
+        let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:1".into())])
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        // 先创建 group 1, AssignSlots 需要 group 存在
+        node.propose(MetaRequest::CreateGroup {
+            group_id: 1,
+            initial_replicas: vec![(1, true)],
+        })
+        .await
+        .unwrap();
+
+        // 并发 propose RegisterNode + AssignSlots
+        let (res_a, res_b) = tokio::join!(
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                node.propose(MetaRequest::RegisterNode {
+                    node_id: 10,
+                    rpc_addr: "http://127.0.0.1:9010".into(),
+                    client_addr: None,
+                    tags: HashMap::new(),
+                })
+            ),
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                node.propose(MetaRequest::AssignSlots {
+                    group_id: 1,
+                    slots: vec![0],
+                })
+            ),
+        );
+
+        assert!(matches!(res_a, Ok(Ok(Response::Ok))), "RegisterNode failed: {res_a:?}");
+        assert!(matches!(res_b, Ok(Ok(Response::Ok))), "AssignSlots failed: {res_b:?}");
+
+        // 最终状态一致: 节点存在且 slot 已分配
+        let meta = node.get_cluster_meta();
+        assert!(meta.nodes.contains_key(&10), "node 10 not found");
+        let slot_table = node.get_slot_table();
+        assert!(
+            matches!(slot_table[0], SlotStatus::Assigned(1)),
+            "slot 0 not assigned to group 1: {:?}",
+            slot_table[0]
+        );
+    }
+
+    /// 并发验证: CreateGroup + RegisterNode (F-055).
+    #[tokio::test]
+    async fn test_concurrent_create_group_register_node() {
+        let dir = TempDir::new().unwrap();
+        let db = DB::open(dir.path(), Options::for_testing()).unwrap();
+        let factory = RaftNetworkClientFactory::new(
+            1,
+            METARAFT_GROUP_ID,
+            RaftNodeConfig::default().rpc_timeout_ms,
+            RaftNodeConfig::default().grpc_max_message_size,
+        );
+        let cfg = RaftNodeConfig {
+            node_id: 1,
+            group_id: METARAFT_GROUP_ID,
+            election_timeout_min: 500,
+            election_timeout_max: 1000,
+            heartbeat_interval: 50,
+            ..Default::default()
+        };
+        let node = MetaRaftNode::new(cfg, db, factory).await.unwrap();
+        node.initialize(vec![(1, "http://127.0.0.1:1".into())])
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        // 并发 propose CreateGroup + RegisterNode
+        let (res_a, res_b) = tokio::join!(
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                node.propose(MetaRequest::CreateGroup {
+                    group_id: 2,
+                    initial_replicas: vec![(1, true)],
+                })
+            ),
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                node.propose(MetaRequest::RegisterNode {
+                    node_id: 20,
+                    rpc_addr: "http://127.0.0.1:9020".into(),
+                    client_addr: None,
+                    tags: HashMap::new(),
+                })
+            ),
+        );
+
+        assert!(
+            matches!(res_a, Ok(Ok(Response::Ok))),
+            "CreateGroup failed: {res_a:?}"
+        );
+        assert!(
+            matches!(res_b, Ok(Ok(Response::Ok))),
+            "RegisterNode failed: {res_b:?}"
+        );
+
+        // 最终状态一致: group 和 node 共存
+        let meta = node.get_cluster_meta();
+        assert!(meta.groups.contains_key(&2), "group 2 not found");
+        assert!(meta.nodes.contains_key(&20), "node 20 not found");
     }
 }
