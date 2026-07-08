@@ -268,6 +268,9 @@ pub struct ClusterConfig {
     pub max_log_size_bytes: u64,
     /// 迁移配置
     pub migration: MigrationConfig,
+    /// 当 leader propose 成功累积的写估算字节数超过此阈值时, 触发 size-based snapshot.
+    /// None = 禁用 size-based 触发, 仅依赖 LogsSinceLast (默认).
+    pub snapshot_size_threshold: Option<u64>,
 }
 
 /// 在线迁移配置
@@ -308,6 +311,7 @@ impl Default for ClusterConfig {
             max_log_entries: 1000,
             max_log_size_bytes: 64 * 1024 * 1024,
             migration: MigrationConfig::default(),
+            snapshot_size_threshold: None,
         }
     }
 }
@@ -327,6 +331,7 @@ impl ClusterConfig {
             max_log_entries: 100,
             max_log_size_bytes: 1024 * 1024,
             migration: MigrationConfig::default(),
+            snapshot_size_threshold: None,
         }
     }
 }

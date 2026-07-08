@@ -1,6 +1,7 @@
 //! OpenRaft node wrapper.
 
 use parking_lot::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,6 +32,10 @@ pub struct OpenRaftNode {
     network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
     max_entry_size: u64,
     heartbeat_interval_ms: u64,
+    /// leader 上 propose 成功累积的写请求估算字节数 (从不重置, 用于 size-based snapshot).
+    estimated_proposed_bytes_accumulated: AtomicU64,
+    /// 达到此字节数后触发 snapshot (None = 禁用).
+    snapshot_size_threshold: Option<u64>,
 }
 
 impl OpenRaftNode {
@@ -103,6 +108,8 @@ impl OpenRaftNode {
             network_factory: network_factory_arc,
             max_entry_size: config.max_entry_size,
             heartbeat_interval_ms,
+            estimated_proposed_bytes_accumulated: AtomicU64::new(0),
+            snapshot_size_threshold: config.snapshot_size_threshold,
         })
     }
 
@@ -331,6 +338,7 @@ impl OpenRaftNode {
     pub async fn propose(&self, request: Request) -> Result<Response> {
         let t0 = std::time::Instant::now();
         self.check_entry_size(&request)?;
+        let estimated_size = request.estimated_serialized_size() as u64;
         // Retry on ForwardToLeader — during leader re-election, the first
         // forward target may itself be in transition.  Up to 3 retries with
         // 200ms backoff.
@@ -340,6 +348,8 @@ impl OpenRaftNode {
                 Ok(response) => {
                     let elapsed = t0.elapsed();
                     tracing::info!(target: "perf", group_id = self.group_id, total_ms = elapsed.as_millis(), client_write_ms = t1.elapsed().as_millis(), attempt, "raft_propose_ok");
+                    // size-based snapshot trigger (F-008)
+                    self.track_proposed_bytes(estimated_size);
                     return Ok(response.data);
                 }
                 Err(e) => {
@@ -366,6 +376,41 @@ impl OpenRaftNode {
             }
         }
         unreachable!()
+    }
+
+    /// 累加 propose 成功的字节预估数, 超阈值时异步触发 snapshot (F-008).
+    fn track_proposed_bytes(&self, estimated_size: u64) {
+        if estimated_size == 0 {
+            return;
+        }
+        let old = self
+            .estimated_proposed_bytes_accumulated
+            .fetch_add(estimated_size, AtomicOrdering::Relaxed);
+        let new = old + estimated_size;
+        if let Some(t) = self.snapshot_size_threshold {
+            if old / t != new / t {
+                let raft = self.raft.clone();
+                tracing::info!(
+                    target: "snap",
+                    group_id = self.group_id,
+                    threshold_bytes = t,
+                    proposed_bytes = new,
+                    "size-based snapshot requested"
+                );
+                tokio::spawn(async move {
+                    match raft.trigger().snapshot().await {
+                        Ok(()) => {} // triggered or already in progress — both OK
+                        Err(e) => tracing::warn!(
+                            target: "snap",
+                            threshold_bytes = t,
+                            proposed_bytes = new,
+                            error = %e,
+                            "size-based snapshot failed, retry on next threshold crossing"
+                        ),
+                    }
+                });
+            }
+        }
     }
 
     pub async fn write_batch(&self, batch: ThinWriteBatch) -> Result<()> {

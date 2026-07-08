@@ -130,6 +130,8 @@ pub struct RaftNodeConfig {
     pub heartbeat_interval: u64,
     pub max_payload_entries: u64,
     pub snapshot_logs_since_last: u64,
+    /// 当 leader propose 成功累积的写估算字节数超此阈值时触发 snapshot (None = 禁用).
+    pub snapshot_size_threshold: Option<u64>,
     pub max_entry_size: u64,
     pub rpc_timeout_ms: u64,
     pub grpc_max_message_size: u64,
@@ -145,6 +147,7 @@ impl Default for RaftNodeConfig {
             heartbeat_interval: 100,
             max_payload_entries: 100,
             snapshot_logs_since_last: 1000,
+            snapshot_size_threshold: None,
             max_entry_size: 8 * 1024 * 1024,
             rpc_timeout_ms: 200,
             grpc_max_message_size: 64 * 1024 * 1024,
@@ -172,6 +175,11 @@ impl RaftNodeConfig {
         if self.rpc_timeout_ms >= self.election_timeout_min {
             return Err(ClusterError::InvalidConfig(
                 "rpc_timeout_ms must be < election_timeout_min".into(),
+            ));
+        }
+        if let Some(0) = self.snapshot_size_threshold {
+            return Err(ClusterError::InvalidConfig(
+                "snapshot_size_threshold must be > 0".into(),
             ));
         }
         Ok(())
