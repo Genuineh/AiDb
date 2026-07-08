@@ -11,7 +11,7 @@ pub use internal_key::{
     extract_sequence, extract_user_key, extract_value_type, ValueType, K_MAX_SEQUENCE, K_TYPE_SEEK,
     SEQUENCE_LIMIT,
 };
-pub use range_tombstone::{range_covers, user_key_successor};
+pub use range_tombstone::{range_covers, max_covering_range_tombstone_seq, RangeTombstoneRecord};
 pub(crate) use key_bytes::InternalKeyBytes;
 pub use iterator::MemTableIterator;
 pub use table::{ImmutableMemTable, MemTable, PointState};

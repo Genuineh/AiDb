@@ -6,8 +6,10 @@ use super::internal_key::{
 };
 use super::iterator::MemTableIterator;
 use super::key_bytes::InternalKeyBytes;
+use super::range_tombstone::{max_covering_range_tombstone_seq, RangeTombstoneRecord};
 use crate::error::Result;
 use crossbeam_skiplist::SkipMap;
+use parking_lot::RwLock;
 use std::ops::Bound;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
@@ -54,6 +56,10 @@ impl ImmutableMemTable {
         self.table.max_range_tombstone_seq(user_key, max_seq)
     }
 
+    pub fn has_range_tombstones(&self) -> bool {
+        self.table.has_range_tombstones()
+    }
+
     pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
         self.table.collect_range_tombstones()
     }
@@ -75,6 +81,8 @@ impl ImmutableMemTable {
 /// 可变 MemTable.
 pub struct MemTable {
     table: SkipMap<InternalKeyBytes, Arc<[u8]>>,
+    /// Range tombstone 索引 — 仅含 delete_range 写入, 避免 GET 扫描全表.
+    range_index: RwLock<Vec<RangeTombstoneRecord>>,
     size: AtomicUsize,
 }
 
@@ -88,8 +96,13 @@ impl MemTable {
     pub fn new() -> Self {
         Self {
             table: SkipMap::new(),
+            range_index: RwLock::new(Vec::new()),
             size: AtomicUsize::new(0),
         }
+    }
+
+    pub fn has_range_tombstones(&self) -> bool {
+        !self.range_index.read().is_empty()
     }
 
     pub(crate) fn map(&self) -> &SkipMap<InternalKeyBytes, Arc<[u8]>> {
@@ -138,6 +151,11 @@ impl MemTable {
         self.table.insert(ik, val);
         self.size
             .fetch_add(start.len() + end.len(), AtomicOrdering::Relaxed);
+        self.range_index.write().push(RangeTombstoneRecord {
+            start: start.to_vec(),
+            end: end.to_vec(),
+            sequence,
+        });
         tracing::debug!(target: "mem", "mem.put_range_delete");
         self.sync_active_metric();
         Ok(())
@@ -166,22 +184,20 @@ impl MemTable {
     }
 
     pub fn max_range_tombstone_seq(&self, user_key: &[u8], max_seq: u64) -> Result<Option<u64>> {
-        super::range_tombstone::max_covering_range_tombstone_seq(&self.table, user_key, max_seq)
+        Ok(max_covering_range_tombstone_seq(
+            &self.range_index.read(),
+            user_key,
+            max_seq,
+        ))
     }
 
     pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
-        let mut out = Vec::new();
-        for entry in self.table.iter() {
-            let ik = entry.key().as_ref();
-            if extract_value_type(ik)? == ValueType::TypeRangeDelete {
-                out.push((
-                    extract_user_key(ik).to_vec(),
-                    entry.value().as_ref().to_vec(),
-                    extract_sequence(ik)?,
-                ));
-            }
-        }
-        Ok(out)
+        Ok(self
+            .range_index
+            .read()
+            .iter()
+            .map(|r| (r.start.clone(), r.end.clone(), r.sequence))
+            .collect())
     }
 
     #[tracing::instrument(level = "debug", name = "mem_get", skip(self, key))]

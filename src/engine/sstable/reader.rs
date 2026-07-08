@@ -251,6 +251,10 @@ impl SSTableReader {
             .max()
     }
 
+    pub fn has_range_tombstones(&self) -> bool {
+        !self.range_tombstones.is_empty()
+    }
+
     pub(crate) fn collect_range_tombstones(&self) -> Vec<(Vec<u8>, Vec<u8>, u64)> {
         self.range_tombstones
             .iter()

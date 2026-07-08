@@ -13,7 +13,8 @@ use crate::engine::compaction::{
     VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
-    extract_sequence, ImmutableMemTable, MemTable, PointState, SEQUENCE_LIMIT,
+    encode_internal_key, extract_sequence, ImmutableMemTable, MemTable, PointState, ValueType,
+    SEQUENCE_LIMIT,
 };
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::engine::wal::manager::WALManager;
@@ -517,6 +518,88 @@ impl DB {
     }
 
     pub(crate) fn get_at_sequence(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
+        if self.has_active_range_tombstones() {
+            self.get_at_sequence_with_range_tombstones(key, max_seq)
+        } else {
+            self.get_at_sequence_fast(key, max_seq)
+        }
+    }
+
+    fn has_active_range_tombstones(&self) -> bool {
+        if self.memtable.read().has_range_tombstones() {
+            return true;
+        }
+        for imm in self.immutable_memtables.read().iter() {
+            if imm.has_range_tombstones() {
+                return true;
+            }
+        }
+        for level in self.sstables.read().iter() {
+            for reader in level {
+                if reader.has_range_tombstones() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// 无 range tombstone 时走旧短路路径 (mem → imm → sst 逐层返回).
+    fn get_at_sequence_fast(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
+        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
+        if let Some((value, ty)) = self.memtable.read().search(&seek_key)? {
+            return Ok(match ty {
+                ValueType::TypePut => Some(value.as_ref().to_vec()),
+                ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+            });
+        }
+        for imm in self.immutable_memtables.read().iter().rev() {
+            if let Some((value, ty)) = imm.search(&seek_key)? {
+                return Ok(match ty {
+                    ValueType::TypePut => Some(value.as_ref().to_vec()),
+                    ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                });
+            }
+        }
+        self.get_from_sstables(key, max_seq)
+    }
+
+    fn get_from_sstables(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
+        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
+        let l0_readers: Vec<Arc<SSTableReader>>;
+        let l1_plus_readers: Vec<Vec<Arc<SSTableReader>>>;
+        {
+            let tables = self.sstables.read();
+            l0_readers = tables[0].clone();
+            l1_plus_readers = tables.iter().skip(1).cloned().collect();
+        }
+
+        for reader in &l0_readers {
+            if let Some((value, ty)) = reader.get(&seek_key)? {
+                return Ok(match ty {
+                    ValueType::TypePut => Some(value),
+                    ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                });
+            }
+        }
+        for level in &l1_plus_readers {
+            if let Some(reader) = find_sstable_for_key(level, key) {
+                if let Some((value, ty)) = reader.get(&seek_key)? {
+                    return Ok(match ty {
+                        ValueType::TypePut => Some(value),
+                        ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                    });
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn get_at_sequence_with_range_tombstones(
+        &self,
+        key: &[u8],
+        max_seq: u64,
+    ) -> Result<Option<Vec<u8>>> {
         let mut best_put: Option<(Vec<u8>, u64)> = None;
         let mut best_delete: Option<u64> = None;
         let mut best_range: Option<u64> = None;
