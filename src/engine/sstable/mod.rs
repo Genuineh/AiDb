@@ -9,6 +9,7 @@ mod handle;
 mod index;
 mod iterator;
 mod meta;
+mod properties;
 mod reader;
 
 pub use block::{Block, BlockBuilder, BlockIterator};
@@ -19,6 +20,7 @@ pub use footer::{Footer, FOOTER_SIZE, MAGIC_NUMBER};
 pub use handle::BlockHandle;
 pub use index::{find_block_handle, IndexBlock, IndexBlockBuilder, IndexEntry};
 pub use iterator::SSTableIterator;
+pub use properties::SstProperties;
 pub use reader::SSTableReader;
 
 pub(crate) const BLOCK_TRAILER_SIZE: usize = 5;

@@ -22,7 +22,8 @@ use super::footer::{Footer, FOOTER_SIZE};
 use super::handle::BlockHandle;
 use super::index::{find_block_handle, load_index_entries, IndexBlock};
 use super::iterator::SSTableIterator;
-use super::meta::{find_meta_block_handle, read_raw_bytes, BLOOM_META_NAME};
+use super::meta::{find_meta_block_handle, read_raw_bytes, BLOOM_META_NAME, PROPERTIES_META_NAME};
+use super::properties::SstProperties;
 
 #[derive(Clone, Debug)]
 struct RangeTombstoneEntry {
@@ -40,6 +41,7 @@ pub struct SSTableReader {
     smallest_key: Vec<u8>,
     largest_key: Vec<u8>,
     bloom_filter: Option<BloomFilter>,
+    properties: Option<SstProperties>,
     block_cache: Option<Arc<BlockCache>>,
     range_tombstones: Arc<Vec<RangeTombstoneEntry>>,
 }
@@ -66,6 +68,7 @@ impl SSTableReader {
         let meta_index_bytes = read_block_from_file(&file, &footer.meta_index_handle)?;
         let meta_index = IndexBlock::new(Bytes::from(meta_index_bytes))?;
         let bloom_filter = load_bloom_filter(&file, &meta_index);
+        let properties = load_properties(&file, &meta_index);
 
         let (smallest_key, largest_key) =
             read_key_range(&file, file_number, &index_entries, block_cache.as_ref())?;
@@ -85,6 +88,7 @@ impl SSTableReader {
             smallest_key,
             largest_key,
             bloom_filter,
+            properties,
             block_cache,
             range_tombstones,
         })
@@ -112,6 +116,10 @@ impl SSTableReader {
 
     pub fn has_bloom_filter(&self) -> bool {
         self.bloom_filter.is_some()
+    }
+
+    pub fn properties(&self) -> Option<&SstProperties> {
+        self.properties.as_ref()
     }
 
     #[tracing::instrument(
@@ -292,6 +300,31 @@ fn load_bloom_filter(file: &File, meta_index: &IndexBlock) -> Option<BloomFilter
         Ok(f) => Some(f),
         Err(e) => {
             tracing::warn!(error = %e, "bloom decode failed, degraded to no-filter");
+            None
+        }
+    }
+}
+
+fn load_properties(file: &File, meta_index: &IndexBlock) -> Option<SstProperties> {
+    let handle = match find_meta_block_handle(meta_index, PROPERTIES_META_NAME) {
+        Ok(Some(h)) => h,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "properties meta index read failed");
+            return None;
+        }
+    };
+    let raw = match read_raw_bytes(file, handle.offset, handle.size) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "properties block read failed");
+            return None;
+        }
+    };
+    match SstProperties::decode(&raw) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            tracing::warn!(error = %e, "properties decode failed");
             None
         }
     }

@@ -9,6 +9,7 @@ use super::handle::BlockHandle;
 use super::index::{IndexBlock, IndexEntry};
 
 pub const BLOOM_META_NAME: &[u8] = b"bloom";
+pub const PROPERTIES_META_NAME: &[u8] = b"properties";
 
 pub fn find_meta_block_handle(meta_index: &IndexBlock, name: &[u8]) -> Result<Option<BlockHandle>> {
     for entry in meta_index.entries()? {

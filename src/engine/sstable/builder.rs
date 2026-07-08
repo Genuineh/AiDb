@@ -15,6 +15,7 @@ use super::footer::Footer;
 use super::handle::BlockHandle;
 use super::index::{IndexBlockBuilder, IndexEntry};
 use super::meta::{index_entry_for_bloom, write_raw_block};
+use super::properties::SstProperties;
 
 const MIN_BLOCK_SIZE: usize = 256;
 
@@ -27,6 +28,8 @@ pub struct SSTableBuilder {
     last_key: Vec<u8>,
     data_block_offset: u64,
     num_entries: u64,
+    raw_key_size: u64,
+    raw_value_size: u64,
     block_size: usize,
     block_restart_interval: usize,
     compression: CompressionType,
@@ -65,6 +68,8 @@ impl SSTableBuilder {
             last_key: Vec::new(),
             data_block_offset: 0,
             num_entries: 0,
+            raw_key_size: 0,
+            raw_value_size: 0,
             block_size,
             block_restart_interval,
             compression,
@@ -112,6 +117,9 @@ impl SSTableBuilder {
         }
         self.last_key.clear();
         self.last_key.extend_from_slice(key);
+
+        self.raw_key_size += key.len() as u64;
+        self.raw_value_size += value.len() as u64;
 
         if self.enable_bloom {
             if self.bloom_filter.is_none() {
@@ -191,6 +199,22 @@ impl SSTableBuilder {
             let bloom_handle =
                 write_raw_block(&mut self.writer, &mut self.data_block_offset, &encoded)?;
             meta_index_builder.add_entry(&index_entry_for_bloom(bloom_handle))?;
+        }
+
+        // Properties Block
+        {
+            let props = SstProperties {
+                num_entries: self.num_entries,
+                raw_key_size: self.raw_key_size,
+                raw_value_size: self.raw_value_size,
+            };
+            let encoded = props.encode();
+            let props_handle =
+                write_raw_block(&mut self.writer, &mut self.data_block_offset, &encoded)?;
+            meta_index_builder.add_entry(&IndexEntry {
+                key: super::meta::PROPERTIES_META_NAME.to_vec(),
+                handle: props_handle,
+            })?;
         }
 
         let meta_index_data = meta_index_builder.finish();
