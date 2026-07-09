@@ -331,16 +331,41 @@ fn validate_with_state(
             match migration_state.as_ref() {
                 Some(SlotMigrationState::Prepare { .. })
                 | Some(SlotMigrationState::Migrating { .. }) => {}
-                _ => return Err(ClusterError::InvalidState("no active migration".into())),
+                Some(SlotMigrationState::Frozen { .. })
+                | Some(SlotMigrationState::ReadyToCommit { .. }) => {
+                    return Err(ClusterError::InvalidState(
+                        "cannot update progress in frozen/ready phase".into(),
+                    ));
+                }
+                None => return Err(ClusterError::InvalidState("no active migration".into())),
             }
             if progress > total {
                 return Err(ClusterError::InvalidConfig("progress exceeds total".into()));
             }
         }
+        MetaRequest::FreezeSlotMigration => match migration_state.as_ref() {
+            Some(SlotMigrationState::Migrating { .. }) => {}
+            _ => {
+                return Err(ClusterError::InvalidState(
+                    "freeze requires Migrating state".into(),
+                ));
+            }
+        },
+        MetaRequest::MarkMigrationReady => match migration_state.as_ref() {
+            Some(SlotMigrationState::Frozen { .. }) => {}
+            _ => {
+                return Err(ClusterError::InvalidState(
+                    "mark ready requires Frozen state".into(),
+                ));
+            }
+        },
         MetaRequest::CommitSlotMigration => match migration_state.as_ref() {
-            Some(SlotMigrationState::Prepare { .. })
-            | Some(SlotMigrationState::Migrating { .. }) => {}
-            _ => return Err(ClusterError::InvalidState("no active migration".into())),
+            Some(SlotMigrationState::ReadyToCommit { .. }) => {}
+            _ => {
+                return Err(ClusterError::InvalidState(
+                    "commit requires ReadyToCommit state".into(),
+                ));
+            }
         },
         MetaRequest::CancelSlotMigration => {
             if migration_state.is_none() {
@@ -495,22 +520,50 @@ fn apply_mutate(
                     *t = total;
                 }
                 None => unreachable!(),
+                // Frozen / ReadyToCommit: validate rejects; keep exhaustive.
+                Some(SlotMigrationState::Frozen { .. })
+                | Some(SlotMigrationState::ReadyToCommit { .. }) => unreachable!(),
             }
         }
-        MetaRequest::CommitSlotMigration => {
+        MetaRequest::FreezeSlotMigration => {
             let (source_group, target_group, slots) = match migration_state.take() {
-                Some(SlotMigrationState::Prepare {
-                    source_group,
-                    target_group,
-                    slots,
-                }) => (source_group, target_group, slots),
                 Some(SlotMigrationState::Migrating {
                     source_group,
                     target_group,
                     slots,
                     ..
                 }) => (source_group, target_group, slots),
-                None => unreachable!(),
+                _ => unreachable!(),
+            };
+            *migration_state = Some(SlotMigrationState::Frozen {
+                source_group,
+                target_group,
+                slots,
+            });
+        }
+        MetaRequest::MarkMigrationReady => {
+            let (source_group, target_group, slots) = match migration_state.take() {
+                Some(SlotMigrationState::Frozen {
+                    source_group,
+                    target_group,
+                    slots,
+                }) => (source_group, target_group, slots),
+                _ => unreachable!(),
+            };
+            *migration_state = Some(SlotMigrationState::ReadyToCommit {
+                source_group,
+                target_group,
+                slots,
+            });
+        }
+        MetaRequest::CommitSlotMigration => {
+            let (source_group, target_group, slots) = match migration_state.take() {
+                Some(SlotMigrationState::ReadyToCommit {
+                    source_group,
+                    target_group,
+                    slots,
+                }) => (source_group, target_group, slots),
+                _ => unreachable!(),
             };
             for slot in &slots {
                 slot_table[*slot as usize] = SlotStatus::Assigned(target_group);
@@ -534,6 +587,16 @@ fn apply_mutate(
                     target_group,
                     slots,
                     ..
+                }) => (source_group, target_group, slots),
+                Some(SlotMigrationState::Frozen {
+                    source_group,
+                    target_group,
+                    slots,
+                })
+                | Some(SlotMigrationState::ReadyToCommit {
+                    source_group,
+                    target_group,
+                    slots,
                 }) => (source_group, target_group, slots),
                 None => unreachable!(),
             };
@@ -616,6 +679,16 @@ fn group_in_active_migration(group_id: u64, migration: &Option<SlotMigrationStat
             source_group,
             target_group,
             ..
+        })
+        | Some(SlotMigrationState::Frozen {
+            source_group,
+            target_group,
+            ..
+        })
+        | Some(SlotMigrationState::ReadyToCommit {
+            source_group,
+            target_group,
+            ..
         }) => *source_group == group_id || *target_group == group_id,
         None => false,
     }
@@ -633,6 +706,16 @@ fn node_in_active_migration(
             ..
         })
         | Some(SlotMigrationState::Migrating {
+            source_group,
+            target_group,
+            ..
+        })
+        | Some(SlotMigrationState::Frozen {
+            source_group,
+            target_group,
+            ..
+        })
+        | Some(SlotMigrationState::ReadyToCommit {
             source_group,
             target_group,
             ..
@@ -746,6 +829,10 @@ mod tests {
             total: 10,
         })
         .unwrap();
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        sm.apply_meta_request(MetaRequest::MarkMigrationReady)
+            .unwrap();
         sm.apply_meta_request(MetaRequest::CommitSlotMigration)
             .unwrap();
         assert_eq!(sm.get_slot_table()[1], SlotStatus::Assigned(2));
@@ -908,7 +995,7 @@ mod tests {
         let err = sm
             .validate_meta_request(&MetaRequest::CommitSlotMigration)
             .unwrap_err();
-        assert!(matches!(err, ClusterError::InvalidState(s) if s.contains("no active migration")));
+        assert!(matches!(err, ClusterError::InvalidState(s) if s.contains("ReadyToCommit")));
     }
 
     #[test]
@@ -994,6 +1081,15 @@ mod tests {
             slots: vec![1],
         })
         .unwrap();
+        sm.apply_meta_request(MetaRequest::UpdateMigrationProgress {
+            progress: 1,
+            total: 1,
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        sm.apply_meta_request(MetaRequest::MarkMigrationReady)
+            .unwrap();
         sm.apply_meta_request(MetaRequest::CommitSlotMigration)
             .unwrap();
         let meta = sm.get_cluster_meta();
@@ -1020,5 +1116,183 @@ mod tests {
         let result = MetaStateMachine::new(db);
         assert!(result.is_err());
         assert!(matches!(result.err().unwrap(), Error::Corruption(_)));
+    }
+
+    // ── F-056: Frozen / ReadyToCommit 相位 ──
+
+    fn setup_two_groups_with_slots(sm: &MetaStateMachine) {
+        register(sm, 1, "a:1");
+        register(sm, 2, "a:2");
+        sm.apply_meta_request(MetaRequest::CreateGroup {
+            group_id: 1,
+            initial_replicas: vec![(1, true)],
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup {
+            group_id: 2,
+            initial_replicas: vec![(2, true)],
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::AssignSlots {
+            group_id: 1,
+            slots: vec![0, 1],
+        })
+        .unwrap();
+    }
+
+    fn begin_and_progress_to_migrating(sm: &MetaStateMachine) {
+        sm.apply_meta_request(MetaRequest::BeginSlotMigration {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![1],
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::UpdateMigrationProgress {
+            progress: 1,
+            total: 10,
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_freeze_mark_ready_commit_succeeds() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+        begin_and_progress_to_migrating(&sm);
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Migrating(1));
+
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        assert!(matches!(
+            sm.get_migration_state(),
+            Some(SlotMigrationState::Frozen {
+                source_group: 1,
+                target_group: 2,
+                ..
+            })
+        ));
+        // SlotStatus 保持 Migrating(source) 直到 Commit
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Migrating(1));
+
+        sm.apply_meta_request(MetaRequest::MarkMigrationReady)
+            .unwrap();
+        assert!(matches!(
+            sm.get_migration_state(),
+            Some(SlotMigrationState::ReadyToCommit {
+                source_group: 1,
+                target_group: 2,
+                ..
+            })
+        ));
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Migrating(1));
+
+        sm.apply_meta_request(MetaRequest::CommitSlotMigration)
+            .unwrap();
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Assigned(2));
+        assert!(sm.get_migration_state().is_none());
+    }
+
+    #[test]
+    fn test_commit_from_migrating_prepare_frozen_fails() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+
+        // Prepare
+        sm.apply_meta_request(MetaRequest::BeginSlotMigration {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![1],
+        })
+        .unwrap();
+        let err = sm
+            .validate_meta_request(&MetaRequest::CommitSlotMigration)
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
+
+        // Migrating
+        sm.apply_meta_request(MetaRequest::UpdateMigrationProgress {
+            progress: 1,
+            total: 10,
+        })
+        .unwrap();
+        let err = sm
+            .validate_meta_request(&MetaRequest::CommitSlotMigration)
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
+
+        // Frozen
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        let err = sm
+            .validate_meta_request(&MetaRequest::CommitSlotMigration)
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
+    }
+
+    #[test]
+    fn test_mark_ready_from_migrating_fails() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+        begin_and_progress_to_migrating(&sm);
+        let err = sm
+            .validate_meta_request(&MetaRequest::MarkMigrationReady)
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
+    }
+
+    #[test]
+    fn test_freeze_from_prepare_fails() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+        sm.apply_meta_request(MetaRequest::BeginSlotMigration {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![1],
+        })
+        .unwrap();
+        let err = sm
+            .validate_meta_request(&MetaRequest::FreezeSlotMigration)
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
+    }
+
+    #[test]
+    fn test_cancel_from_frozen_and_ready_restores_slots() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+        begin_and_progress_to_migrating(&sm);
+
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        sm.apply_meta_request(MetaRequest::CancelSlotMigration)
+            .unwrap();
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Assigned(1));
+        assert!(sm.get_migration_state().is_none());
+
+        begin_and_progress_to_migrating(&sm);
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        sm.apply_meta_request(MetaRequest::MarkMigrationReady)
+            .unwrap();
+        sm.apply_meta_request(MetaRequest::CancelSlotMigration)
+            .unwrap();
+        assert_eq!(sm.get_slot_table()[1], SlotStatus::Assigned(1));
+        assert!(sm.get_migration_state().is_none());
+    }
+
+    #[test]
+    fn test_update_progress_in_frozen_fails() {
+        let (sm, _dir) = sm();
+        setup_two_groups_with_slots(&sm);
+        begin_and_progress_to_migrating(&sm);
+        sm.apply_meta_request(MetaRequest::FreezeSlotMigration)
+            .unwrap();
+        let err = sm
+            .validate_meta_request(&MetaRequest::UpdateMigrationProgress {
+                progress: 2,
+                total: 10,
+            })
+            .unwrap_err();
+        assert!(matches!(err, ClusterError::InvalidState(_)));
     }
 }

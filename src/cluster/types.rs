@@ -79,6 +79,8 @@ pub enum Request {
     PutConditional { key: Vec<u8>, value: Vec<u8> },
     WriteBatch(ThinWriteBatch),
     Meta(MetaRequest),
+    /// Slot 迁移收尾写屏障: apply 时不改用户数据, 仅推进 Raft last_applied.
+    MigrationBarrier { token: u64 },
 }
 
 impl Request {
@@ -94,7 +96,9 @@ impl Request {
                 batch.delete(key);
                 batch
             }
-            Request::PutConditional { .. } | Request::Meta(_) => ThinWriteBatch::new(),
+            Request::PutConditional { .. }
+            | Request::Meta(_)
+            | Request::MigrationBarrier { .. } => ThinWriteBatch::new(),
             Request::WriteBatch(batch) => batch,
         }
     }
@@ -109,6 +113,7 @@ impl Request {
             Request::Delete { key } => key.len() + 10,
             Request::WriteBatch(batch) => batch.estimated_serialized_size(),
             Request::Meta(_) => 512,
+            Request::MigrationBarrier { .. } => 24,
         }
     }
 }

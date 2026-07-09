@@ -205,9 +205,10 @@ flowchart TD
 ### 在线 slot 迁移
 
 1. `SlotMigrationManager::start_migration(source, target, slots)` → MetaRaft `BeginSlotMigration`
-2. 后台 `SlotMigrationExecutor::execute` (经 `run_pending_migration`) — scan 源 Group → `PutConditional` 到目标; 执行结果 `(source_group, target_group, slots, is_completed)` 记入 `last_run`
-3. 进度 `UpdateMigrationProgress`; `commit_migration` → `CommitSlotMigration`, **前置校验**: `executor` 已被消费 (即 `run_pending_migration` 跑过) 且 `last_run` 与 MetaRaft 当前迁移状态的 `(source_group, target_group, slots)` **完全一致**且 `is_completed=true`, 否则拒绝提交 (防止 `run_pending_migration` 从未执行/执行了另一批 slots/执行到一半就提交, 导致 target 数据不完整却切换所有权, 造成静默丢数据; 2026-07-02 修复, 见 `slot_migration.rs::commit_migration`)
-4. 取消: `cancel_migration` — 先扫描并删除 target_group 上属于这批 slots 的残留 key (`cleanup_target_residuals`), 再 `CancelSlotMigration`; 清理放在 propose 之前, 期间 slot 仍 `Migrating(source)` 不影响线上流量, 清理失败可安全重试. 若不清理, 同一批 slot 未来再次迁入同一 target 时 `PutConditional` 会因 key "已存在" 而跳过拷贝, 悄悄复用上次已取消、可能过期的旧值
+2. 后台 `SlotMigrationExecutor::execute` (经 `run_pending_migration`) — scan 源 Group → `PutConditional` 到目标; 执行结果记入持久化 `MigrationRunRecord` / `last_run`
+3. 进度 `UpdateMigrationProgress`; 相位: Prepare → Migrating → **Frozen** → **ReadyToCommit** → Commit
+4. 收尾链 `finish_migration()` = `freeze_for_commit` → `quiesce_writes` → `final_verify` → `mark_ready` → `commit_migration`. `commit_migration` **仅**接受 `ReadyToCommit` (Meta validate + Manager 双保险). AiKv `CLUSTER REBALANCE` / `SETSLOT STABLE` 必须走 `finish_migration`, 不得裸 `commit`
+5. 取消: **先** `CancelSlotMigration` (Meta → Assigned(source), 读立刻回 source), **再** `cleanup_target_residuals`. Ready/Frozen 下禁止先清 target (避免读空洞)
 
 ## 配置与 feature flags
 

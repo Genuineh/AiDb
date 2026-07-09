@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use aidb::cluster::multi_raft_node::LifecycleConfig;
 use aidb::cluster::slot_migration::{ActiveMigration, SlotMigrationManager};
+use aidb::cluster::types::Request;
 use aidb::cluster::{
     ClusterMeta, MetaRaftNode, MetaRequest, MultiRaftNode, RaftNetworkClientFactory,
     RaftServiceDispatcher, Router, SlotMigrationState, SlotTable,
@@ -173,6 +174,16 @@ fn active_migration_from_state(meta_raft: &MetaRaftNode, migration_id: u64) -> A
             source_group,
             target_group,
             slots,
+        }
+        | SlotMigrationState::Frozen {
+            source_group,
+            target_group,
+            slots,
+        }
+        | SlotMigrationState::ReadyToCommit {
+            source_group,
+            target_group,
+            slots,
         } => ActiveMigration {
             migration_id,
             source_group,
@@ -243,9 +254,9 @@ async fn commit_after_full_run_succeeds_and_moves_data() {
     let result = sm.run_pending_migration(active).await.unwrap();
     assert!(result.is_completed, "migration should fully complete in one pass");
 
-    sm.commit_migration()
+    sm.finish_migration()
         .await
-        .expect("commit must succeed once run_pending_migration has fully completed");
+        .expect("finish_migration must drive freeze→quiesce→ready→commit");
 
     assert_eq!(
         meta_raft.get_slot_table()[slots[0] as usize],
@@ -258,6 +269,81 @@ async fn commit_after_full_run_succeeds_and_moves_data() {
         "data must have been copied to target before commit"
     );
     assert!(meta_raft.get_migration_state().is_none());
+}
+
+#[tokio::test]
+async fn commit_from_migrating_without_finish_is_rejected() {
+    let (meta_raft, multi_raft, sm, slots, _dirs) = setup(0).await;
+
+    multi_raft
+        .propose_key(TEST_KEY.to_vec(), Some(b"v1".to_vec()))
+        .await
+        .unwrap();
+
+    let migration_id = sm.start_migration(1, 2, slots.clone()).await.unwrap();
+    let active = active_migration_from_state(&meta_raft, migration_id);
+    let result = sm.run_pending_migration(active).await.unwrap();
+    assert!(result.is_completed);
+
+    // 仅跑完拷贝、未走 finish 收尾链时, Meta 仍是 Prepare/Migrating, commit 必须拒绝.
+    let err = sm.commit_migration().await;
+    assert!(
+        err.is_err(),
+        "commit_migration must reject when Meta is not ReadyToCommit"
+    );
+    assert!(
+        meta_raft.get_migration_state().is_some(),
+        "migration must remain active after rejected commit"
+    );
+    assert_eq!(
+        meta_raft.get_slot_table()[slots[0] as usize],
+        aidb::cluster::SlotStatus::Migrating(1)
+    );
+}
+
+#[tokio::test]
+async fn finish_migration_after_del_on_target_still_works() {
+    let (meta_raft, multi_raft, sm, slots, _dirs) = setup(0).await;
+
+    multi_raft
+        .propose_key(TEST_KEY.to_vec(), Some(b"v1".to_vec()))
+        .await
+        .unwrap();
+
+    let migration_id = sm.start_migration(1, 2, slots.clone()).await.unwrap();
+    let active = active_migration_from_state(&meta_raft, migration_id);
+    let result = sm.run_pending_migration(active).await.unwrap();
+    assert!(result.is_completed);
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        Some(b"v1".to_vec())
+    );
+
+    // Migrating 期间客户端 DEL 落在 target: source 仍有 key, target 已删.
+    // final_verify 不得做 source⊆target, 收尾链仍应成功 (target-wins).
+    multi_raft
+        .propose_group(2, Request::Delete { key: TEST_KEY.to_vec() })
+        .await
+        .unwrap();
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        None
+    );
+
+    sm.finish_migration()
+        .await
+        .expect("finish must succeed even when target is missing a source key after DEL");
+
+    assert_eq!(
+        meta_raft.get_slot_table()[slots[0] as usize],
+        aidb::cluster::SlotStatus::Assigned(2)
+    );
+    assert!(meta_raft.get_migration_state().is_none());
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        None,
+        "target-wins: DEL on target must not be resurrected by finish"
+    );
 }
 
 #[tokio::test]

@@ -64,6 +64,18 @@ pub enum SlotMigrationState {
         progress: u64,
         total: u64,
     },
+    /// 写冻结: 客户端对该 slot 的写返回 TRYAGAIN; 读仍走 source.
+    Frozen {
+        source_group: u64,
+        target_group: u64,
+        slots: Vec<u16>,
+    },
+    /// verify 通过: 读切到 target; 写仍冻结; 可 Commit. **A2 保证起点**.
+    ReadyToCommit {
+        source_group: u64,
+        target_group: u64,
+        slots: Vec<u16>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -156,6 +168,10 @@ pub enum MetaRequest {
         progress: u64,
         total: u64,
     },
+    /// Migrating → Frozen. 仅当 executor 已报告拷贝完成.
+    FreezeSlotMigration,
+    /// Frozen → ReadyToCommit. 仅当 drain + final_verify 通过.
+    MarkMigrationReady,
     CommitSlotMigration,
     CancelSlotMigration,
     /// Bump cluster config epoch (increments ClusterMeta.version).

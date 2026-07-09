@@ -388,6 +388,16 @@ fn node_in_active_migration(
             source_group,
             target_group,
             ..
+        }
+        | SlotMigrationState::Frozen {
+            source_group,
+            target_group,
+            ..
+        }
+        | SlotMigrationState::ReadyToCommit {
+            source_group,
+            target_group,
+            ..
         } => (*source_group, *target_group),
     };
     for gid in [source, target] {

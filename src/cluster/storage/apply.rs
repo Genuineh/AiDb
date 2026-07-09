@@ -222,6 +222,8 @@ impl OpenRaftStorage {
                 self.append_thin_batch_to_db_batch(batch, wb);
                 Ok(Response::Ok)
             }
+            // 迁移写屏障: 不改用户数据, 仅随 entry 推进 last_applied.
+            Request::MigrationBarrier { .. } => Ok(Response::Ok),
         }
     }
 
