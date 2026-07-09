@@ -10,10 +10,12 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::instrument;
 
+use openraft::RaftNetworkFactory;
+
 use crate::cluster::lifecycle_manager::{LifecycleManager, MetaRaftProvider};
 use crate::cluster::meta_types::{default_slot_table, ClusterMeta, SlotMigrationState, SlotTable};
 use crate::cluster::network::{
-    raft_rpc, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
+    raft_rpc, RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
 };
 use crate::cluster::node::OpenRaftNode;
 use crate::cluster::router::Router;
@@ -43,6 +45,11 @@ pub struct MultiRaftNode {
     local_group_overrides: Arc<RwLock<HashSet<u64>>>,
     /// Override set for elected-leader checks (used in testing).
     elected_leader_overrides: Arc<RwLock<HashSet<u64>>>,
+    /// FIX-0056-A1: 跨节点合并读 (`get_key_from_group_remote`) / tip 远程
+    /// fallback (`read_migration_tip`) 用的 gRPC client 工厂. `start_lifecycle_impl`
+    /// 启动时会用真实 `rpc_timeout_ms`/`grpc_max_message_size` 替换其内容;
+    /// 在此之前保持 `RaftNodeConfig::default()` (此时也不会有本地 group, 无需远程读).
+    network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
 }
 
 /// Group 生命周期配置 (用于 start_lifecycle_with_data).
@@ -97,6 +104,12 @@ impl MultiRaftNode {
             server_handle: parking_lot::Mutex::new(None),
             local_group_overrides: Arc::new(RwLock::new(HashSet::new())),
             elected_leader_overrides: Arc::new(RwLock::new(HashSet::new())),
+            network_factory: Arc::new(RwLock::new(RaftNetworkClientFactory::new(
+                node_id,
+                0,
+                RaftNodeConfig::default().rpc_timeout_ms,
+                RaftNodeConfig::default().grpc_max_message_size,
+            ))),
         }
     }
 
@@ -118,6 +131,12 @@ impl MultiRaftNode {
             server_handle: parking_lot::Mutex::new(None),
             local_group_overrides: Arc::new(RwLock::new(HashSet::new())),
             elected_leader_overrides: Arc::new(RwLock::new(HashSet::new())),
+            network_factory: Arc::new(RwLock::new(RaftNetworkClientFactory::new(
+                node_id,
+                0,
+                RaftNodeConfig::default().rpc_timeout_ms,
+                RaftNodeConfig::default().grpc_max_message_size,
+            ))),
         }
     }
 
@@ -174,6 +193,10 @@ impl MultiRaftNode {
         let storages = self.storages.clone();
         let dispatcher = self.grpc_dispatcher.clone();
         let node_id = self.node_id;
+        // 复用 self.network_factory (而非每次启动 lifecycle 都新建一个孤立实例),
+        // 使 get_key_from_group_remote/read_migration_tip 的远程 fallback 能
+        // 拿到与本地 group 对等 raft 通信同一份 (node_id -> addr) 缓存 (FIX-0056-A1).
+        let net_factory = self.network_factory.clone();
         let restart_state: Arc<RwLock<HashMap<u64, GroupRestartState>>> =
             Arc::new(RwLock::new(HashMap::new()));
 
@@ -189,12 +212,7 @@ impl MultiRaftNode {
                 .map_or(RaftNodeConfig::default().grpc_max_message_size, |c| {
                     c.raft_node_config.grpc_max_message_size
                 });
-            let net_factory = Arc::new(RwLock::new(RaftNetworkClientFactory::new(
-                node_id,
-                0,
-                rpc_timeout,
-                msg_size,
-            )));
+            *net_factory.write() = RaftNetworkClientFactory::new(node_id, 0, rpc_timeout, msg_size);
 
             loop {
                 tokio::select! {
@@ -383,9 +401,10 @@ impl MultiRaftNode {
                     }
                 }
 
+                dispatcher.register_group(group_id, raft);
+                dispatcher.register_node(group_id, node.clone());
                 groups.write().insert(group_id, node);
                 storages.write().insert(group_id, storage);
-                dispatcher.register_group(group_id, raft);
                 tracing::info!(group_id, init_as_voter, "group created and registered");
             }
             Err(e) => {
@@ -671,6 +690,82 @@ impl MultiRaftNode {
             Some(node) => node.get(key.to_vec()).await,
             None => Err(ClusterError::Raft(format!("group {} not found locally", group_id)).into()),
         }
+    }
+
+    /// FIX-0056-A1"读导向"点 3: `get_key_from_group` 的跨节点合并读 fallback.
+    ///
+    /// Group 在本地时直接走 `get_key_from_group` (本地 leader-check /
+    /// linearizable 读). 否则 RPC 到该 group 当前已知的 leader (`GetKey`,
+    /// 与 Raft RPC 同一数据面 gRPC 通道), 超时/失败原样返回 Err —— 调用方
+    /// 必须将其映射为 `TRYAGAIN`, 禁止静默 fallback 到可能陈旧的本地视图.
+    pub async fn get_key_from_group_remote(
+        &self,
+        group_id: u64,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        if self.is_group_local(group_id) {
+            return self.get_key_from_group(group_id, key).await;
+        }
+        let mut client = self.remote_leader_client(group_id).await?;
+        client.get_key(key).await
+    }
+
+    /// FIX-0056-A1: 读取指定 Group 在 `epoch` 下的迁移 oplog tip.
+    ///
+    /// 与 `get_key_from_group` 共用同一 leader / linearizable 语义 (A1
+    /// "合并读线性点" 硬约束: tombstone/tip 必须在 target group leader 上读,
+    /// 不允许落后 follower 冒充最新). 若 group 不在本节点: RPC 到该 group
+    /// 当前已知的 leader (`GetMigrationTip`, 与 Raft RPC 同一数据面 gRPC
+    /// 通道) —— "读导向"点 3 (`tip 跨节点读取`).
+    pub async fn read_migration_tip(&self, group_id: u64, epoch: u64) -> Result<u64> {
+        let group = self.groups.read().get(&group_id).cloned();
+        match group {
+            Some(node) => node.get_migration_tip(epoch).await,
+            None => self.read_migration_tip_remote(group_id, epoch).await,
+        }
+    }
+
+    async fn read_migration_tip_remote(&self, group_id: u64, epoch: u64) -> Result<u64> {
+        let mut client = self.remote_leader_client(group_id).await?;
+        client.get_migration_tip(epoch).await
+    }
+
+    /// FIX-0056-A1 合并读线性点第 1 步: 读取 target group 上 `epoch` 内 `key`
+    /// 的迁移 tombstone (供 aikv 合并读判断 target miss 是"从未拷贝"还是
+    /// "已被客户端 Del"). Group 本地时走本地 leader-check / linearizable 读
+    /// (`OpenRaftNode::get_migration_tombstone`); 否则 RPC 到该 group 当前
+    /// 已知的 leader (`GetMigrationTombstone`), 与 `get_key_from_group_remote`
+    /// 同一超时/失败语义 (Err 必须映射为 TRYAGAIN, 不得当作"无 tombstone").
+    pub async fn get_migration_tombstone_remote(
+        &self,
+        group_id: u64,
+        epoch: u64,
+        key: &[u8],
+    ) -> Result<Option<crate::cluster::migration_oplog::MigOp>> {
+        let group = self.groups.read().get(&group_id).cloned();
+        match group {
+            Some(node) => node.get_migration_tombstone(epoch, key.to_vec()).await,
+            None => {
+                let mut client = self.remote_leader_client(group_id).await?;
+                client.get_migration_tombstone(epoch, key).await
+            }
+        }
+    }
+
+    /// FIX-0056-A1: 构造指向 `group_id` 当前已知 leader 的 `RaftNetworkClient`
+    /// (与本地 Raft 对等通信同一 gRPC 通道/连接池). Leader 未知或地址缺失时
+    /// 返回 Err —— 调用方 (`get_key_from_group_remote` / `read_migration_tip`)
+    /// 不得把"找不到 leader"悄悄当成"key 不存在"或 tip=0.
+    async fn remote_leader_client(&self, group_id: u64) -> Result<RaftNetworkClient> {
+        let leader = self.router.get_group_leader(group_id).ok_or_else(|| {
+            ClusterError::Raft(format!("no known leader for group {group_id}"))
+        })?;
+        let addr = self.router.get_node_addr(leader).ok_or_else(|| {
+            ClusterError::Raft(format!("no rpc address known for node {leader}"))
+        })?;
+        let mut factory = self.network_factory.read().clone().with_group_id(group_id);
+        let basic_node = openraft::BasicNode { addr };
+        Ok(factory.new_client(leader, &basic_node).await)
     }
 
     /// 直接读取本地 group 状态机 (不要求 leader).
@@ -984,6 +1079,7 @@ mod tests {
             .propose(Request::PutConditional {
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
+                migration_epoch: None,
             })
             .await;
         assert!(
@@ -996,11 +1092,10 @@ mod tests {
         })
         .await;
 
-        // `node` is the only extra strong ref outside of `groups`/`storages`;
-        // the underlying DB's file lock won't release for a real reopen until
-        // it (and its embedded `Arc<DB>`) is dropped, exactly like production
-        // where nothing but the group maps hold onto a fatal `OpenRaftNode`.
-        let old_ptr = Arc::as_ptr(&node) as usize;
+        // `node`/`groups`/`dispatcher` (经 `register_node`) 是仅剩的强引用;
+        // 底层 DB 的文件锁要等它们 (及内嵌的 `Arc<DB>`) 全部释放才会解锁,
+        // 与生产环境一致 —— fatal `OpenRaftNode` 只被 group 映射和 dispatcher
+        // 持有, 不会有游离引用阻止重开.
         drop(node);
 
         MultiRaftNode::supervise_groups(
@@ -1018,10 +1113,16 @@ mod tests {
             "group should be reopened in-place after self-heal"
         );
         let node2 = groups.read().get(&GROUP_ID).cloned().unwrap();
-        assert_ne!(
-            Arc::as_ptr(&node2) as usize,
-            old_ptr,
-            "self-heal must produce a fresh OpenRaftNode, not reuse the fatal one"
+        // dispatcher (经 `register_node`) 必须跟着 self-heal 一起更新, 否则
+        // `GetKey`/`GetMigrationTip` 会一直路由到已经 shutdown 的 fatal 实例.
+        assert!(
+            Arc::ptr_eq(
+                &node2,
+                &dispatcher
+                    .get_node(GROUP_ID)
+                    .expect("dispatcher must re-register the reopened node")
+            ),
+            "dispatcher must track the reopened OpenRaftNode, not a stale fatal reference"
         );
         assert!(
             node2.raft().metrics().borrow().running_state.is_ok(),

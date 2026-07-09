@@ -207,8 +207,9 @@ flowchart TD
 1. `SlotMigrationManager::start_migration(source, target, slots)` → MetaRaft `BeginSlotMigration`
 2. 后台 `SlotMigrationExecutor::execute` (经 `run_pending_migration`) — scan 源 Group → `PutConditional` 到目标; 执行结果记入持久化 `MigrationRunRecord` / `last_run`
 3. 进度 `UpdateMigrationProgress`; 相位: Prepare → Migrating → **Frozen** → **ReadyToCommit** → Commit
-4. 收尾链 `finish_migration()` = `freeze_for_commit` → `quiesce_writes` → `final_verify` → `mark_ready` → `commit_migration`. `commit_migration` **仅**接受 `ReadyToCommit` (Meta validate + Manager 双保险). AiKv `CLUSTER REBALANCE` / `SETSLOT STABLE` 必须走 `finish_migration`, 不得裸 `commit`
-5. 取消: **先** `CancelSlotMigration` (Meta → Assigned(source), 读立刻回 source), **再** `cleanup_target_residuals`. Ready/Frozen 下禁止先清 target (避免读空洞)
+4. 收尾链 `finish_migration()` = `freeze_for_commit` → `quiesce_writes` → `drain_oplog_tip_stable` → `final_verify` → `mark_ready` → `commit_migration` (+ GC mig oplog 前缀). `commit_migration` **仅**接受 `ReadyToCommit` (Meta validate + Manager 双保险). AiKv `CLUSTER REBALANCE` / `SETSLOT STABLE` 必须走 `finish_migration`, 不得裸 `commit`
+5. F-056-A1: 迁移期客户端写经 `Request::MigrationWrite` 同批落 mig tombstone/tip; 全量拷贝 `PutConditional` 带 `migration_epoch` 尊重 Del tombstone; 读侧合并读见 aikv cluster 文档
+6. 取消: **先** `CancelSlotMigration` (Meta → Assigned(source), 读立刻回 source), **再** `cleanup_target_residuals` + GC mig oplog. Ready/Frozen 下禁止先清 target (避免读空洞)
 
 ## 配置与 feature flags
 

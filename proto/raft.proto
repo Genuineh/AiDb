@@ -6,6 +6,9 @@ service RaftService {
   rpc Vote(VoteRequest) returns (VoteResponse);
   rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
   rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
+  rpc GetKey(GetKeyRequest) returns (GetKeyResponse);
+  rpc GetMigrationTip(GetMigrationTipRequest) returns (GetMigrationTipResponse);
+  rpc GetMigrationTombstone(GetMigrationTombstoneRequest) returns (GetMigrationTombstoneResponse);
 }
 
 message VoteRequest {
@@ -79,4 +82,38 @@ message InstallSnapshotResponse {
   uint64 vote_term = 1;
   uint64 vote_node_id = 2;
   bool vote_committed = 3;
+}
+
+// FIX-0056-A1: 跨节点合并读 / tip 读取的薄 RPC — 与 Vote/AppendEntries 同一
+// 数据面 gRPC 通道, 目标为 group leader.
+message GetKeyRequest {
+  uint64 group_id = 1;
+  bytes key = 2;
+}
+
+message GetKeyResponse {
+  bool found = 1;
+  bytes value = 2;
+}
+
+message GetMigrationTipRequest {
+  uint64 group_id = 1;
+  uint64 epoch = 2;
+}
+
+message GetMigrationTipResponse {
+  uint64 tip = 1;
+}
+
+// FIX-0056-A1: 合并读线性点第 1 步 —— 查询 target group 上 `epoch` 内某 key
+// 最后一次的迁移 tombstone (Put/Del), 供 aikv 合并读判断"target miss 是从未
+// 拷贝还是已被客户端 Del"; op_tag: 0=无 tombstone, 1=Put, 2=Del.
+message GetMigrationTombstoneRequest {
+  uint64 group_id = 1;
+  uint64 epoch = 2;
+  bytes key = 3;
+}
+
+message GetMigrationTombstoneResponse {
+  uint32 op_tag = 1;
 }

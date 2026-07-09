@@ -466,7 +466,10 @@ impl OpenRaftNode {
         self.raft.clone()
     }
 
-    pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+    /// 合并读线性点 (FIX-0056-A1 硬约束): 确保后续读发生在 leader 视角上, 或
+    /// 通过 ReadIndex 等价路径确认线性. `get()` / `get_migration_tip()`
+    /// 共用同一语义, 不允许落后 follower 冒充最新读.
+    async fn ensure_leader_for_linear_read(&self) -> Result<()> {
         if self.linearizable_read {
             // Linearizable read: quorum 确认当前仍是 leader + wait applied index
             self.raft.ensure_linearizable().await.map_err(map_linearizable_error)?;
@@ -481,8 +484,40 @@ impl OpenRaftNode {
                 }));
             }
         }
+        Ok(())
+    }
+
+    pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        self.ensure_leader_for_linear_read().await?;
         let storage = self.storage.clone();
         tokio::task::spawn_blocking(move || storage.get_state_machine_value(&key))
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))?
+    }
+
+    /// FIX-0056-A1: 读取本 group 在 `epoch` 下的迁移 oplog tip. 供
+    /// `SlotMigrationManager::drain_oplog_tip_stable` 判断"tip 是否已稳定"
+    /// (mark_ready 前置). tip 缺失视为 0.
+    pub async fn get_migration_tip(&self, epoch: u64) -> Result<u64> {
+        self.ensure_leader_for_linear_read().await?;
+        let storage = self.storage.clone();
+        tokio::task::spawn_blocking(move || storage.get_migration_tip(epoch))
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))?
+    }
+
+    /// FIX-0056-A1 合并读线性点第 1 步: 读取本 group 在 `epoch` 下 `key` 的
+    /// 迁移 tombstone (Put/Del), 供 aikv 合并读判断 target miss 是"从未拷贝"
+    /// 还是"已被客户端 Del" (`None` = 无 tombstone). 与 `get()` 共用同一
+    /// leader / linearizable 语义.
+    pub async fn get_migration_tombstone(
+        &self,
+        epoch: u64,
+        key: Vec<u8>,
+    ) -> Result<Option<crate::cluster::migration_oplog::MigOp>> {
+        self.ensure_leader_for_linear_read().await?;
+        let storage = self.storage.clone();
+        tokio::task::spawn_blocking(move || storage.get_migration_tombstone(epoch, &key))
             .await
             .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))?
     }

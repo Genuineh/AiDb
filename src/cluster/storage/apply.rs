@@ -3,7 +3,11 @@
 use openraft::{Entry, EntryPayload, LogId, MessageSummary};
 
 use crate::cluster::meta_types::{MetaRequest, METARAFT_GROUP_ID};
-use crate::cluster::storage::keys::{last_applied_key, membership_key, sm_key};
+use crate::cluster::migration_oplog::{decode_tip, decode_tombstone, encode_tip, encode_tombstone, MigOp};
+use crate::cluster::storage::keys::{
+    last_applied_key, membership_key, mig_range_end, mig_range_start, mig_tip_key,
+    mig_tombstone_key, sm_key,
+};
 use crate::cluster::types::{
     ClusterError, Request, Response, ThinWriteBatch, ThinWriteOp, TypeConfig,
 };
@@ -28,9 +32,27 @@ impl OpenRaftStorage {
     }
 
     #[cfg(test)]
-    pub(crate) fn apply_put_conditional(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    pub(crate) fn apply_migration_write_to_sm(&self, epoch: u64, ops: &ThinWriteBatch) -> Result<()> {
+        let mut db_batch = WriteBatch::new();
+        self.append_migration_write_to_batch(&mut db_batch, epoch, ops)?;
+        if db_batch.is_empty() {
+            return Ok(());
+        }
+        self.db
+            .write(&db_batch)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn apply_put_conditional(
+        &self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        migration_epoch: Option<u64>,
+    ) -> Result<()> {
         let mut batch = WriteBatch::new();
-        self.append_put_conditional_to_batch(&mut batch, &key, &value)?;
+        self.append_put_conditional_to_batch(&mut batch, &key, &value, migration_epoch)?;
         if batch.is_empty() {
             return Ok(());
         }
@@ -190,12 +212,76 @@ impl OpenRaftStorage {
         batch: &mut WriteBatch,
         key: &[u8],
         value: &[u8],
+        migration_epoch: Option<u64>,
     ) -> Result<()> {
+        // FIX-0056-A1 不变式 #3: PutConditional 必须在 apply 内 (与这次条件
+        // put 同一个 entry) 查 Del tombstone, 消除"先查后写"窗口 —— 不能在
+        // propose 前查完就假定结论一直有效.
+        if let Some(epoch) = migration_epoch {
+            let ts_key = mig_tombstone_key(self.group_id, epoch, key);
+            if let Some((MigOp::Del, _)) = self.db.get(&ts_key)?.and_then(|v| decode_tombstone(&v))
+            {
+                return Ok(());
+            }
+        }
         let sm = sm_key(self.group_id, key);
         if self.db.get(&sm)?.is_some() {
             return Ok(());
         }
         batch.put(sm, value.to_vec());
+        Ok(())
+    }
+
+    /// FIX-0056-A1: 迁移期用户写 (`ops`) 与该 epoch 的 tombstone/tip 更新
+    /// 打进同一 `WriteBatch`, 与用户 `sm_key` 变更同 entry 原子可见
+    /// (不变式 #1). seq 只在这里 (Raft apply 内) 单调分配, 不允许旁路自增.
+    fn append_migration_write_to_batch(
+        &self,
+        batch: &mut WriteBatch,
+        epoch: u64,
+        ops: &ThinWriteBatch,
+    ) -> Result<()> {
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let tip_key = mig_tip_key(self.group_id, epoch);
+        let tip_before = self
+            .db
+            .get(&tip_key)?
+            .and_then(|v| decode_tip(&v))
+            .unwrap_or(0);
+        for (i, op) in ops.ops.iter().enumerate() {
+            let seq = tip_before + i as u64 + 1;
+            match op {
+                ThinWriteOp::Put { key, value } => {
+                    batch.put(sm_key(self.group_id, key), value.clone());
+                    batch.put(
+                        mig_tombstone_key(self.group_id, epoch, key),
+                        encode_tombstone(MigOp::Put, seq),
+                    );
+                }
+                ThinWriteOp::Delete { key } => {
+                    batch.delete(sm_key(self.group_id, key));
+                    batch.put(
+                        mig_tombstone_key(self.group_id, epoch, key),
+                        encode_tombstone(MigOp::Del, seq),
+                    );
+                }
+            }
+        }
+        batch.put(tip_key, encode_tip(tip_before + ops.len() as u64));
+        Ok(())
+    }
+
+    /// FIX-0056-A1: Commit/Cancel 后 GC 该 epoch 的全部 `mig/{gid}/{epoch}/*`
+    /// key (tombstone + tip). 与用户写一样走 Raft apply, 保证复制/可重放.
+    fn append_migration_gc_to_batch(&self, batch: &mut WriteBatch, epoch: u64) -> Result<()> {
+        let start = mig_range_start(self.group_id, epoch);
+        let end = mig_range_end(self.group_id, epoch);
+        for item in self.db.scan(Some(&start), Some(&end))? {
+            let (key, _) = item?;
+            batch.delete(key);
+        }
         Ok(())
     }
 
@@ -206,8 +292,12 @@ impl OpenRaftStorage {
     ) -> Result<Response> {
         match request {
             Request::Meta(_) => Ok(Response::Error("meta request on non-meta storage".into())),
-            Request::PutConditional { key, value } => {
-                self.append_put_conditional_to_batch(batch, key, value)?;
+            Request::PutConditional {
+                key,
+                value,
+                migration_epoch,
+            } => {
+                self.append_put_conditional_to_batch(batch, key, value, *migration_epoch)?;
                 Ok(Response::Ok)
             }
             Request::Put { key, value } => {
@@ -224,6 +314,14 @@ impl OpenRaftStorage {
             }
             // 迁移写屏障: 不改用户数据, 仅随 entry 推进 last_applied.
             Request::MigrationBarrier { .. } => Ok(Response::Ok),
+            Request::MigrationWrite { epoch, ops } => {
+                self.append_migration_write_to_batch(batch, *epoch, ops)?;
+                Ok(Response::Ok)
+            }
+            Request::MigrationGc { epoch } => {
+                self.append_migration_gc_to_batch(batch, *epoch)?;
+                Ok(Response::Ok)
+            }
         }
     }
 
@@ -301,6 +399,30 @@ impl OpenRaftStorage {
             .get(&sm_key(self.group_id, user_key))
             .map_err(|e| Error::Cluster(map_db_err(e)))
     }
+
+    /// 读取本 group 在 `epoch` 下的迁移 oplog tip; 缺失视为 0 (从未写过).
+    pub fn get_migration_tip(&self, epoch: u64) -> Result<u64> {
+        let key = mig_tip_key(self.group_id, epoch);
+        Ok(self
+            .db
+            .get(&key)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?
+            .and_then(|v| decode_tip(&v))
+            .unwrap_or(0))
+    }
+
+    /// FIX-0056-A1 合并读线性点第 1 步: 读取本 group 在 `epoch` 下 `user_key`
+    /// 最后一次的迁移 tombstone 操作 (不含 seq). 无 tombstone (从未在该 epoch
+    /// 内被 `MigrationWrite` 动过) 返回 `None`.
+    pub fn get_migration_tombstone(&self, epoch: u64, user_key: &[u8]) -> Result<Option<MigOp>> {
+        let key = mig_tombstone_key(self.group_id, epoch, user_key);
+        Ok(self
+            .db
+            .get(&key)
+            .map_err(|e| Error::Cluster(map_db_err(e)))?
+            .and_then(|v| decode_tombstone(&v))
+            .map(|(op, _seq)| op))
+    }
 }
 
 #[cfg(test)]
@@ -354,10 +476,10 @@ mod tests {
     fn test_request_put_conditional() {
         let (storage, _dir) = test_storage();
         storage
-            .apply_put_conditional(b"k".to_vec(), b"v1".to_vec())
+            .apply_put_conditional(b"k".to_vec(), b"v1".to_vec(), None)
             .unwrap();
         storage
-            .apply_put_conditional(b"k".to_vec(), b"v2".to_vec())
+            .apply_put_conditional(b"k".to_vec(), b"v2".to_vec(), None)
             .unwrap();
         assert_eq!(
             storage.get_state_machine_value(b"k").unwrap(),
@@ -366,6 +488,177 @@ mod tests {
         assert_eq!(
             storage.db.get(&sm_key(DEFAULT_GROUP_ID, b"k")).unwrap(),
             Some(b"v1".to_vec())
+        );
+    }
+
+    /// FIX-0056-A1 不变式 #1: 迁移期用户写与 tombstone/tip 更新必须在**同一次**
+    /// `apply_entries_internal` 调用内一起可见 (同 Raft entry 原子).
+    #[test]
+    fn test_migration_write_lands_user_op_and_tombstone_in_same_apply() {
+        let (storage, _dir) = test_storage();
+        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+
+        let mut ops = ThinWriteBatch::new();
+        ops.put(b"k1".to_vec(), b"v1".to_vec());
+        ops.delete(b"k2".to_vec());
+        let entry = Entry::<TypeConfig> {
+            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+            payload: EntryPayload::Normal(Request::MigrationWrite { epoch: 7, ops }),
+        };
+        storage
+            .apply_entries_internal(std::slice::from_ref(&entry))
+            .unwrap();
+
+        assert_eq!(
+            storage.get_state_machine_value(b"k1").unwrap(),
+            Some(b"v1".to_vec()),
+            "Put op 必须落地 sm_key"
+        );
+        assert!(
+            storage.get_state_machine_value(b"k2").unwrap().is_none(),
+            "Delete op 必须落地 sm_key (即使 key 本不存在)"
+        );
+
+        let ts1 = storage
+            .db
+            .get(&mig_tombstone_key(DEFAULT_GROUP_ID, 7, b"k1"))
+            .unwrap()
+            .expect("Put op 必须同 entry 写入 tombstone");
+        assert_eq!(decode_tombstone(&ts1), Some((MigOp::Put, 1)));
+        let ts2 = storage
+            .db
+            .get(&mig_tombstone_key(DEFAULT_GROUP_ID, 7, b"k2"))
+            .unwrap()
+            .expect("Delete op 必须同 entry 写入 tombstone");
+        assert_eq!(decode_tombstone(&ts2), Some((MigOp::Del, 2)));
+        assert_eq!(
+            storage.get_migration_tip(7).unwrap(),
+            2,
+            "tip 必须在同一次 apply 内推进到本批最后一个 seq"
+        );
+    }
+
+    /// seq/tip 只在 Raft apply 内单调分配, 跨多次 apply 必须从上次的 tip 续接.
+    #[test]
+    fn test_migration_write_tip_continues_across_separate_applies() {
+        let (storage, _dir) = test_storage();
+        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+
+        let mk_entry = |index: u64, key: &'static [u8]| {
+            let mut ops = ThinWriteBatch::new();
+            ops.put(key.to_vec(), b"v".to_vec());
+            Entry::<TypeConfig> {
+                log_id: LogId::new(CommittedLeaderId::new(1, 1), index),
+                payload: EntryPayload::Normal(Request::MigrationWrite { epoch: 3, ops }),
+            }
+        };
+        storage
+            .apply_entries_internal(&[mk_entry(1, b"a")])
+            .unwrap();
+        assert_eq!(storage.get_migration_tip(3).unwrap(), 1);
+        storage
+            .apply_entries_internal(&[mk_entry(2, b"b")])
+            .unwrap();
+        assert_eq!(storage.get_migration_tip(3).unwrap(), 2);
+        // 不同 epoch 互不影响.
+        assert_eq!(storage.get_migration_tip(4).unwrap(), 0);
+    }
+
+    /// FIX-0056-A1 不变式 #2/#3: Del tombstone 必须阻止 PutConditional 复活.
+    #[test]
+    fn test_put_conditional_skips_when_del_tombstone_present() {
+        let (storage, _dir) = test_storage();
+        let mut del_ops = ThinWriteBatch::new();
+        del_ops.delete(b"k".to_vec());
+        storage.apply_migration_write_to_sm(5, &del_ops).unwrap();
+        assert!(storage.get_state_machine_value(b"k").unwrap().is_none());
+
+        storage
+            .apply_put_conditional(b"k".to_vec(), b"v1".to_vec(), Some(5))
+            .unwrap();
+        assert!(
+            storage.get_state_machine_value(b"k").unwrap().is_none(),
+            "Del tombstone 必须阻止 PutConditional 复活 key"
+        );
+    }
+
+    /// 没有任何 tombstone (从未在该 epoch 下动过这个 key) 时, PutConditional
+    /// 即使带 `migration_epoch` 也要正常生效 —— 只有 Del tombstone 才拦截.
+    #[test]
+    fn test_put_conditional_applies_when_no_tombstone_even_with_epoch() {
+        let (storage, _dir) = test_storage();
+        storage
+            .apply_put_conditional(b"k".to_vec(), b"v1".to_vec(), Some(9))
+            .unwrap();
+        assert_eq!(
+            storage.get_state_machine_value(b"k").unwrap(),
+            Some(b"v1".to_vec())
+        );
+    }
+
+    /// Put tombstone (非 Del) 不触发"复活拦截"; 仍走常规"已存在则跳过"逻辑.
+    #[test]
+    fn test_put_conditional_applies_when_tombstone_is_put() {
+        let (storage, _dir) = test_storage();
+        let mut put_ops = ThinWriteBatch::new();
+        put_ops.put(b"k".to_vec(), b"already-there".to_vec());
+        storage.apply_migration_write_to_sm(2, &put_ops).unwrap();
+
+        storage
+            .apply_put_conditional(b"k".to_vec(), b"v2".to_vec(), Some(2))
+            .unwrap();
+        assert_eq!(
+            storage.get_state_machine_value(b"k").unwrap(),
+            Some(b"already-there".to_vec()),
+            "Put tombstone 不拦截, 但常规去重逻辑仍应跳过已存在的 key"
+        );
+    }
+
+    /// GC (`Request::MigrationGc`) 必须删干净该 epoch 的全部 tombstone/tip,
+    /// 且不影响其它 epoch / sm_key 上的用户数据.
+    #[test]
+    fn test_migration_gc_removes_epoch_prefix_only() {
+        let (storage, _dir) = test_storage();
+        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+
+        let mut ops = ThinWriteBatch::new();
+        ops.put(b"k1".to_vec(), b"v1".to_vec());
+        ops.delete(b"k2".to_vec());
+        storage.apply_migration_write_to_sm(1, &ops).unwrap();
+        storage.apply_migration_write_to_sm(2, &ops).unwrap();
+        assert_eq!(storage.get_migration_tip(1).unwrap(), 2);
+        assert_eq!(storage.get_migration_tip(2).unwrap(), 2);
+        assert_eq!(
+            storage.get_state_machine_value(b"k1").unwrap(),
+            Some(b"v1".to_vec())
+        );
+
+        let gc_entry = Entry::<TypeConfig> {
+            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+            payload: EntryPayload::Normal(Request::MigrationGc { epoch: 1 }),
+        };
+        storage
+            .apply_entries_internal(std::slice::from_ref(&gc_entry))
+            .unwrap();
+
+        assert_eq!(storage.get_migration_tip(1).unwrap(), 0, "epoch 1 的 tip 必须被 GC 清零");
+        assert!(
+            storage
+                .db
+                .get(&mig_tombstone_key(DEFAULT_GROUP_ID, 1, b"k1"))
+                .unwrap()
+                .is_none(),
+            "epoch 1 的 tombstone 必须被 GC 删除"
+        );
+        assert_eq!(
+            storage.get_migration_tip(2).unwrap(),
+            2,
+            "GC 不应影响其它 epoch"
+        );
+        assert_eq!(
+            storage.get_state_machine_value(b"k1").unwrap(),
+            Some(b"v1".to_vec()),
+            "GC 只清 mig/ 前缀, 不动用户数据 sm_key"
         );
     }
 
@@ -443,6 +736,65 @@ mod tests {
         );
     }
 
+    /// FIX-0056-A1: `migration_epoch` 必须随真实 Raft apply (经
+    /// `apply_meta_entry` 写入同一 `WriteBatch`) 落盘, 并在"重启" (对同一
+    /// 底层 db 重新构造 `MetaStateMachine`) 后被 `reload_from_db` 恢复 ——
+    /// 与 `migration_state` 同等的 failover 安全性.
+    #[test]
+    fn test_migration_epoch_persists_through_apply_and_restart() {
+        use crate::cluster::meta_state_machine::MetaStateMachine;
+        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+
+        let (storage, _dir) = meta_storage();
+        let entries = [
+            MetaRequest::RegisterNode {
+                node_id: 1,
+                rpc_addr: "http://127.0.0.1:1".into(),
+                client_addr: None,
+                tags: HashMap::new(),
+            },
+            MetaRequest::CreateGroup {
+                group_id: 1,
+                initial_replicas: vec![(1, true)],
+            },
+            MetaRequest::CreateGroup {
+                group_id: 2,
+                initial_replicas: vec![(1, true)],
+            },
+            MetaRequest::AssignSlots {
+                group_id: 1,
+                slots: vec![0],
+            },
+            MetaRequest::BeginSlotMigration {
+                source_group: 1,
+                target_group: 2,
+                slots: vec![0],
+            },
+        ];
+        for (i, req) in entries.into_iter().enumerate() {
+            let entry = Entry::<TypeConfig> {
+                log_id: LogId::new(CommittedLeaderId::new(1, 1), i as u64 + 1),
+                payload: EntryPayload::Normal(Request::Meta(req)),
+            };
+            storage.apply_entries_internal(std::slice::from_ref(&entry)).unwrap();
+        }
+
+        let meta_state = storage.meta_state.as_ref().unwrap();
+        let epoch_before = meta_state
+            .get_migration_epoch()
+            .expect("BeginSlotMigration 后 epoch 必须可读");
+        assert_eq!(epoch_before, meta_state.get_cluster_meta().version);
+
+        // 模拟重启: 对同一底层 db 重新构造 MetaStateMachine (走 reload_from_db).
+        let restarted = MetaStateMachine::new(storage.db.clone()).unwrap();
+        assert_eq!(
+            restarted.get_migration_epoch(),
+            Some(epoch_before),
+            "重启后 migration_epoch 必须从 db 恢复, 与 migration_state 一致"
+        );
+        assert!(restarted.get_migration_state().is_some());
+    }
+
     /// 回归测试: apply 过程中真实的存储故障必须直接向上抛错, 绝不能把
     /// last_applied 悄悄推进到失败的 entry —— 这正是修复前的 P0 bug
     /// (last_applied 越过失败 entry, 数据永久丢失且副本间可能分叉).
@@ -478,6 +830,7 @@ mod tests {
             payload: EntryPayload::Normal(Request::PutConditional {
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
+                migration_epoch: None,
             }),
         };
         let result = storage.apply_entries_internal(std::slice::from_ref(&e2));

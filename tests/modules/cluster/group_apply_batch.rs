@@ -175,6 +175,7 @@ async fn test_put_conditional_skips_existing_key() {
             payload: EntryPayload::Normal(Request::PutConditional {
                 key: b"k".to_vec(),
                 value: b"v2".to_vec(),
+                migration_epoch: None,
             }),
         };
         storage

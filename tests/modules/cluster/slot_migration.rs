@@ -387,3 +387,183 @@ async fn cancel_migration_cleans_up_target_residuals() {
         "cancel_migration must clean up residual copies left on target"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FIX-0056-A1: 迁移 tombstone/oplog 回归测试.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn migration_write_lands_user_op_and_tombstone_atomically() {
+    let (_meta_raft, multi_raft, _sm, _slots, _dirs) = setup(0).await;
+
+    let mut ops = aidb::cluster::ThinWriteBatch::new();
+    ops.put(TEST_KEY.to_vec(), b"v1".to_vec());
+    multi_raft
+        .propose_group(2, Request::MigrationWrite { epoch: 1, ops })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        Some(b"v1".to_vec()),
+        "MigrationWrite 必须落地用户 sm_key"
+    );
+    assert_eq!(
+        multi_raft.read_migration_tip(2, 1).await.unwrap(),
+        1,
+        "MigrationWrite 必须同 entry 推进 oplog tip"
+    );
+    assert_eq!(
+        multi_raft.read_migration_tip(2, 2).await.unwrap(),
+        0,
+        "不同 epoch 互不影响"
+    );
+}
+
+#[tokio::test]
+async fn put_conditional_does_not_resurrect_after_migration_del_tombstone() {
+    let (_meta_raft, multi_raft, _sm, _slots, _dirs) = setup(0).await;
+
+    // 迁移期 DEL: target 上本来没有这个 key, 仍要 propose 出 tombstone
+    // (FIX-0056-A1: "DEL 一律 propose", 不因 target miss 而短路).
+    let mut del_ops = aidb::cluster::ThinWriteBatch::new();
+    del_ops.delete(TEST_KEY.to_vec());
+    multi_raft
+        .propose_group(
+            2,
+            Request::MigrationWrite {
+                epoch: 9,
+                ops: del_ops,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(), None);
+
+    // 全量拷贝路径 (PutConditional) 此时才追上来, 尝试补拷 source 快照值:
+    // 必须被 Del tombstone 拦住, 不能复活.
+    multi_raft
+        .propose_group(
+            2,
+            Request::PutConditional {
+                key: TEST_KEY.to_vec(),
+                value: b"stale-source-value".to_vec(),
+                migration_epoch: Some(9),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        None,
+        "Del tombstone 必须阻止 PutConditional 复活 target 上已删除的 key"
+    );
+}
+
+#[tokio::test]
+async fn finish_migration_drains_oplog_tip_and_gcs_on_commit() {
+    let (meta_raft, multi_raft, sm, slots, _dirs) = setup(0).await;
+
+    multi_raft
+        .propose_key(TEST_KEY.to_vec(), Some(b"v1".to_vec()))
+        .await
+        .unwrap();
+
+    let migration_id = sm.start_migration(1, 2, slots.clone()).await.unwrap();
+    let active = active_migration_from_state(&meta_raft, migration_id);
+    let result = sm.run_pending_migration(active).await.unwrap();
+    assert!(result.is_completed);
+
+    // 模拟 Migrating 期间的一次客户端写: 与 bulk copy 一样落在 target, 但走
+    // MigrationWrite (真实 aikv 写路径原语), 推进 oplog tip.
+    let mut ops = aidb::cluster::ThinWriteBatch::new();
+    ops.put(TEST_KEY.to_vec(), b"v2".to_vec());
+    multi_raft
+        .propose_group(
+            2,
+            Request::MigrationWrite {
+                epoch: migration_id,
+                ops,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        1
+    );
+
+    sm.finish_migration()
+        .await
+        .expect("finish_migration must drain oplog tip and succeed");
+
+    assert_eq!(
+        meta_raft.get_slot_table()[slots[0] as usize],
+        aidb::cluster::SlotStatus::Assigned(2)
+    );
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        Some(b"v2".to_vec()),
+        "迁移期最新写必须保留 (合并读/oplog 机制的最终产物)"
+    );
+    // Commit 后应 GC 掉该 epoch 的 oplog —— tip 缺失即读回 0.
+    assert_eq!(
+        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        0,
+        "commit 后必须 GC 掉迁移 oplog (tombstone/tip)"
+    );
+}
+
+#[tokio::test]
+async fn cancel_migration_gcs_oplog_too() {
+    let (meta_raft, multi_raft, sm, slots, _dirs) = setup(0).await;
+
+    multi_raft
+        .propose_key(TEST_KEY.to_vec(), Some(b"v1".to_vec()))
+        .await
+        .unwrap();
+
+    let migration_id = sm.start_migration(1, 2, slots.clone()).await.unwrap();
+    let active = active_migration_from_state(&meta_raft, migration_id);
+    let result = sm.run_pending_migration(active).await.unwrap();
+    assert!(result.is_completed);
+
+    let mut ops = aidb::cluster::ThinWriteBatch::new();
+    ops.delete(TEST_KEY.to_vec());
+    multi_raft
+        .propose_group(
+            2,
+            Request::MigrationWrite {
+                epoch: migration_id,
+                ops,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        1
+    );
+
+    sm.cancel_migration().await.expect("cancel should succeed");
+
+    assert_eq!(
+        meta_raft.get_slot_table()[slots[0] as usize],
+        aidb::cluster::SlotStatus::Assigned(1)
+    );
+    assert_eq!(
+        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        0,
+        "cancel 后也必须 GC 掉迁移 oplog"
+    );
+}
+
+#[tokio::test]
+async fn drain_oplog_tip_stable_requires_frozen_phase() {
+    let (_meta_raft, _multi_raft, sm, slots, _dirs) = setup(0).await;
+    sm.start_migration(1, 2, slots).await.unwrap();
+
+    // 仍处于 Prepare/Migrating, 未 Freeze.
+    let err = sm.drain_oplog_tip_stable().await;
+    assert!(err.is_err(), "drain_oplog_tip_stable 必须要求 Frozen 相位");
+}

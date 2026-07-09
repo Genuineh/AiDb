@@ -76,11 +76,30 @@ impl ThinWriteBatch {
 pub enum Request {
     Put { key: Vec<u8>, value: Vec<u8> },
     Delete { key: Vec<u8> },
-    PutConditional { key: Vec<u8>, value: Vec<u8> },
+    /// 条件 put: `sm_key` 已存在则跳过. 全量拷贝 (`SlotMigrationExecutor`)
+    /// 专用. `migration_epoch` 为 `Some` 时, apply 内还会先查该 epoch 下
+    /// `key` 的迁移 tombstone —— 若最后一次是 Del, 直接跳过 (不复活),
+    /// 即 FIX-0056-A1 "PutConditional 尊重 Del tombstone" 不变式;
+    /// `None` 时行为与迁移无关, 完全等同修复前 (向后兼容).
+    PutConditional {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        migration_epoch: Option<u64>,
+    },
     WriteBatch(ThinWriteBatch),
     Meta(MetaRequest),
     /// Slot 迁移收尾写屏障: apply 时不改用户数据, 仅推进 Raft last_applied.
     MigrationBarrier { token: u64 },
+    /// FIX-0056-A1: 迁移期用户写 (`ops`) 与该 epoch 的 tombstone/tip 更新
+    /// 打进同一 apply, 一次 entry 原子生效. `ops` 里每个 Put/Delete 都会
+    /// 在 apply 内被分配一个单调递增的 seq, 写入
+    /// `mig_tombstone_key(group, epoch, key)`, 并推进
+    /// `mig_tip_key(group, epoch)` (见 `migration_oplog.rs`).
+    MigrationWrite { epoch: u64, ops: ThinWriteBatch },
+    /// FIX-0056-A1: 删除 target group 上 `epoch` 对应的全部
+    /// `mig/{gid}/{epoch}/*` tombstone/tip key (Commit/Cancel 后 GC).
+    /// 复制生效 (与用户写一样走 Raft apply), 而非旁路本地删除.
+    MigrationGc { epoch: u64 },
 }
 
 impl Request {
@@ -98,8 +117,10 @@ impl Request {
             }
             Request::PutConditional { .. }
             | Request::Meta(_)
-            | Request::MigrationBarrier { .. } => ThinWriteBatch::new(),
+            | Request::MigrationBarrier { .. }
+            | Request::MigrationGc { .. } => ThinWriteBatch::new(),
             Request::WriteBatch(batch) => batch,
+            Request::MigrationWrite { ops, .. } => ops,
         }
     }
 
@@ -107,13 +128,16 @@ impl Request {
     /// 上界估计 (保守略大), 用于 max_entry_size 校验.
     pub fn estimated_serialized_size(&self) -> usize {
         match self {
-            Request::Put { key, value } | Request::PutConditional { key, value } => {
-                key.len() + value.len() + 16
-            }
+            Request::Put { key, value } => key.len() + value.len() + 16,
+            Request::PutConditional { key, value, .. } => key.len() + value.len() + 24,
             Request::Delete { key } => key.len() + 10,
             Request::WriteBatch(batch) => batch.estimated_serialized_size(),
             Request::Meta(_) => 512,
             Request::MigrationBarrier { .. } => 24,
+            // 每个 op 除自身大小外, 还多写一条 tombstone (user_key + 9 字节值 +
+            // 编码 overhead); 外加一次 tip 更新.
+            Request::MigrationWrite { ops, .. } => ops.estimated_serialized_size() * 2 + 24,
+            Request::MigrationGc { .. } => 24,
         }
     }
 }
