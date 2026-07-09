@@ -11,7 +11,7 @@ use crate::cluster::meta_types::{
     ReplicaInfo, SlotMigrationState, SlotStatus, SlotTable, SLOT_COUNT,
 };
 use crate::cluster::storage::keys::{
-    meta_cluster_meta_key, meta_migration_state_key, meta_slot_table_key,
+    meta_cluster_meta_key, meta_migration_epoch_key, meta_migration_state_key, meta_slot_table_key,
 };
 use crate::cluster::types::{ClusterError, NodeId};
 use crate::error::{Error, Result};
@@ -31,6 +31,13 @@ pub struct MetaStateMachine {
     cluster_meta: RwLock<ClusterMeta>,
     slot_table: RwLock<SlotTable>,
     migration_state: RwLock<Option<SlotMigrationState>>,
+    /// FIX-0056-A1: 当前活跃迁移的 oplog epoch (= `BeginSlotMigration` apply
+    /// 后的 `cluster_meta.version`, 与 `SlotMigrationManager::start_migration`
+    /// 事后读到的 `migration_id` 一致). 与 `migration_state` 同生命周期, 但不
+    /// 放进 `SlotMigrationState` 本身 —— 避免改动其穷尽 match 的所有调用点
+    /// (aidb `apply_mutate`/`membership_coordinator` 与 aikv `router`/
+    /// `cluster_adapter`), 是这条信息的最小侵入落地方式.
+    migration_epoch: RwLock<Option<u64>>,
 }
 
 impl MetaStateMachine {
@@ -40,6 +47,7 @@ impl MetaStateMachine {
             cluster_meta: RwLock::new(ClusterMeta::default()),
             slot_table: RwLock::new(default_slot_table()),
             migration_state: RwLock::new(None),
+            migration_epoch: RwLock::new(None),
         };
         sm.reload_from_db()?;
         Ok(sm)
@@ -82,9 +90,16 @@ impl MetaStateMachine {
             None => None,
         };
 
+        let migration_epoch = match self.db.get(&meta_migration_epoch_key())? {
+            Some(bytes) => rmp_serde::from_slice(&bytes)
+                .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?,
+            None => None,
+        };
+
         *self.cluster_meta.write() = cluster_meta;
         *self.slot_table.write() = slot_table;
         *self.migration_state.write() = migration_state;
+        *self.migration_epoch.write() = migration_epoch;
         Ok(())
     }
 
@@ -98,6 +113,13 @@ impl MetaStateMachine {
 
     pub fn get_migration_state(&self) -> Option<SlotMigrationState> {
         self.migration_state.read().clone()
+    }
+
+    /// FIX-0056-A1: 当前活跃迁移的 oplog epoch; 无活跃迁移时为 `None`.
+    /// 供 aikv 迁移期写 (`Request::MigrationWrite`) / 合并读定位
+    /// `mig/{gid}/{epoch}/*` tombstone/tip.
+    pub fn get_migration_epoch(&self) -> Option<u64> {
+        *self.migration_epoch.read()
     }
 
     /// Directly set migration state (for testing).
@@ -123,6 +145,14 @@ impl MetaStateMachine {
     pub fn apply_meta_request(&self, request: MetaRequest) -> MetaSmResult<ApplyOutput> {
         self.validate_meta_request(&request)?;
 
+        // FIX-0056-A1: request 在下面被 `apply_mutate` 按值消费, 先记下是否
+        // Begin/Commit/Cancel 以便之后决定 migration_epoch 的生死.
+        let is_begin_migration = matches!(request, MetaRequest::BeginSlotMigration { .. });
+        let is_migration_end = matches!(
+            request,
+            MetaRequest::CommitSlotMigration | MetaRequest::CancelSlotMigration
+        );
+
         let mut cluster_meta = self.cluster_meta.write();
         let mut slot_table = self.slot_table.write();
         let mut migration_state = self.migration_state.write();
@@ -135,6 +165,17 @@ impl MetaStateMachine {
         )?;
 
         cluster_meta.version += 1;
+
+        // migration_epoch 与 migration_state 同生命周期: Begin 时取本次 apply
+        // 后的新 version (与 `SlotMigrationManager::start_migration` 事后读到
+        // 的 `cluster_meta.version` 一致); Commit/Cancel 时随 migration_state
+        // 一起清空.
+        let mut migration_epoch = self.migration_epoch.write();
+        if is_begin_migration {
+            *migration_epoch = Some(cluster_meta.version);
+        } else if is_migration_end {
+            *migration_epoch = None;
+        }
 
         let kv_pairs = vec![
             (
@@ -150,6 +191,11 @@ impl MetaStateMachine {
             (
                 meta_migration_state_key(),
                 rmp_serde::to_vec(&*migration_state)
+                    .map_err(|e| ClusterError::Serialization(e.to_string()))?,
+            ),
+            (
+                meta_migration_epoch_key(),
+                rmp_serde::to_vec(&*migration_epoch)
                     .map_err(|e| ClusterError::Serialization(e.to_string()))?,
             ),
         ];
@@ -1029,6 +1075,53 @@ mod tests {
             .unwrap();
         assert_eq!(sm.get_slot_table()[1], SlotStatus::Assigned(1));
         assert!(sm.get_migration_state().is_none());
+    }
+
+    /// FIX-0056-A1: `migration_epoch` 与 `migration_state` 同生命周期 ——
+    /// Begin 后立即可读, 且等于 apply 后的新 `cluster_meta.version` (与
+    /// `SlotMigrationManager::start_migration` 事后读到的 `migration_id`
+    /// 一致); Cancel 后清空.
+    #[test]
+    fn test_migration_epoch_lifecycle_on_begin_and_cancel() {
+        let (sm, _dir) = sm();
+        register(&sm, 1, "a:1");
+        register(&sm, 2, "a:2");
+        sm.apply_meta_request(MetaRequest::CreateGroup {
+            group_id: 1,
+            initial_replicas: vec![(1, true)],
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::CreateGroup {
+            group_id: 2,
+            initial_replicas: vec![(2, true)],
+        })
+        .unwrap();
+        sm.apply_meta_request(MetaRequest::AssignSlots {
+            group_id: 1,
+            slots: vec![0, 1],
+        })
+        .unwrap();
+        assert!(sm.get_migration_epoch().is_none(), "无活跃迁移时 epoch 必须为 None");
+
+        sm.apply_meta_request(MetaRequest::BeginSlotMigration {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![1],
+        })
+        .unwrap();
+        let epoch = sm.get_migration_epoch().expect("Begin 后 epoch 必须可读");
+        assert_eq!(
+            epoch,
+            sm.get_cluster_meta().version,
+            "epoch 必须等于 Begin apply 后的新 cluster_meta.version"
+        );
+
+        sm.apply_meta_request(MetaRequest::CancelSlotMigration)
+            .unwrap();
+        assert!(
+            sm.get_migration_epoch().is_none(),
+            "Cancel 后 epoch 必须随 migration_state 一起清空"
+        );
     }
 
     #[test]

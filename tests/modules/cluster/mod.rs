@@ -6,6 +6,7 @@ mod metrics;
 mod network;
 mod node;
 mod promote;
+mod remote_read;
 mod slot_migration;
 mod storage;
 mod types;

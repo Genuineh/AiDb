@@ -179,6 +179,11 @@ impl MetaRaftNode {
         self.state_machine.get_migration_state()
     }
 
+    /// FIX-0056-A1: 当前活跃迁移的 oplog epoch; 无活跃迁移时为 `None`.
+    pub fn get_migration_epoch(&self) -> Option<u64> {
+        self.state_machine.get_migration_epoch()
+    }
+
     /// Set migration state directly (for testing).
     /// Skips Raft consensus — only use in test scenarios.
     pub fn set_migration_state(

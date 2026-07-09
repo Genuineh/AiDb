@@ -129,6 +129,57 @@ pub struct InstallSnapshotResponse {
     #[prost(bool, tag = "3")]
     pub vote_committed: bool,
 }
+/// FIX-0056-A1: 跨节点合并读 / tip 读取的薄 RPC — 与 Vote/AppendEntries 同一
+/// 数据面 gRPC 通道, 目标为 group leader.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKeyRequest {
+    #[prost(uint64, tag = "1")]
+    pub group_id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKeyResponse {
+    #[prost(bool, tag = "1")]
+    pub found: bool,
+    #[prost(bytes = "vec", tag = "2")]
+    pub value: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMigrationTipRequest {
+    #[prost(uint64, tag = "1")]
+    pub group_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub epoch: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMigrationTipResponse {
+    #[prost(uint64, tag = "1")]
+    pub tip: u64,
+}
+/// FIX-0056-A1: 合并读线性点第 1 步 —— 查询 target group 上 `epoch` 内某 key
+/// 最后一次的迁移 tombstone (Put/Del), 供 aikv 合并读判断"target miss 是从未
+/// 拷贝还是已被客户端 Del"; op_tag: 0=无 tombstone, 1=Put, 2=Del.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMigrationTombstoneRequest {
+    #[prost(uint64, tag = "1")]
+    pub group_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub epoch: u64,
+    #[prost(bytes = "vec", tag = "3")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMigrationTombstoneResponse {
+    #[prost(uint32, tag = "1")]
+    pub op_tag: u32,
+}
 /// Generated client implementations.
 pub mod raft_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -286,6 +337,80 @@ pub mod raft_service_client {
                 .insert(GrpcMethod::new("aidb.raft.RaftService", "InstallSnapshot"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKeyResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aidb.raft.RaftService/GetKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("aidb.raft.RaftService", "GetKey"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_migration_tip(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetMigrationTipRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMigrationTipResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aidb.raft.RaftService/GetMigrationTip",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("aidb.raft.RaftService", "GetMigrationTip"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_migration_tombstone(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetMigrationTombstoneRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMigrationTombstoneResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aidb.raft.RaftService/GetMigrationTombstone",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("aidb.raft.RaftService", "GetMigrationTombstone"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -311,6 +436,24 @@ pub mod raft_service_server {
             request: tonic::Request<super::InstallSnapshotRequest>,
         ) -> std::result::Result<
             tonic::Response<super::InstallSnapshotResponse>,
+            tonic::Status,
+        >;
+        async fn get_key(
+            &self,
+            request: tonic::Request<super::GetKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKeyResponse>, tonic::Status>;
+        async fn get_migration_tip(
+            &self,
+            request: tonic::Request<super::GetMigrationTipRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMigrationTipResponse>,
+            tonic::Status,
+        >;
+        async fn get_migration_tombstone(
+            &self,
+            request: tonic::Request<super::GetMigrationTombstoneRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMigrationTombstoneResponse>,
             tonic::Status,
         >;
     }
@@ -514,6 +657,145 @@ pub mod raft_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InstallSnapshotSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aidb.raft.RaftService/GetKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetKeySvc<T: RaftService>(pub Arc<T>);
+                    impl<
+                        T: RaftService,
+                    > tonic::server::UnaryService<super::GetKeyRequest>
+                    for GetKeySvc<T> {
+                        type Response = super::GetKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as RaftService>::get_key(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetKeySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aidb.raft.RaftService/GetMigrationTip" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetMigrationTipSvc<T: RaftService>(pub Arc<T>);
+                    impl<
+                        T: RaftService,
+                    > tonic::server::UnaryService<super::GetMigrationTipRequest>
+                    for GetMigrationTipSvc<T> {
+                        type Response = super::GetMigrationTipResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetMigrationTipRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as RaftService>::get_migration_tip(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetMigrationTipSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aidb.raft.RaftService/GetMigrationTombstone" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetMigrationTombstoneSvc<T: RaftService>(pub Arc<T>);
+                    impl<
+                        T: RaftService,
+                    > tonic::server::UnaryService<super::GetMigrationTombstoneRequest>
+                    for GetMigrationTombstoneSvc<T> {
+                        type Response = super::GetMigrationTombstoneResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetMigrationTombstoneRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as RaftService>::get_migration_tombstone(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetMigrationTombstoneSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

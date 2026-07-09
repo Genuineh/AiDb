@@ -86,6 +86,11 @@ struct MigrationRunRecord {
     node_id: NodeId,
     #[serde(default)]
     completed_at_ms: u64,
+    /// FIX-0056-A1: 迁移 oplog epoch (= `BeginSlotMigration` 时的
+    /// `cluster_meta.version`, 即 `ActiveMigration.migration_id`).
+    /// `drain_oplog_tip_stable` / GC 用它定位 `mig/{gid}/{epoch}/*`.
+    #[serde(default)]
+    migration_id: u64,
 }
 
 /// 内存侧别名, 与历史 `CompletedRun` 语义一致.
@@ -180,6 +185,9 @@ impl SlotMigrationExecutor {
                             Request::PutConditional {
                                 key: key.clone(),
                                 value: v,
+                                // FIX-0056-A1: 让 apply 内查 Del tombstone,
+                                // 不复活迁移期已被客户端 DEL 掉的 key.
+                                migration_epoch: Some(migration.migration_id),
                             },
                         )
                         .await?;
@@ -550,8 +558,53 @@ impl SlotMigrationManager {
         }
     }
 
+    /// FIX-0056-A1: Frozen 后确认 target group 迁移 oplog tip 已稳定
+    /// (`quiesce_writes` 之后, `final_verify` 之前的收尾前置) —— 两次相隔
+    /// `QUIESCE_STABLE_MS` 读到的 tip 相等即认为 drain 完成. tip 在
+    /// `MigrationWrite` apply 内单调递增, Frozen 下没有新客户端写会自然稳定.
+    #[instrument(skip(self))]
+    pub async fn drain_oplog_tip_stable(&self) -> Result<()> {
+        let (source_group, target_group, slots) = match self.meta_raft.get_migration_state() {
+            Some(SlotMigrationState::Frozen {
+                source_group,
+                target_group,
+                slots,
+            }) => (source_group, target_group, slots),
+            Some(_) => {
+                return Err(ClusterError::InvalidState(
+                    "drain_oplog_tip_stable requires Frozen migration phase".into(),
+                )
+                .into());
+            }
+            None => return Err(ClusterError::InvalidState("no active migration".into()).into()),
+        };
+        let run = self.require_completed_run_matching(source_group, target_group, &slots)?;
+        let epoch = run.migration_id;
+
+        let work = async {
+            let first = self.multi_raft.read_migration_tip(target_group, epoch).await?;
+            tokio::time::sleep(std::time::Duration::from_millis(QUIESCE_STABLE_MS)).await;
+            let second = self.multi_raft.read_migration_tip(target_group, epoch).await?;
+            if first != second {
+                return Err(ClusterError::InvalidState(
+                    "migration oplog tip not stable yet, retry drain".into(),
+                )
+                .into());
+            }
+            Ok(())
+        };
+        match tokio::time::timeout(std::time::Duration::from_millis(QUIESCE_TIMEOUT_MS), work)
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => Err(ClusterError::Timeout("drain_oplog_tip_stable timed out".into()).into()),
+        }
+    }
+
     /// 收尾就绪检查: Frozen + run record 签名匹配 + quiesce_token 存在.
     /// 不做 source⊆target 存在性比对, 也不做 PutConditional 补拷.
+    /// FIX-0056-A1: 调用顺序上位于 `drain_oplog_tip_stable` 之后 (见
+    /// `finish_migration`) —— 本函数不重复校验 tip 是否稳定, 只信任链路顺序.
     #[instrument(skip(self))]
     pub async fn final_verify(&self) -> Result<()> {
         let (source_group, target_group, slots) = match self.meta_raft.get_migration_state() {
@@ -608,11 +661,13 @@ impl SlotMigrationManager {
         Ok(())
     }
 
-    /// 完整收尾链: freeze → quiesce → final_verify → mark_ready → commit.
+    /// 完整收尾链: freeze → quiesce → drain_oplog_tip_stable → final_verify
+    /// → mark_ready → commit.
     #[instrument(skip(self))]
     pub async fn finish_migration(&self) -> Result<()> {
         self.freeze_for_commit().await?;
         self.quiesce_writes().await?;
+        self.drain_oplog_tip_stable().await?;
         self.final_verify().await?;
         self.mark_ready().await?;
         self.commit_migration().await
@@ -714,6 +769,7 @@ impl SlotMigrationManager {
             completed: result.is_completed,
             node_id: self.node_id,
             completed_at_ms: Self::now_ms(),
+            migration_id: migration.migration_id,
         };
         *self.last_run.write() = Some(record.clone());
         if result.is_completed {
@@ -796,11 +852,24 @@ impl SlotMigrationManager {
             .into());
         }
 
-        self.require_completed_run_matching(source_group, target_group, &slots)?;
+        let run = self.require_completed_run_matching(source_group, target_group, &slots)?;
 
         self.meta_raft
             .propose(MetaRequest::CommitSlotMigration)
             .await?;
+        // FIX-0056-A1: oplog GC 是清理性动作 (风险矩阵: "Commit 后异步删除;
+        // 可限速"), 失败不应回滚已经生效的 Commit —— 记警告, 允许后续重试.
+        if let Err(e) = self
+            .cleanup_migration_oplog(target_group, run.migration_id)
+            .await
+        {
+            tracing::warn!(
+                target_group,
+                epoch = run.migration_id,
+                error = %e,
+                "migration oplog gc failed after commit, safe to retry later (best effort)"
+            );
+        }
         self.clear_run_record();
         self.clear_quiesce_token();
         Ok(())
@@ -836,10 +905,61 @@ impl SlotMigrationManager {
         }
 
         self.cleanup_target_residuals(target_group, &slots).await?;
+        // FIX-0056-A1: cancel 可能发生在 execute 从未跑完 (甚至从未开始)
+        // 的窗口, epoch 未必已知 —— 找不到就跳过, 只记警告 (best effort,
+        // 残留 tombstone 不影响正确性, 只是占一点空间直到下次 GC/复用).
+        match self.current_migration_epoch(target_group, &slots) {
+            Some(epoch) => {
+                if let Err(e) = self.cleanup_migration_oplog(target_group, epoch).await {
+                    tracing::warn!(
+                        target_group,
+                        epoch,
+                        error = %e,
+                        "migration oplog gc failed on cancel (best effort)"
+                    );
+                }
+            }
+            None => tracing::warn!(
+                target_group,
+                "migration oplog epoch unknown on this node, skipping oplog gc on cancel (best effort)"
+            ),
+        }
         self.executor.write().take();
         self.clear_run_record();
         self.clear_quiesce_token();
         Ok(())
+    }
+
+    /// FIX-0056-A1: 尽力获取当前迁移的 oplog epoch, 不要求 `run_pending_migration`
+    /// 已跑完 (`cancel_migration` 可能发生在拷贝完成前). 找不到匹配
+    /// `(target_group, slots)` 的本地记录时返回 `None`.
+    fn current_migration_epoch(&self, target_group: u64, slots: &[u16]) -> Option<u64> {
+        let run = self
+            .last_run
+            .read()
+            .clone()
+            .or_else(|| Self::load_run_record(&self.checkpoint_dir))?;
+        (run.target_group == target_group && run.slots == slots).then_some(run.migration_id)
+    }
+
+    /// FIX-0056-A1: 通过 Raft apply 删除 target group 上 `epoch` 对应的全部
+    /// `mig/{gid}/{epoch}/*` tombstone/tip key. 调用方按 best-effort 处理
+    /// 返回的错误 (不阻塞已经生效的 Commit/Cancel).
+    async fn cleanup_migration_oplog(&self, target_group: u64, epoch: u64) -> Result<()> {
+        match self
+            .multi_raft
+            .propose_group(target_group, Request::MigrationGc { epoch })
+            .await?
+        {
+            Response::Ok => Ok(()),
+            Response::Error(e) => {
+                Err(ClusterError::InvalidState(format!("migration oplog gc failed: {e}")).into())
+            }
+            other => Err(ClusterError::Internal(format!(
+                "unexpected MigrationGc response: {other:?}"
+            ))
+            .into()),
+        }
     }
 
     /// 从 MetaRaft 的权威迁移状态读取当前 `(source_group, target_group,

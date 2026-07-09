@@ -20,7 +20,9 @@ use openraft::{
 
 use tracing::instrument;
 
-use crate::cluster::types::{NodeId, TypeConfig};
+use crate::cluster::node::OpenRaftNode;
+use crate::cluster::types::{ClusterError, NodeId, TypeConfig};
+use crate::error::{Error, Result};
 
 #[allow(clippy::all)]
 pub mod raft_rpc {
@@ -59,6 +61,107 @@ impl RaftNetworkClient {
     #[cfg(test)]
     pub fn target_addr(&self) -> &str {
         &self.target_addr
+    }
+
+    /// FIX-0056-A1: 跨节点合并读 — 向本 client 的目标节点 (预期为 group
+    /// leader) 请求指定 key 的当前值. 与 `append_entries`/`vote` 共用同一
+    /// gRPC 通道/连接池/超时配置.
+    ///
+    /// 超时映射为 `ClusterError::Timeout`, 调用方 (`MultiRaftNode`) 必须
+    /// 将其视为不确定结果 (向客户端 TRYAGAIN), **不得** 静默当作 key 不存在.
+    pub async fn get_key(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
+        let client = self
+            .get_client()
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
+
+        let request = raft_rpc::GetKeyRequest {
+            group_id,
+            key: key.to_vec(),
+        };
+        let response = match timeout(req_timeout, client.get_key(TonicRequest::new(request))).await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(status)) => return Err(map_rpc_status_error("GetKey", status)),
+            Err(_) => {
+                return Err(Error::Cluster(ClusterError::Timeout(format!(
+                    "GetKey timeout after {}ms",
+                    req_timeout.as_millis()
+                ))));
+            }
+        };
+        let resp = response.into_inner();
+        Ok(resp.found.then_some(resp.value))
+    }
+
+    /// FIX-0056-A1: 跨节点读取 `mig/{group}/{epoch}/tip` — `read_migration_tip`
+    /// 在 group 非本地时的远程 fallback, 语义与 `get_key` 一致.
+    pub async fn get_migration_tip(&mut self, epoch: u64) -> Result<u64> {
+        let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
+        let client = self
+            .get_client()
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
+
+        let request = raft_rpc::GetMigrationTipRequest { group_id, epoch };
+        let response = match timeout(
+            req_timeout,
+            client.get_migration_tip(TonicRequest::new(request)),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(status)) => return Err(map_rpc_status_error("GetMigrationTip", status)),
+            Err(_) => {
+                return Err(Error::Cluster(ClusterError::Timeout(format!(
+                    "GetMigrationTip timeout after {}ms",
+                    req_timeout.as_millis()
+                ))));
+            }
+        };
+        Ok(response.into_inner().tip)
+    }
+
+    /// FIX-0056-A1 合并读线性点第 1 步: 跨节点读取 target group 上 `epoch`
+    /// 内 `key` 的迁移 tombstone. 语义与 `get_key`/`get_migration_tip` 一致
+    /// (同一 gRPC 通道, 超时映射为 `ClusterError::Timeout`).
+    pub async fn get_migration_tombstone(
+        &mut self,
+        epoch: u64,
+        key: &[u8],
+    ) -> Result<Option<crate::cluster::migration_oplog::MigOp>> {
+        let req_timeout = self.request_timeout;
+        let group_id = self.group_id;
+        let client = self
+            .get_client()
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
+
+        let request = raft_rpc::GetMigrationTombstoneRequest {
+            group_id,
+            epoch,
+            key: key.to_vec(),
+        };
+        let response = match timeout(
+            req_timeout,
+            client.get_migration_tombstone(TonicRequest::new(request)),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(status)) => return Err(map_rpc_status_error("GetMigrationTombstone", status)),
+            Err(_) => {
+                return Err(Error::Cluster(ClusterError::Timeout(format!(
+                    "GetMigrationTombstone timeout after {}ms",
+                    req_timeout.as_millis()
+                ))));
+            }
+        };
+        let tag = response.into_inner().op_tag;
+        Ok(crate::cluster::migration_oplog::MigOp::from_tag(tag as u8))
     }
 
     async fn get_client(
@@ -296,6 +399,27 @@ impl RaftNetwork<TypeConfig> for RaftNetworkClient {
     }
 }
 
+/// 将 `GetKey`/`GetMigrationTip` 的 `tonic::Status` 映射为 `ClusterError`.
+/// `FailedPrecondition` (对端非 leader / linearizable 检查失败) 映射为
+/// `NotLeader`, 其余映射为 `Raft` (保留原始 gRPC 错误信息, 不伪装成"确定性"
+/// 结果, 呼应 A1"超时/失败禁止静默 fallback"不变式).
+fn map_rpc_status_error(rpc_name: &str, status: tonic::Status) -> Error {
+    match status.code() {
+        tonic::Code::FailedPrecondition => Error::Cluster(ClusterError::NotLeader {
+            leader: None,
+            leader_addr: None,
+            is_ask: false,
+        }),
+        tonic::Code::NotFound => {
+            Error::Cluster(ClusterError::Raft(format!("{rpc_name}: {}", status.message())))
+        }
+        _ => Error::Cluster(ClusterError::Raft(format!(
+            "{rpc_name} failed: {}",
+            status.message()
+        ))),
+    }
+}
+
 #[derive(Clone)]
 pub struct RaftNetworkClientFactory {
     node_id: NodeId,
@@ -436,12 +560,19 @@ impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
 /// 所有数据 Group 共享此实例, 通过 group_id 分发 RPC
 pub struct RaftServiceDispatcher {
     groups: Arc<RwLock<HashMap<u64, Arc<openraft::Raft<TypeConfig>>>>>,
+    /// FIX-0056-A1: `GetKey`/`GetMigrationTip` 需要 `OpenRaftNode` 级别的
+    /// leader-check / linearizable 读语义 (`get()`/`get_migration_tip()`),
+    /// 而不仅是裸 `openraft::Raft`. 与 `groups` 分开维护是为了不影响现有
+    /// Vote/AppendEntries/InstallSnapshot 调用点 (`register_group` 签名不变);
+    /// 仅 `MultiRaftNode` 组装 group 时额外调用 `register_node`.
+    nodes: Arc<RwLock<HashMap<u64, Arc<OpenRaftNode>>>>,
 }
 
 impl RaftServiceDispatcher {
     pub fn new() -> Self {
         Self {
             groups: Arc::new(RwLock::new(HashMap::new())),
+            nodes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -449,12 +580,24 @@ impl RaftServiceDispatcher {
         self.groups.write().insert(group_id, raft);
     }
 
+    /// 注册 `OpenRaftNode` 句柄, 供 `GetKey`/`GetMigrationTip` 服务端处理
+    /// 复用其 leader-check / linearizable 读逻辑 (与 `register_group` 分开
+    /// 调用, 通常紧跟其后).
+    pub fn register_node(&self, group_id: u64, node: Arc<OpenRaftNode>) {
+        self.nodes.write().insert(group_id, node);
+    }
+
     pub fn unregister_group(&self, group_id: u64) {
         self.groups.write().remove(&group_id);
+        self.nodes.write().remove(&group_id);
     }
 
     pub fn get_raft(&self, group_id: u64) -> Option<Arc<openraft::Raft<TypeConfig>>> {
         self.groups.read().get(&group_id).cloned()
+    }
+
+    pub fn get_node(&self, group_id: u64) -> Option<Arc<OpenRaftNode>> {
+        self.nodes.read().get(&group_id).cloned()
     }
 
     pub fn group_count(&self) -> usize {
@@ -689,6 +832,80 @@ impl RaftService for RaftServiceImpl {
             vote_node_id: install_resp.vote.leader_id.node_id,
             vote_committed: install_resp.vote.committed,
         }))
+    }
+
+    async fn get_key(
+        &self,
+        request: TonicRequest<raft_rpc::GetKeyRequest>,
+    ) -> std::result::Result<tonic::Response<raft_rpc::GetKeyResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let node = self
+            .dispatcher
+            .get_node(req.group_id)
+            .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
+
+        match node.get(req.key).await {
+            Ok(Some(value)) => Ok(tonic::Response::new(raft_rpc::GetKeyResponse {
+                found: true,
+                value,
+            })),
+            Ok(None) => Ok(tonic::Response::new(raft_rpc::GetKeyResponse {
+                found: false,
+                value: Vec::new(),
+            })),
+            Err(e) => Err(map_node_error_to_status(e)),
+        }
+    }
+
+    async fn get_migration_tip(
+        &self,
+        request: TonicRequest<raft_rpc::GetMigrationTipRequest>,
+    ) -> std::result::Result<tonic::Response<raft_rpc::GetMigrationTipResponse>, tonic::Status>
+    {
+        let req = request.into_inner();
+        let node = self
+            .dispatcher
+            .get_node(req.group_id)
+            .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
+
+        match node.get_migration_tip(req.epoch).await {
+            Ok(tip) => Ok(tonic::Response::new(raft_rpc::GetMigrationTipResponse { tip })),
+            Err(e) => Err(map_node_error_to_status(e)),
+        }
+    }
+
+    async fn get_migration_tombstone(
+        &self,
+        request: TonicRequest<raft_rpc::GetMigrationTombstoneRequest>,
+    ) -> std::result::Result<
+        tonic::Response<raft_rpc::GetMigrationTombstoneResponse>,
+        tonic::Status,
+    > {
+        let req = request.into_inner();
+        let node = self
+            .dispatcher
+            .get_node(req.group_id)
+            .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
+
+        match node.get_migration_tombstone(req.epoch, req.key).await {
+            Ok(op) => Ok(tonic::Response::new(raft_rpc::GetMigrationTombstoneResponse {
+                op_tag: op.map(|o| o.tag()).unwrap_or(0) as u32,
+            })),
+            Err(e) => Err(map_node_error_to_status(e)),
+        }
+    }
+}
+
+/// 将 `OpenRaftNode::get`/`get_migration_tip` 的错误映射为 `tonic::Status`.
+/// `NotLeader` (含 linearizable 检查失败时的 `ForwardToLeader`) 映射为
+/// `failed_precondition`, 供客户端 (`RaftNetworkClient::get_key` 等) 区分
+/// "对端不是 leader" 与其它内部错误.
+fn map_node_error_to_status(e: Error) -> tonic::Status {
+    match e {
+        Error::Cluster(ClusterError::NotLeader { .. }) => {
+            tonic::Status::failed_precondition(e.to_string())
+        }
+        _ => tonic::Status::internal(e.to_string()),
     }
 }
 
