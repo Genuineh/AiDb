@@ -41,15 +41,15 @@ Redis 数据结构编码、RESP、INFO — 见 [../aikv/AGENTS.md](../aikv/AGENT
 
 | 类型 | 流程 |
 |------|------|
-| **新功能 / 大改** (多文件、新模块、架构) | brainstorming → writing-plans → **plan-review** → implement → **code-review** → **documentation-sync** → 用户确认后 commit |
-| **小改 / bug** (已知问题、单点) | **grilling** → implement → **code-review** → **documentation-sync** → 用户确认后 commit |
+| **新功能 / 大改** (多文件、新模块、架构) | brainstorming → writing-plans → **plan-review** → **开分支** → implement → **code-review** → **documentation-sync** → 用户确认后 commit |
+| **小改 / bug** (已知问题、单点) | **grilling** → **开分支** → implement → **code-review** → **documentation-sync** → 用户确认后 commit |
 
 补充约定:
 
 - plan / spec 是工作区根 `superpower/` 下的**过程制品**, 不进本仓、**也不从本仓文档引用**; 对仓库仍有效的结论须写入本仓 `docs/` / DESIGN / ARCHITECTURE (见 `documentation-sync`)
+- **开分支**: 共识之后、改代码之前从原分支拉新分支; 纯文档微调或用户要求就地改时可跳过 (先问); 计划完成后经允许再 squash 回原分支
 - **code-review** 通过后做 **documentation-sync**, 再请用户确认; 只在用户明确要求时 commit; 不推远程
 - 会话切换用 **handoff** → 写工作区根 `CHAT.md`
-- 分支: 改前从原分支拉新分支; 计划完成后经允许再 squash 回原分支
 
 不确定大改还是小改时, 先问用户.
 
