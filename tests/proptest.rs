@@ -1,3 +1,4 @@
+//! @component aidb-engine
 //! 随机操作序列 + 引擎不变式
 //!
 //! ```bash

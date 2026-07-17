@@ -1,8 +1,8 @@
-#![cfg(feature = "cluster")]
-
+//! @component aidb-cluster
 //! 集成测试: 集群副本自动对账.
 //!
 //! 验证 LifecycleManager + MultiRaftNode 的 drift 检测和成员变更流程.
+#![cfg(feature = "cluster")]
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};

@@ -1,3 +1,4 @@
+//! @component aidb-engine
 //! 回归: 已修 bug 固化
 //!
 //! ```bash

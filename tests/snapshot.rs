@@ -1,3 +1,4 @@
+//! @component aidb-engine
 //! Snapshot (Phase7.5) 验收测试
 //!
 //! ```bash

@@ -1,3 +1,4 @@
+//! @component aidb-engine
 //! Prometheus metrics 验收测试 (需要 `monitoring` feature)
 //!
 //!   cargo test --test metrics --features monitoring -- --test-threads=1

@@ -1,3 +1,4 @@
+//! @component aidb-engine
 //! 子系统管线: 测试侧直连, 不经 `DB` 公共 API
 //!
 //! ```bash
