@@ -209,6 +209,8 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 - [ ] `cargo test -- --test-threads=1` 通过
 - [ ] 若改 cluster: `cargo test --features cluster -- --test-threads=1` 通过
 - [ ] 若修 bug: 回归测已添加且 `cargo test --test regression -- --test-threads=1` 含新用例 (或见下节放置决策)
+- [ ] 若新增/改动测试: 落点符合 [tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)
+- [ ] 若改动 `tests/`: 文件有 `//! @component` + 中文摘要; 每个新增/改动的 `#[test]` 有中文 `///`
 - [ ] 若改 slow/stress 用例: `cargo test -- --ignored --test-threads=1` 通过
 - [ ] 用户面向 API/行为变更已写 CHANGELOG
 - [ ] 模块文档或根文档已更新 (若适用)
@@ -233,7 +235,7 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 | 规则 | 说明 |
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
-| 命名 | 描述性 `test_*`; 注释写明 bug 现象、期望行为与 ISSUE (若有) |
+| 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
 | `@component` | entry 文件加 `//! @component aidb-{domain}` (与 testviz B2-v1 一致) |
 | 运行 | `cargo test --test regression -- --test-threads=1` |
 

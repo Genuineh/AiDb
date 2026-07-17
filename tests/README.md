@@ -5,12 +5,53 @@
 | 层级 | Cargo 入口 | 源码 | 说明 |
 |------|------------|------|------|
 | **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试 |
-| **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`) |
+| **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`); 另有 `meta` / `multi_raft` / `metrics` / `cluster_ops` 等入口, 以 `tests/*.rs` 与 `Cargo.toml` `[[test]]` 为准 |
 | **L2** | `tests/pipeline.rs`, `tests/engine.rs` | `tests/pipeline/`, `tests/engine/` | 跨模块 / 引擎黑盒 |
 | **L3** | `tests/proptest.rs` | `tests/proptest/` | 随机操作 + 引擎不变式 |
 | **L4** | `tests/regression.rs` | `tests/regression/` | 已修 bug 固化 |
 
 L5–L7 (协议兼容 / E2E / bench) 在 aikv 或 `benches/`.
+
+## 测试写法与范围 (硬性)
+
+对新测 / 改测强制执行. 旧测不要求本次回填. 细粒度「每个 API 必测几条」不在本文范围.
+testviz 中文一级目录由**路径虚拟映射**生成 (见 aifactory `testviz/README`); 分类不靠 `@suite`.
+
+### 写法
+
+| 位置 | 要求 |
+|------|------|
+| `tests/` 下新建/改动的集成测文件 | 文件顶 `//! @component aidb-{domain}` + 中文摘要段 (第一段非空) |
+| L0 `src/**` 内新建 `#[test]` | 中文 `///`; 模块可用 `//!`; **不要求** `@component` |
+| 每个新增/改动的 `#[test]` | 正上方中文 `///`; **禁止**用 `//` 顶替 |
+| bug 回归 | `///` 含现象、期望、ISSUE (若有) |
+
+- 命名: 描述性 `test_*`
+- `#[ignore]`: 必须 `slow:` / `stress:` 前缀; 禁止裸 `#[ignore]`
+- 除 `@component` 外不加自定义标签 (`@suite` / `@layer` 等)
+
+### 跨仓边界
+
+| 测什么 | 放哪 |
+|--------|------|
+| LSM / WAL / MemTable / SSTable / compaction / snapshot / Raft 引擎 | **本仓 aidb** |
+| RESP / 命令 / TCP / 集群对外协议 | **aikv** |
+| 多进程 / redis-cli / failover | **aikv e2e** |
+
+不确定: 能 `DB::*` / 引擎内复现 → aidb; 需要命令或 TCP → aikv.
+
+### 落点
+
+| 场景 | 落点 |
+|------|------|
+| 单模块 | L1 `tests/modules/{mod}/` |
+| 子系统直连 (不经 `DB::open`) | L2 `pipeline/` |
+| `DB` 黑盒 / 崩溃恢复 / compaction 集成 | L2 `engine/` |
+| 随机不变式 | L3 `proptest/` |
+| 已修 bug 长期固化 | **优先** L4 `regression/` |
+| Raft/cluster | `tests/modules/cluster/` 等 (经 raft/meta/… 入口); `--features cluster` |
+
+禁止新建根目录散落 `*_integration.rs`. 集成测推荐 `--test-threads=1`.
 
 ## L2 按场景类型
 

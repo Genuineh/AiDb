@@ -59,6 +59,7 @@ Redis 数据结构编码、RESP、INFO — 见 [../aikv/AGENTS.md](../aikv/AGENT
 - **指标**: 引擎指标前缀 `aidb_*`, 经 OTLP, **不进** Redis INFO
 - **MultiRaft 数据面端口**: `rpc_port + offset`; offset 由 AiKv `--cluster-data-port-offset` 配置 (默认 10000)
 - 修 bug **必带** 回归测: [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)
+- 新测写法与落点 (硬性): [tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)
 - 验证: `RUSTFLAGS='-D warnings'`; 测试加 `--test-threads=1`; `cluster` feature 需 protoc; 完整命令见 [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 进一步阅读
