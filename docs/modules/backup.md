@@ -157,7 +157,7 @@ cargo run --example backup
 
 | 文件 | 覆盖 |
 |------|------|
-| `tests/backup.rs` | 空库、roundtrip、并发写后 verify |
+| `tests/engine/backup.rs` (Cargo entry: `--test backup`) | 空库、roundtrip、并发写后 verify |
 | `backup/manager.rs` tests | RetentionPolicy 五条规则 |
 | `backup/recovery.rs` tests | verify 完整 / 篡改 SST |
 | `benches/backup_bench.rs` | criterion (见 development / observability 边界) |
