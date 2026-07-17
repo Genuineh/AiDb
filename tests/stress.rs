@@ -1,7 +1,8 @@
 //! 并发写入 + compaction 压力测试.
+//! @component aidb-engine
 //!
 //! 验证高频写入与 compaction 并发执行时数据完整性.
-//! 这些测试默认 `#[ignore]` (耗时), 在 CI 中用 `--ignored` 运行.
+//! 这些测试默认 `#[ignore]` (耗时), 在 CI `test-slow` job 中用 `--ignored` 运行.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -20,6 +21,7 @@ fn stress_opts() -> Options {
     o
 }
 
+#[ignore = "stress: concurrent write + compaction ~5s"]
 #[test]
 fn test_concurrent_write_and_compaction() {
     let dir = TempDir::new().unwrap();
@@ -82,6 +84,7 @@ fn test_concurrent_write_and_compaction() {
     eprintln!("concurrent_write_and_compaction: total_writes={total}");
 }
 
+#[ignore = "stress: concurrent write with compaction filter ~5s"]
 #[test]
 fn test_concurrent_write_with_filter() {
     let dir = TempDir::new().unwrap();

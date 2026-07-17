@@ -120,5 +120,7 @@ bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBU
 | `test_snapshot_long_hold_heavy_write` | slow | `snapshot` | `test-slow` |
 | `test_large_dataset_compaction_stress_10000` | stress | `engine` | `test-slow` |
 | `test_bloom_stress` | stress | `regression` | `test-slow` |
+| `test_concurrent_write_and_compaction` | stress | `stress` | `test-slow` |
+| `test_concurrent_write_with_filter` | stress | `stress` | `test-slow` |
 
 本地: `cargo test -- --ignored --test-threads=1`

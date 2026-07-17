@@ -25,6 +25,15 @@ impl ClusterTestHarness {
     }
 
     pub async fn new_3node() -> Self {
+        Self::new_3node_inner(false).await
+    }
+
+    /// 与 `new_3node` 相同, 但所有节点 `RaftNodeConfig.linearizable_read = true`.
+    pub async fn new_3node_linearizable() -> Self {
+        Self::new_3node_inner(true).await
+    }
+
+    async fn new_3node_inner(linearizable: bool) -> Self {
         let mut nodes = Vec::new();
         let mut addrs = Vec::new();
         let mut temp_dirs = Vec::new();
@@ -46,6 +55,7 @@ impl ClusterTestHarness {
                 election_timeout_max: 1000,
                 heartbeat_interval: 50,
                 snapshot_logs_since_last: 50,
+                linearizable_read: linearizable,
                 ..Default::default()
             };
             let node = Arc::new(OpenRaftNode::new(cfg, db, factory).await.unwrap());

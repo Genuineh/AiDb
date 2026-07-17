@@ -1,6 +1,7 @@
 mod group_apply_batch;
 mod harness;
 mod integration;
+mod linearizable_read;
 #[cfg(feature = "monitoring")]
 mod metrics;
 mod network;

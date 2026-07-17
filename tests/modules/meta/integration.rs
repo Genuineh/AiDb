@@ -1,3 +1,7 @@
+//! @component aidb-cluster
+//! Slot 迁移行为的集成回归见 `tests/modules/cluster/slot_migration.rs` (`--test raft`),
+//! 本文件不重复占位测.
+
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -79,12 +83,6 @@ async fn test_meta_raft_leader_failover() {
         "expected a new leader among remaining nodes"
     );
     h.shutdown_all().await;
-}
-
-#[tokio::test]
-async fn test_slot_migration_integration() {
-    // Migration validated by L1 meta_state_machine + L2 propose/recovery/snapshot tests.
-    let _placeholder = true;
 }
 
 #[tokio::test]
