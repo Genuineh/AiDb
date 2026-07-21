@@ -236,7 +236,7 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
 | 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
-| `@component` | entry 文件加 `//! @component aidb-{domain}` (与 testviz B2-v1 一致) |
+| `@component` | entry 文件加 `//! @component aidb-{domain}` (与 test-ui B2-v1 一致) |
 | 运行 | `cargo test --test regression -- --test-threads=1` |
 
 ### 放置决策

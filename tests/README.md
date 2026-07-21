@@ -15,7 +15,7 @@ L5–L7 (协议兼容 / E2E / bench) 在 aikv 或 `benches/`.
 ## 测试写法与范围 (硬性)
 
 对新测 / 改测强制执行. 旧测不要求本次回填. 细粒度「每个 API 必测几条」不在本文范围.
-testviz 中文一级目录由**路径虚拟映射**生成 (见 aifactory `testviz/README`); 分类不靠 `@suite`.
+test-ui 中文一级目录由**路径虚拟映射**生成 (见 aifactory `test-ui/README`); 分类不靠 `@suite`.
 
 ### 写法
 
