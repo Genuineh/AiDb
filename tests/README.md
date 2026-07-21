@@ -4,7 +4,7 @@
 
 | 层级 | Cargo 入口 | 源码 | 说明 |
 |------|------------|------|------|
-| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试 |
+| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试; test-ui 一级 **单元测试** (`src/**` 路径映射) |
 | **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`); 另有 `meta` / `multi_raft` / `metrics` / `cluster_ops` 等入口, 以 `tests/*.rs` 与 `Cargo.toml` `[[test]]` 为准 |
 | **L2** | `tests/pipeline.rs`, `tests/engine.rs` | `tests/pipeline/`, `tests/engine/` | 跨模块 / 引擎黑盒 |
 | **L3** | `tests/proptest.rs` | `tests/proptest/` | 随机操作 + 引擎不变式 |
