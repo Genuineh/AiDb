@@ -71,6 +71,7 @@ flowchart TB
 | `slot_migration.rs` | 在线 slot 迁移 | `SlotMigrationManager`, `SlotMigrationExecutor` |
 | `replica_allocator.rs` | 副本/slot 分配算法 (纯计算) | `allocate_group`, `rebalance_replicas` |
 | `metrics.rs` | Raft RPC 计数 (feature `monitoring`) | `record_raft_rpc` |
+| `failpoint.rs` | 故障注入框架 (feature `cluster-test-util`) | `FailPoint`, `FailPointRegistry`, `fire()` |
 
 `lib.rs` re-export: `MetaRaftNode`, `MultiRaftNode`, `OpenRaftNode`, `Router`, `key_to_slot`, `ClusterError`, `SlotMigrationManager`, `MembershipCoordinator`, 等 (见 `cluster/mod.rs`).
 

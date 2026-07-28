@@ -12,6 +12,8 @@ pub mod metrics;
 pub mod multi_raft_node;
 pub mod network;
 pub mod node;
+#[cfg(feature = "cluster-test-util")]
+pub mod failpoint;
 pub mod log_committer;
 pub mod pending_log;
 pub mod replica_allocator;
@@ -36,6 +38,8 @@ pub use network::{
     RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
 };
 pub use node::OpenRaftNode;
+#[cfg(feature = "cluster-test-util")]
+pub use failpoint::{FailPoint, registry as failpoint_registry};
 pub use replica_allocator::ReplicaAllocator;
 pub use router::{crc16, extract_hash_tag, key_to_slot, Router};
 pub use sharded_storage::{AggregateStats, ShardedStorage, StorageStats};

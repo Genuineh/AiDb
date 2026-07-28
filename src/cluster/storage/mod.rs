@@ -187,6 +187,8 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             Ok(())
         } else {
             // 无 committer: 同步写入 (旧路径).
+            #[cfg(feature = "cluster-test-util")]
+            crate::cluster::failpoint::fire(crate::cluster::FailPoint::AppendBeforeDbWrite);
             self.append_log_entries(&entries_vec)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             callback.io_completed(Ok(()));
@@ -232,8 +234,13 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             let Some(lid) = log_id else {
                 return Ok(());
             };
+            #[cfg(feature = "cluster-test-util")]
+            crate::cluster::failpoint::fire(crate::cluster::FailPoint::TruncateBeforePersist);
             self.delete_logs_from(lid)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            #[cfg(feature = "cluster-test-util")]
+            crate::cluster::failpoint::fire(crate::cluster::FailPoint::TruncateAfterPersist);
+            Ok(())
         }
     }
 
@@ -261,8 +268,13 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             }
             Ok(())
         } else {
+            #[cfg(feature = "cluster-test-util")]
+            crate::cluster::failpoint::fire(crate::cluster::FailPoint::PurgeBeforePersist);
             self.purge_logs_upto_internal(log_id)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            #[cfg(feature = "cluster-test-util")]
+            crate::cluster::failpoint::fire(crate::cluster::FailPoint::PurgeAfterPersist);
+            Ok(())
         }
     }
 }

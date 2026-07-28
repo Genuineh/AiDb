@@ -151,9 +151,13 @@ impl OpenRaftStorage {
                             last_applied_key(self.group_id),
                             Self::serialize_last_applied(&last_log_id)?,
                         );
+                        #[cfg(feature = "cluster-test-util")]
+                        crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyBeforePersist);
                         self.db
                             .write(&batch)
                             .map_err(|e| Error::Cluster(map_db_err(e)))?;
+                        #[cfg(feature = "cluster-test-util")]
+                        crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyAfterPersist);
                         self.state.write().last_applied = Some(last_log_id);
 
                         let count = batched_responses.len();

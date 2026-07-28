@@ -21,6 +21,7 @@ cluster = [
   "dep:futures-util",
 ]
 monitoring = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
+cluster-test-util = ["cluster"]
 
 [dependencies]
 # Core primitives
