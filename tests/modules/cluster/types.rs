@@ -1,17 +1,20 @@
-use aidb::cluster::{RaftNodeConfig, Request, TypeConfig};
-use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+use aidb::cluster::types::LogEntry;
+use aidb::cluster::types::{TypeConfig};
+use aidb::cluster::{RaftNodeConfig, Request};
+use openraft::vote::leader_id_std::CommittedLeaderId;
+use openraft::{EntryPayload, LogId};
 
 #[test]
 fn test_request_serde_roundtrip() {
-    let entry = Entry::<TypeConfig> {
-        log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+    let entry = LogEntry {
+        log_id: LogId::new(CommittedLeaderId::new(1), 1),
         payload: EntryPayload::Normal(Request::Put {
             key: b"k".to_vec(),
             value: b"v".to_vec(),
         }),
     };
     let bytes = rmp_serde::to_vec(&entry).unwrap();
-    let decoded: Entry<TypeConfig> = rmp_serde::from_slice(&bytes).unwrap();
+    let decoded: LogEntry = rmp_serde::from_slice(&bytes).unwrap();
     assert!(matches!(
         decoded.payload,
         EntryPayload::Normal(Request::Put { .. })

@@ -3,15 +3,15 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use openraft::{BasicNode, LogId, Snapshot, SnapshotMeta, StoredMembership};
+use openraft::{Snapshot, SnapshotMeta};
 use serde::{Deserialize, Serialize};
 
 use crate::cluster::storage::keys::snapshot_meta_key;
-use crate::cluster::types::{NodeId, TypeConfig};
+use crate::cluster::types::TypeConfig;
 use crate::error::{ClusterError, Error, Result};
 use crate::DB;
 
-use super::{db_to_storage_err, OpenRaftStorage};
+use super::{CLId, LIdOf, MOf, SMOf, OpenRaftStorage};
 
 /// snapshot 传输格式: 由原来的逐条 KV (SnapshotKv) 改为 DB 目录文件级打包.
 ///
@@ -98,7 +98,7 @@ impl OpenRaftStorage {
     /// 文件级 snapshot 安装: 关闭旧 DB → 清空目录 → 写入新文件 → 重新打开 DB.
     pub(crate) fn install_snapshot_atomic(
         &mut self,
-        meta: &SnapshotMeta<NodeId, BasicNode>,
+        meta: &SMOf,
         data: &[u8],
     ) -> Result<()> {
         let bundle: SnapshotBundle = bincode::deserialize(data)
@@ -173,22 +173,26 @@ impl OpenRaftStorage {
 
 #[cfg(feature = "cluster")]
 impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
+    type SnapshotData = std::io::Cursor<Vec<u8>>;
+
     async fn build_snapshot(
         &mut self,
-    ) -> std::result::Result<Snapshot<TypeConfig>, openraft::StorageError<NodeId>> {
-        let data = prepare_snapshot_bundle(&self.db).map_err(db_to_storage_err)?;
+    ) -> std::result::Result<Snapshot<CLId, u64, openraft::BasicNode, Cursor<Vec<u8>>>, std::io::Error> {
+        let data = prepare_snapshot_bundle(&self.db).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+        })?;
 
-        let membership: StoredMembership<NodeId, BasicNode> = self
+        let membership: MOf = self
             .db
             .get(&super::keys::membership_key(self.group_id))
-            .map_err(db_to_storage_err)?
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
             .map(|d| bincode::deserialize(&d).unwrap_or_default())
             .unwrap_or_default();
 
-        let last_applied: Option<LogId<NodeId>> = self
+        let last_applied: Option<LIdOf> = self
             .db
             .get(&super::keys::last_applied_key(self.group_id))
-            .map_err(db_to_storage_err)?
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
             .and_then(|d| rmp_serde::from_slice(&d).ok());
 
         let snapshot_id = format!("snap-{}", last_applied.map(|id| id.index).unwrap_or(0));
@@ -200,7 +204,7 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
 
         Ok(Snapshot {
             meta,
-            snapshot: Box::new(Cursor::new(data)),
+            snapshot: Cursor::new(data),
         })
     }
 }
@@ -214,7 +218,7 @@ mod tests {
     use crate::cluster::types::ThinWriteBatch;
     use crate::config::Options;
     use crate::DB;
-    use openraft::{CommittedLeaderId, LogId, SnapshotMeta, StoredMembership};
+    use openraft::{LogId, SnapshotMeta, StoredMembership};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -233,7 +237,7 @@ mod tests {
         // 构建 snapshot bundle (模拟 SNAPSHOT 构建端).
         let bundle_data = prepare_snapshot_bundle(&storage.db).unwrap();
 
-        let log_id = LogId::new(CommittedLeaderId::new(2, 1), 5);
+        let log_id = LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(5), 5);
         let meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
@@ -276,7 +280,7 @@ mod tests {
             let db = DB::open(dir.path(), opts.clone()).unwrap();
             let mut storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
 
-            let log_id = LogId::new(CommittedLeaderId::new(2, 1), 5);
+            let log_id = LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(5), 5);
             let meta = SnapshotMeta {
                 last_log_id: Some(log_id),
                 last_membership: StoredMembership::default(),
@@ -348,7 +352,7 @@ mod tests {
         let mut storage2 =
             OpenRaftStorage::new(db2.clone(), METARAFT_GROUP_ID, Some(meta_sm2.clone())).unwrap();
 
-        let log_id = LogId::new(CommittedLeaderId::new(1, 1), 3);
+        let log_id = LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(3), 3);
         let snap_meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),

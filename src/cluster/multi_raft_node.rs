@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use tracing::instrument;
 
 use openraft::RaftNetworkFactory;
+use openraft::type_config::async_runtime::WatchReceiver;
 
 use crate::cluster::lifecycle_manager::{LifecycleManager, MetaRaftProvider};
 use crate::cluster::meta_types::{default_slot_table, ClusterMeta, SlotMigrationState, SlotTable};
@@ -466,7 +467,7 @@ impl MultiRaftNode {
             groups
                 .read()
                 .iter()
-                .filter_map(|(gid, node)| match node.raft().metrics().borrow().running_state {
+                .filter_map(|(gid, node)| match node.raft().metrics().borrow_watched().running_state {
                     Ok(()) => None,
                     Err(ref fatal) => Some((*gid, fatal.to_string())),
                 })
@@ -634,7 +635,7 @@ impl MultiRaftNode {
         let Some(node) = groups.get(&group_id) else {
             return false;
         };
-        node.raft().metrics().borrow().current_leader == Some(self.node_id)
+        node.raft().metrics().borrow_watched().current_leader == Some(self.node_id)
     }
 
     /// 本地 Group 的 OpenRaftNode 映射
@@ -1058,7 +1059,7 @@ mod tests {
 
         let node = groups.read().get(&GROUP_ID).cloned().unwrap();
         wait_for(std::time::Duration::from_secs(5), || {
-            node.raft().metrics().borrow().current_leader == Some(1)
+            node.raft().metrics().borrow_watched().current_leader == Some(1)
         })
         .await;
 
@@ -1088,7 +1089,7 @@ mod tests {
         );
 
         wait_for(std::time::Duration::from_secs(5), || {
-            node.raft().metrics().borrow().running_state.is_err()
+            node.raft().metrics().borrow_watched().running_state.is_err()
         })
         .await;
 
@@ -1125,12 +1126,12 @@ mod tests {
             "dispatcher must track the reopened OpenRaftNode, not a stale fatal reference"
         );
         assert!(
-            node2.raft().metrics().borrow().running_state.is_ok(),
+            node2.raft().metrics().borrow_watched().running_state.is_ok(),
             "reopened group must not still be in a Fatal state"
         );
 
         wait_for(std::time::Duration::from_secs(5), || {
-            node2.raft().metrics().borrow().current_leader == Some(1)
+            node2.raft().metrics().borrow_watched().current_leader == Some(1)
         })
         .await;
         assert_eq!(

@@ -356,7 +356,7 @@ impl MetaRaftNode {
     /// 检查 learner 是否已出现在 replication metrics 中.
     #[cfg(test)]
     fn is_learner_connected(
-        metrics: &openraft::RaftMetrics<NodeId, openraft::BasicNode>,
+        metrics: &openraft::RaftMetrics<crate::cluster::types::TypeConfig>,
         node_id: NodeId,
     ) -> bool {
         metrics

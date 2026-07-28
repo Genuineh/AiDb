@@ -1,6 +1,6 @@
 //! State machine apply path.
 
-use openraft::{Entry, EntryPayload, LogId, MessageSummary};
+use openraft::{EntryPayload, MessageSummary};
 
 use crate::cluster::meta_types::{MetaRequest, METARAFT_GROUP_ID};
 use crate::cluster::migration_oplog::{decode_tip, decode_tombstone, encode_tip, encode_tombstone, MigOp};
@@ -14,7 +14,7 @@ use crate::cluster::types::{
 use crate::engine::db::WriteBatch;
 use crate::error::{Error, Result};
 
-use super::OpenRaftStorage;
+use super::{LIdOf, OpenRaftStorage};
 use crate::cluster::storage::log::map_db_err;
 
 impl OpenRaftStorage {
@@ -62,9 +62,9 @@ impl OpenRaftStorage {
         Ok(())
     }
 
-    pub(crate) fn apply_entries_internal(
+    pub fn apply_entries_internal(
         &self,
-        entries: &[Entry<TypeConfig>],
+        entries: &[<TypeConfig as openraft::RaftTypeConfig>::Entry],
     ) -> Result<Vec<Response>> {
         let mut last_applied = self.read_last_applied_from_db()?;
         let mut responses = Vec::with_capacity(entries.len());
@@ -325,14 +325,14 @@ impl OpenRaftStorage {
         }
     }
 
-    fn serialize_last_applied(log_id: &LogId<crate::cluster::types::NodeId>) -> Result<Vec<u8>> {
+    fn serialize_last_applied(log_id: &LIdOf) -> Result<Vec<u8>> {
         rmp_serde::to_vec(log_id)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
     }
 
     fn persist_last_applied_atomic(
         &self,
-        log_id: &LogId<crate::cluster::types::NodeId>,
+        log_id: &LIdOf,
     ) -> Result<()> {
         let mut batch = WriteBatch::new();
         batch.put(
@@ -349,7 +349,7 @@ impl OpenRaftStorage {
     fn apply_membership_entry_atomic(
         &self,
         membership: &openraft::Membership<crate::cluster::types::NodeId, openraft::BasicNode>,
-        log_id: &LogId<crate::cluster::types::NodeId>,
+        log_id: &LIdOf,
     ) -> Result<Response> {
         let stored = openraft::StoredMembership::new(Some(*log_id), membership.clone());
         let data = bincode::serialize(&stored)
@@ -370,7 +370,7 @@ impl OpenRaftStorage {
     fn apply_meta_entry(
         &self,
         req: &MetaRequest,
-        log_id: &LogId<crate::cluster::types::NodeId>,
+        log_id: &LIdOf,
     ) -> Result<Response> {
         let meta_state = self.meta_state.as_ref().expect("meta_state required");
         let mut batch = WriteBatch::new();
@@ -496,13 +496,13 @@ mod tests {
     #[test]
     fn test_migration_write_lands_user_op_and_tombstone_in_same_apply() {
         let (storage, _dir) = test_storage();
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+        use openraft::{EntryPayload, LogId};
 
         let mut ops = ThinWriteBatch::new();
         ops.put(b"k1".to_vec(), b"v1".to_vec());
         ops.delete(b"k2".to_vec());
-        let entry = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        let entry = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::MigrationWrite { epoch: 7, ops }),
         };
         storage
@@ -542,13 +542,13 @@ mod tests {
     #[test]
     fn test_migration_write_tip_continues_across_separate_applies() {
         let (storage, _dir) = test_storage();
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+        use openraft::{EntryPayload, LogId};
 
         let mk_entry = |index: u64, key: &'static [u8]| {
             let mut ops = ThinWriteBatch::new();
             ops.put(key.to_vec(), b"v".to_vec());
-            Entry::<TypeConfig> {
-                log_id: LogId::new(CommittedLeaderId::new(1, 1), index),
+            crate::cluster::types::LogEntry {
+                log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), index),
                 payload: EntryPayload::Normal(Request::MigrationWrite { epoch: 3, ops }),
             }
         };
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn test_migration_gc_removes_epoch_prefix_only() {
         let (storage, _dir) = test_storage();
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+        use openraft::{EntryPayload, LogId};
 
         let mut ops = ThinWriteBatch::new();
         ops.put(b"k1".to_vec(), b"v1".to_vec());
@@ -633,8 +633,8 @@ mod tests {
             Some(b"v1".to_vec())
         );
 
-        let gc_entry = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        let gc_entry = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::MigrationGc { epoch: 1 }),
         };
         storage
@@ -685,9 +685,9 @@ mod tests {
     #[test]
     fn test_apply_idempotent_last_applied() {
         let (storage, _dir) = test_storage();
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
-        let entry = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        use openraft::{EntryPayload, LogId};
+        let entry = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::Put {
                 key: b"k".to_vec(),
                 value: b"v".to_vec(),
@@ -715,9 +715,9 @@ mod tests {
     #[test]
     fn test_meta_storage_apply_output_integration() {
         let (storage, _dir) = meta_storage();
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
-        let entry = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        use openraft::{EntryPayload, LogId};
+        let entry = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::Meta(MetaRequest::RegisterNode {
                 node_id: 1,
                 rpc_addr: "http://127.0.0.1:1".into(),
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_migration_epoch_persists_through_apply_and_restart() {
         use crate::cluster::meta_state_machine::MetaStateMachine;
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+        use openraft::{EntryPayload, LogId};
 
         let (storage, _dir) = meta_storage();
         let entries = [
@@ -772,8 +772,8 @@ mod tests {
             },
         ];
         for (i, req) in entries.into_iter().enumerate() {
-            let entry = Entry::<TypeConfig> {
-                log_id: LogId::new(CommittedLeaderId::new(1, 1), i as u64 + 1),
+            let entry = crate::cluster::types::LogEntry {
+                log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), i as u64 + 1),
                 payload: EntryPayload::Normal(Request::Meta(req)),
             };
             storage.apply_entries_internal(std::slice::from_ref(&entry)).unwrap();
@@ -800,15 +800,15 @@ mod tests {
     /// (last_applied 越过失败 entry, 数据永久丢失且副本间可能分叉).
     #[test]
     fn test_apply_storage_error_does_not_advance_last_applied() {
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
+        use openraft::{EntryPayload, LogId};
 
         let dir = TempDir::new().unwrap();
         let db = DB::open(dir.path(), Options::for_testing()).unwrap();
         let storage = OpenRaftStorage::new(db.clone(), DEFAULT_GROUP_ID, None).unwrap();
 
         // Entry #1 applies cleanly.
-        let e1 = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        let e1 = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::Put {
                 key: b"k1".to_vec(),
                 value: b"v1".to_vec(),
@@ -825,8 +825,8 @@ mod tests {
         // e.g. a disk fault hit by PutConditional's dedup read.
         db.close().unwrap();
 
-        let e2 = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 2),
+        let e2 = crate::cluster::types::LogEntry {
+            log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 2),
             payload: EntryPayload::Normal(Request::PutConditional {
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
@@ -856,7 +856,7 @@ mod tests {
             let db = DB::open(&path, Options::for_testing()).unwrap();
             let storage = OpenRaftStorage::new(db, DEFAULT_GROUP_ID, None).unwrap();
             use crate::cluster::types::NodeId;
-            use openraft::{BasicNode, CommittedLeaderId, Entry, EntryPayload, LogId, Membership};
+            use openraft::{BasicNode, EntryPayload, LogId, Membership};
             use std::collections::{BTreeMap, BTreeSet};
             let mut voters = BTreeSet::new();
             voters.insert(1);
@@ -871,9 +871,9 @@ mod tests {
                     },
                 );
             }
-            let membership = Membership::<NodeId, BasicNode>::new(vec![voters], nodes);
-            let entry = Entry::<TypeConfig> {
-                log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+            let membership = Membership::<NodeId, BasicNode>::new(vec![voters], nodes).unwrap();
+            let entry = crate::cluster::types::LogEntry {
+                log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 1),
                 payload: EntryPayload::Membership(membership),
             };
             storage.apply_entries_internal(&[entry]).unwrap();

@@ -15,8 +15,10 @@ cluster = [
   "dep:tokio",
   "dep:tokio-stream",
   "dep:openraft",
+  "dep:openraft-rt-tokio",
   "dep:rmp-serde",
   "dep:async-trait",
+  "dep:futures-util",
 ]
 monitoring = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 
@@ -62,10 +64,12 @@ opentelemetry_sdk = { version = "0.32", optional = true, features = ["testing"] 
 tonic   = { version = "0.11", optional = true }
 prost   = { version = "0.12", optional = true }
 tokio   = { version = "1",    features = ["full"], optional = true }
-openraft = { version = "0.9", features = ["serde"], optional = true }
+openraft = { version = "0.10.0-alpha.31", features = ["type-alias", "serde"], optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.31", optional = true }
 rmp-serde = { version = "1", optional = true }
 async-trait = { version = "0.1", optional = true }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
+futures-util = { version = "0.3", optional = true }
 
 [build-dependencies]
 tonic-build = "0.11"

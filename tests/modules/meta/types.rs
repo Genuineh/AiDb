@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use aidb::cluster::types::LogEntry;
 use aidb::cluster::{MetaRequest, Request, TypeConfig};
 
 #[test]
@@ -26,9 +27,10 @@ fn test_meta_types_serde_roundtrip() {
 
 #[test]
 fn test_meta_request_in_entry_roundtrip() {
-    use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
-    let entry = Entry::<TypeConfig> {
-        log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+    use openraft::vote::leader_id_std::CommittedLeaderId;
+    use openraft::{EntryPayload, LogId};
+    let entry = LogEntry {
+        log_id: LogId::new(CommittedLeaderId::new(1), 1),
         payload: EntryPayload::Normal(Request::Meta(MetaRequest::RegisterNode {
             node_id: 1,
             rpc_addr: "http://127.0.0.1:1".into(),
@@ -37,7 +39,7 @@ fn test_meta_request_in_entry_roundtrip() {
         })),
     };
     let bytes = rmp_serde::to_vec(&entry).unwrap();
-    let decoded: Entry<TypeConfig> = rmp_serde::from_slice(&bytes).unwrap();
+    let decoded: LogEntry = rmp_serde::from_slice(&bytes).unwrap();
     assert!(matches!(
         decoded.payload,
         EntryPayload::Normal(Request::Meta(MetaRequest::RegisterNode { .. }))
