@@ -9,7 +9,11 @@
 
 ### Added
 
+- **OpenRaft v0.10.0-alpha.31 升级**: 适配 `RaftTypeConfig` API 变更 (`declare_raft_types!` 宏); `Entry` 4 泛型参数; `RaftLogStorage` / `RaftStateMachine` / `RaftLogReader` trait 重命名与 `io::Error` 统一; `RaftNetworkV2` / `IOFlushed` callback; `LeaderId` 结构变化.
+- **PendingLogOverlay**: Raft log 的内存缓冲区, 在 LogCommitter 异步 flush 完成前使 entry 立即可读, 支持 generation 隔离. 文件: `src/cluster/pending_log.rs`.
+- **LogCommitter**: 异步批量 I/O actor, 基于 `spawn_blocking` + bounded mpsc channel, 支持 `max_commands` / `max_entries` / `max_bytes` / `delay_us` 四维 batching, generation 保护; `IoCommand` enum (Append / SaveVote / TruncateAfter / Purge / FlushAndSync / Shutdown); `oneshot::Sender` 确认信号. 文件: `src/cluster/log_committer.rs` + `RaftNodeConfig.log_committer_config`.
 - **Raft group 自愈重启**: `MultiRaftNode::supervise_groups` 在 lifecycle tick 中检测本地 group 是否进入 openraft `Fatal` 状态 (apply fail-fast 触发), 按指数退避 (2s\*2^n, 上限 60s) 就地重开 group, 不影响同节点其它 group / gRPC server; 新增 `aidb_raft_group_fatal_total` / `aidb_raft_group_restart_total` OTel 指标. 回归: `multi_raft_node.rs::supervise_groups_restarts_fatal_group_and_preserves_data`.
+- **failpoint 故障注入框架**: `cluster-test-util` feature; `FailPoint` 7 种注入点 (AppendBeforeDbWrite / ApplyBeforePersist / ApplyAfterPersist / TruncateBeforePersist/After / PurgeBeforePersist/After); `FailPointRegistry` 全局注册表 (arm / arm_once / release / release_all / status / fire); 同步路径插入 hook. 文件: `src/cluster/failpoint.rs`.
 
 ### Fixed
 
