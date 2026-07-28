@@ -5,10 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openraft::error::{CheckIsLeaderError, ForwardToLeader, RaftError};
-use openraft::{storage::Adaptor, Config, Raft, RaftMetrics, TryAsRef};
+use openraft::error::{ForwardToLeader, RaftError};
+use openraft::type_config::async_runtime::WatchReceiver;
+use openraft::{Config, Raft, RaftMetrics, TryAsRef};
 use tracing::instrument;
 
+use crate::cluster::log_committer::{spawn_committer, LogCommitterConfig, LogCommitterHandle};
 use crate::cluster::network::{RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl};
 use crate::cluster::storage::OpenRaftStorage;
 use crate::cluster::types::{
@@ -28,7 +30,7 @@ const REPLICATION_HEARTBEAT_MULTIPLIER: u32 = 3;
 pub struct OpenRaftNode {
     node_id: NodeId,
     group_id: u64,
-    raft: Arc<Raft<TypeConfig>>,
+    raft: Arc<Raft<TypeConfig, OpenRaftStorage>>,
     storage: OpenRaftStorage,
     network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
     max_entry_size: u64,
@@ -55,7 +57,17 @@ impl OpenRaftNode {
             )));
         }
 
-        let storage = OpenRaftStorage::new(db.clone(), config.group_id, None)?;
+        // 可选: 创建 LogCommitter.
+        let committer = config.log_committer_config.as_ref().map(|cfg| {
+            spawn_committer(config.group_id, db.clone(), cfg.clone())
+        });
+
+        let storage = OpenRaftStorage::new_with_committer(
+            db.clone(),
+            config.group_id,
+            None,
+            committer,
+        )?;
         Self::new_with_storage(config, db, storage, network_factory).await
     }
 
@@ -74,8 +86,6 @@ impl OpenRaftNode {
             )));
         }
 
-        let (log_store, state_machine) = Adaptor::new(storage.clone());
-
         let raft_config = Config {
             cluster_name: format!("aidb-raft-{}", config.group_id),
             election_timeout_min: config.election_timeout_min,
@@ -92,6 +102,10 @@ impl OpenRaftNode {
 
         let network_factory_arc = Arc::new(RwLock::new(network_factory));
         let network_for_raft = network_factory_arc.read().clone();
+
+        // v0.10: OpenRaftStorage implements both RaftLogStorage and RaftStateMachine
+        let log_store = storage.clone();
+        let state_machine = storage.clone();
 
         let raft = Raft::new(
             config.node_id,
@@ -306,7 +320,7 @@ impl OpenRaftNode {
 
     /// 从 RaftMetrics 提取指定节点的 matched log index.
     fn matched_log_index(
-        metrics: &RaftMetrics<NodeId, openraft::BasicNode>,
+        metrics: &RaftMetrics<TypeConfig>,
         node_id: NodeId,
     ) -> u64 {
         metrics
@@ -319,7 +333,7 @@ impl OpenRaftNode {
     }
 
     /// 检查节点是否已出现在 replication metrics 中 (leader 已与其建立复制连接).
-    fn is_connected(metrics: &RaftMetrics<NodeId, openraft::BasicNode>, node_id: NodeId) -> bool {
+    fn is_connected(metrics: &RaftMetrics<TypeConfig>, node_id: NodeId) -> bool {
         metrics
             .replication
             .as_ref()
@@ -440,29 +454,29 @@ impl OpenRaftNode {
     }
 
     pub async fn is_leader(&self) -> bool {
-        self.raft.metrics().borrow().current_leader == Some(self.node_id)
+        self.raft.metrics().borrow_watched().current_leader == Some(self.node_id)
     }
 
     pub async fn get_leader(&self) -> Option<NodeId> {
-        self.raft.metrics().borrow().current_leader
+        self.raft.metrics().borrow_watched().current_leader
     }
 
-    pub async fn metrics(&self) -> RaftMetrics<NodeId, openraft::BasicNode> {
-        self.raft.metrics().borrow().clone()
+    pub async fn metrics(&self) -> RaftMetrics<TypeConfig> {
+        self.raft.metrics().borrow_watched().clone()
     }
 
     /// 获取当前 Raft group 的成员节点集合, 用于 LifecycleManager 对账.
     pub async fn get_members(&self) -> std::collections::BTreeSet<NodeId> {
         self.raft
             .metrics()
-            .borrow()
+            .borrow_watched()
             .membership_config
             .nodes()
             .map(|(nid, _)| *nid)
             .collect()
     }
 
-    pub fn raft(&self) -> Arc<Raft<TypeConfig>> {
+    pub fn raft(&self) -> Arc<Raft<TypeConfig, OpenRaftStorage>> {
         self.raft.clone()
     }
 
@@ -472,7 +486,7 @@ impl OpenRaftNode {
     async fn ensure_leader_for_linear_read(&self) -> Result<()> {
         if self.linearizable_read {
             // Linearizable read: quorum 确认当前仍是 leader + wait applied index
-            self.raft.ensure_linearizable().await.map_err(map_linearizable_error)?;
+            self.raft.ensure_linearizable(openraft::ReadPolicy::ReadIndex).await.map_err(map_linearizable_error)?;
         } else {
             // 退化路径: 本地 leader check (保持 Redis Cluster 最终一致性)
             if !self.is_leader().await {
@@ -587,7 +601,7 @@ impl OpenRaftNode {
 /// `ForwardToLeader` → `NotLeader` (客户端可做 MOVED 重定向);
 /// 其他错误 → `Internal`.
 fn map_linearizable_error(
-    e: RaftError<NodeId, CheckIsLeaderError<NodeId, openraft::BasicNode>>,
+    e: RaftError<TypeConfig, openraft::error::LinearizableReadError<TypeConfig>>,
 ) -> Error {
     if let Some(leader_err) = e.try_as_ref() {
         match leader_err {

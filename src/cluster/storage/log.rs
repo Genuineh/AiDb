@@ -2,8 +2,6 @@
 
 use std::ops::{Bound, RangeBounds};
 
-use openraft::{Entry, LogId, Vote};
-
 use crate::cluster::storage::keys::{
     last_applied_key, last_log_id_key, last_purged_log_id_key, log_key, log_prefix, log_range_end,
     membership_key, snapshot_meta_key, snapshot_temp_global_end, snapshot_temp_global_start,
@@ -12,10 +10,10 @@ use crate::cluster::storage::keys::{
 use crate::cluster::types::{NodeId, TypeConfig};
 use crate::error::{ClusterError, Error, Result};
 
-use super::OpenRaftStorage;
+use super::{CLId, LIdOf, StorageState, VOf, OpenRaftStorage};
 
 impl OpenRaftStorage {
-    pub(crate) fn save_vote_internal(&self, vote: &Vote<NodeId>) -> Result<()> {
+    pub(crate) fn save_vote_internal(&self, vote: &VOf) -> Result<()> {
         let data =
             rmp_serde::to_vec(vote).map_err(|e| ClusterError::Serialization(e.to_string()))?;
         self.db.put(&vote_key(self.group_id), &data)?;
@@ -26,7 +24,7 @@ impl OpenRaftStorage {
     pub(crate) fn get_log_entries(
         &self,
         range: impl RangeBounds<u64>,
-    ) -> Result<Vec<Entry<TypeConfig>>> {
+    ) -> Result<Vec<<TypeConfig as openraft::RaftTypeConfig>::Entry>> {
         let state = self.state.read();
         let start = match range.start_bound() {
             Bound::Included(&x) => x,
@@ -44,21 +42,33 @@ impl OpenRaftStorage {
             return Ok(Vec::new());
         }
 
-        // 按 index 点查, 避免 log 累积后全表 scan (O(总 log 数) → O(请求区间)).
+        // Check PendingLogOverlay for pending entries.
+        let overlay = self.pending_overlay();
+
+        // 按 index 点查, 优先从 overlay 读, 再 fallback 到 DB.
         let mut entries = Vec::with_capacity((end - start) as usize);
         for idx in start..end {
+            // Try overlay first.
+            if let Some(ref ov) = overlay {
+                let ov_guard = ov.lock();
+                if let Some(entry) = ov_guard.get(idx) {
+                    entries.push(entry.clone());
+                    continue;
+                }
+            }
+            // Fallback to DB.
             let key = log_key(self.group_id, idx);
             let Some(data) = self.db.get(&key)? else {
                 continue;
             };
-            let entry: Entry<TypeConfig> = rmp_serde::from_slice(&data)
-                .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+            let entry: <TypeConfig as openraft::RaftTypeConfig>::Entry = rmp_serde::from_slice(&data)
+                .map_err(|e| ClusterError::Serialization(format!("log_entry(idx={}): {}", idx, e)))?;
             entries.push(entry);
         }
         Ok(entries)
     }
 
-    pub(crate) fn append_log_entries(&self, entries: &[Entry<TypeConfig>]) -> Result<()> {
+    pub(crate) fn append_log_entries(&self, entries: &[<TypeConfig as openraft::RaftTypeConfig>::Entry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -85,7 +95,7 @@ impl OpenRaftStorage {
         Ok(())
     }
 
-    pub(crate) fn delete_logs_from(&self, log_id: LogId<NodeId>) -> Result<()> {
+    pub(crate) fn delete_logs_from(&self, log_id: LIdOf) -> Result<()> {
         let last_index = self
             .state
             .read()
@@ -109,7 +119,7 @@ impl OpenRaftStorage {
                 .db
                 .get(&prev)?
                 .and_then(|data| rmp_serde::from_slice(&data).ok())
-                .map(|e: Entry<TypeConfig>| e.log_id);
+                .map(|e: <TypeConfig as openraft::RaftTypeConfig>::Entry| e.log_id);
             if let Some(ref lid) = state.last_log_id {
                 let data = rmp_serde::to_vec(lid)
                     .map_err(|e| ClusterError::Serialization(e.to_string()))?;
@@ -119,7 +129,7 @@ impl OpenRaftStorage {
         Ok(())
     }
 
-    pub(crate) fn purge_logs_upto_internal(&self, log_id: LogId<NodeId>) -> Result<()> {
+    pub(crate) fn purge_logs_upto_internal(&self, log_id: LIdOf) -> Result<()> {
         let start_index = self
             .state
             .read()
@@ -149,37 +159,79 @@ impl OpenRaftStorage {
         Ok(())
     }
 
+    /// Try to deserialize with rmp_serde, on failure: log warning, delete the key, return None.
+    fn try_deser_or_clean<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &[u8],
+        label: &str,
+        state: &mut StorageState,
+    ) -> Result<Option<T>> {
+        match self.db.get(key)? {
+            None => Ok(None),
+            Some(data) => match rmp_serde::from_slice(&data) {
+                Ok(v) => Ok(Some(v)),
+                Err(e) => {
+                    tracing::warn!(
+                        key = label,
+                        len = data.len(),
+                        error = %e,
+                        "load_state: incompatible data, wiping all raft data for this group"
+                    );
+                    self.wipe_group_raft_data()?;
+                    *state = StorageState::default();
+                    Ok(None)
+                }
+            },
+        }
+    }
+
+    /// Wipe all raft metadata + log entries for this group.
+    /// Used when stale/incompatible data is detected (e.g. openraft version upgrade).
+    fn wipe_group_raft_data(&self) -> Result<()> {
+        let gid = self.group_id;
+        tracing::warn!(gid, "wiping all raft data for group");
+        // Delete all raft metadata keys
+        self.db.delete(&vote_key(gid))?;
+        self.db.delete(&last_applied_key(gid))?;
+        self.db.delete(&last_log_id_key(gid))?;
+        self.db.delete(&last_purged_log_id_key(gid))?;
+        self.db.delete(&membership_key(gid))?;
+        self.db.delete(&snapshot_meta_key(gid))?;
+        // Delete all log entries for this group
+        let start = log_prefix(gid);
+        let end = log_range_end(gid);
+        self.db.delete_range(&start, &end)?;
+        Ok(())
+    }
+
     pub(crate) fn load_state(&self) -> Result<()> {
         let mut state = self.state.write();
         let gid = self.group_id;
 
         tracing::debug!(group_id = gid, "load_state: loading Raft state from DB");
 
-        if let Some(data) = self.db.get(&vote_key(gid))? {
-            state.vote = Some(
-                rmp_serde::from_slice(&data)
-                    .map_err(|e| ClusterError::Serialization(e.to_string()))?,
-            );
+        if let Some(vote) = self.try_deser_or_clean::<VOf>(&vote_key(gid), "vote", &mut state)? {
+            state.vote = Some(vote);
         }
 
-        if let Some(data) = self.db.get(&last_applied_key(gid))? {
-            state.last_applied = Some(
-                rmp_serde::from_slice(&data)
-                    .map_err(|e| ClusterError::Serialization(e.to_string()))?,
-            );
+        if let Some(last_applied) =
+            self.try_deser_or_clean::<LIdOf>(&last_applied_key(gid), "last_applied", &mut state)?
+        {
+            state.last_applied = Some(last_applied);
         }
 
         if let Some(data) = self.db.get(&snapshot_meta_key(gid))? {
+            tracing::warn!(key = "snapshot_meta", len = data.len(), "load_state: found key, deserializing");
             state.snapshot_meta = Some(
                 bincode::deserialize(&data)
-                    .map_err(|e| ClusterError::Serialization(e.to_string()))?,
+                    .map_err(|e| ClusterError::Serialization(format!("snapshot_meta: {}", e)))?,
             );
         }
 
         // 优先从持久化 key 读取 last_log_id (O(1)), 不存在则 fallback 到 O(N) 扫描.
-        if let Some(data) = self.db.get(&last_log_id_key(gid))? {
-            let persisted: LogId<NodeId> = rmp_serde::from_slice(&data)
-                .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+        if let Some(persisted) =
+            self.try_deser_or_clean::<LIdOf>(&last_log_id_key(gid), "last_log_id", &mut state)?
+        {
             // 验证该 index 的 log entry 确实存在 (防止被手动删除导致的悬挂指针).
             if self.db.get(&log_key(gid, persisted.index))?.is_some() {
                 state.last_log_id = Some(persisted);
@@ -194,7 +246,6 @@ impl OpenRaftStorage {
         tracing::debug!(
             group_id = gid,
             last_log_id_term = state.last_log_id.as_ref().map(|id| id.leader_id.term),
-            last_log_id_node = state.last_log_id.as_ref().map(|id| id.leader_id.node_id),
             last_log_id_index = state.last_log_id.as_ref().map(|id| id.index),
             last_applied_index = state.last_applied.as_ref().map(|id| id.index),
             "load_state: state loaded",
@@ -214,7 +265,7 @@ impl OpenRaftStorage {
             ) {
                 for idx in (1..=last_idx).rev() {
                     if let Some(data) = self.db.get(&log_key(gid, idx))? {
-                        if let Ok(entry) = rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+                        if let Ok(entry) = rmp_serde::from_slice::<<TypeConfig as openraft::RaftTypeConfig>::Entry>(&data) {
                             if let openraft::EntryPayload::Membership(ref m) = entry.payload {
                                 let stored =
                                     openraft::StoredMembership::new(Some(entry.log_id), m.clone());
@@ -230,33 +281,53 @@ impl OpenRaftStorage {
         }
 
         // 优先从持久化 key 读取 last_purged_log_id (O(1)), 不存在则 fallback 到 O(N) 扫描.
-        if let Some(data) = self.db.get(&last_purged_log_id_key(gid))? {
-            state.last_purged_log_id =
-                Some(rmp_serde::from_slice(&data).map_err(|e| ClusterError::Serialization(e.to_string()))?);
+        if let Some(purged) =
+            self.try_deser_or_clean::<LIdOf>(&last_purged_log_id_key(gid), "last_purged_log_id", &mut state)?
+        {
+            state.last_purged_log_id = Some(purged);
         } else if let Some(ref last_log) = state.last_log_id {
             // Fallback: 扫描全部 log key 找第一个 index (旧数据兼容).
-            reconstruct_last_purged_log_id_from_scan(&self.db, gid, last_log.leader_id, &mut state)?;
+            let leader_id = last_log.leader_id;
+            reconstruct_last_purged_log_id_from_scan(&self.db, gid, leader_id, &mut state)?;
         }
 
         Ok(())
     }
 
-    pub(crate) fn read_last_applied_from_db(&self) -> Result<Option<LogId<NodeId>>> {
+    pub(crate) fn read_last_applied_from_db(&self) -> Result<Option<LIdOf>> {
         match self.db.get(&last_applied_key(self.group_id))? {
             None => Ok(None),
-            Some(bytes) => Ok(Some(
-                rmp_serde::from_slice(&bytes)
-                    .map_err(|e| ClusterError::Serialization(e.to_string()))?,
-            )),
+            Some(data) => match rmp_serde::from_slice(&data) {
+                Ok(v) => Ok(Some(v)),
+                Err(e) => {
+                    tracing::warn!(
+                        len = data.len(),
+                        error = %e,
+                        "read_last_applied: incompatible data, deleting stale key"
+                    );
+                    self.db.delete(&last_applied_key(self.group_id))?;
+                    Ok(None)
+                }
+            },
         }
     }
 
     pub(crate) fn load_membership(
         &self,
-    ) -> std::result::Result<openraft::StoredMembership<NodeId, openraft::BasicNode>, Error> {
+    ) -> std::result::Result<openraft::StoredMembership<CLId, u64, openraft::BasicNode>, Error> {
         match self.db.get(&membership_key(self.group_id))? {
-            Some(data) => bincode::deserialize(&data)
-                .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string()))),
+            Some(data) => match bincode::deserialize(&data) {
+                Ok(m) => Ok(m),
+                Err(e) => {
+                    tracing::warn!(
+                        len = data.len(),
+                        error = %e,
+                        "load_membership: incompatible data, deleting stale key"
+                    );
+                    self.db.delete(&membership_key(self.group_id))?;
+                    Ok(openraft::StoredMembership::default())
+                }
+            },
             None => Ok(openraft::StoredMembership::default()),
         }
     }
@@ -269,16 +340,12 @@ pub(crate) fn map_db_err(e: Error) -> ClusterError {
     }
 }
 
-pub(crate) fn db_to_storage_err(e: Error) -> openraft::StorageError<NodeId> {
-    openraft::StorageError::IO {
-        source: openraft::StorageIOError::read(openraft::AnyError::error(e.to_string())),
-    }
+pub(crate) fn db_to_storage_err(e: Error) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
 }
 
-pub(crate) fn db_to_storage_write_err(e: Error) -> openraft::StorageError<NodeId> {
-    openraft::StorageError::IO {
-        source: openraft::StorageIOError::write(openraft::AnyError::error(e.to_string())),
-    }
+pub(crate) fn db_to_storage_write_err(e: Error) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
 }
 
 /// Fallback: 扫描全部 log key 找 max_index, 用于旧数据兼容.
@@ -301,22 +368,25 @@ fn reconstruct_last_log_id_from_scan(
     }
     if let Some(max_idx) = max_index {
         let leader_id = match db.get(&log_key(gid, max_idx)) {
-            Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+            Ok(Some(data)) => match rmp_serde::from_slice::<<TypeConfig as openraft::RaftTypeConfig>::Entry>(&data) {
                 Ok(entry) => entry.log_id.leader_id,
-                Err(_) => openraft::CommittedLeaderId::new(0, 0),
+                Err(e) => {
+                    tracing::warn!(gid, max_idx, error = %e, "reconstruct_last_log_id: failed to deserialize log entry, using default");
+                    openraft::vote::leader_id_std::CommittedLeaderId::new(0)
+                }
             },
-            _ => openraft::CommittedLeaderId::new(0, 0),
+            _ => openraft::vote::leader_id_std::CommittedLeaderId::new(0),
         };
         state.last_log_id = Some(openraft::LogId::new(leader_id, max_idx));
     }
     Ok(())
 }
 
-/// Fallback: 扫描全部 log key 找 min_index, 用于旧数据兼容.
+/// Fallback: 扫描全部 log key 找第一个 index, 用于旧数据兼容.
 fn reconstruct_last_purged_log_id_from_scan(
     db: &crate::DB,
     gid: u64,
-    leader_id: openraft::CommittedLeaderId<NodeId>,
+    leader_id: CLId,
     state: &mut super::StorageState,
 ) -> Result<()> {
     let prefix = log_prefix(gid);
@@ -335,7 +405,7 @@ fn reconstruct_last_purged_log_id_from_scan(
         if first_idx > 0 {
             // Use the entry at first_idx to get the correct leader for the purged region.
             let lid = match db.get(&log_key(gid, first_idx)) {
-                Ok(Some(data)) => match rmp_serde::from_slice::<Entry<TypeConfig>>(&data) {
+                Ok(Some(data)) => match rmp_serde::from_slice::<<TypeConfig as openraft::RaftTypeConfig>::Entry>(&data) {
                     Ok(entry) => entry.log_id.leader_id,
                     Err(_) => leader_id,
                 },
@@ -354,12 +424,17 @@ mod tests {
     use crate::cluster::types::{Request, TypeConfig};
     use crate::config::Options;
     use crate::DB;
-    use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId, Vote};
+    use openraft::{EntryPayload, LogId, Vote};
     use tempfile::TempDir;
 
-    fn put_entry(index: u64, term: u64) -> Entry<TypeConfig> {
-        Entry {
-            log_id: LogId::new(CommittedLeaderId::new(term, 1), index),
+    type EOf = <TypeConfig as openraft::RaftTypeConfig>::Entry;
+
+    fn put_entry(index: u64, term: u64) -> EOf {
+        EOf {
+            log_id: LogId::new(
+                openraft::vote::leader_id_std::CommittedLeaderId::new(term),
+                index,
+            ),
             payload: EntryPayload::Normal(Request::Put {
                 key: format!("k{index}").into_bytes(),
                 value: format!("v{index}").into_bytes(),
@@ -377,7 +452,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let storage = open_storage(&dir);
         let vote = Vote {
-            leader_id: openraft::LeaderId::new(2, 1),
+            leader_id: openraft::vote::leader_id_std::LeaderId { term: 2, voted_for: 1 },
             committed: true,
         };
         storage.save_vote_internal(&vote).unwrap();
@@ -413,7 +488,7 @@ mod tests {
         storage
             .append_log_entries(&[put_entry(1, 1), put_entry(2, 1), put_entry(3, 1)])
             .unwrap();
-        let from = LogId::new(CommittedLeaderId::new(1, 1), 2);
+        let from = LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 2);
         storage.delete_logs_from(from).unwrap();
         assert_eq!(storage.get_log_entries(1..=3).unwrap().len(), 1);
         assert_eq!(storage.state.read().last_log_id.map(|id| id.index), Some(1));
@@ -431,7 +506,7 @@ mod tests {
                 put_entry(4, 1),
             ])
             .unwrap();
-        let purge_to = LogId::new(CommittedLeaderId::new(1, 1), 3);
+        let purge_to = LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), 3);
         storage.purge_logs_upto_internal(purge_to).unwrap();
         assert_eq!(storage.get_log_entries(1..=4).unwrap().len(), 1);
         assert_eq!(
@@ -447,7 +522,7 @@ mod tests {
         {
             let storage = open_storage(&dir);
             let vote = Vote {
-                leader_id: openraft::LeaderId::new(3, 2),
+                leader_id: openraft::vote::leader_id_std::LeaderId { term: 3, voted_for: 2 },
                 committed: true,
             };
             storage.save_vote_internal(&vote).unwrap();
@@ -460,7 +535,7 @@ mod tests {
         assert_eq!(
             storage.state.read().vote,
             Some(Vote {
-                leader_id: openraft::LeaderId::new(3, 2),
+                leader_id: openraft::vote::leader_id_std::LeaderId { term: 3, voted_for: 2 },
                 committed: true,
             })
         );

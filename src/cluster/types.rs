@@ -8,22 +8,19 @@ pub use crate::cluster::meta_types::MetaRequest;
 
 pub type NodeId = u64;
 
-/// OpenRaft 类型配置
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct TypeConfig;
+openraft::declare_raft_types!(
+    pub TypeConfig:
+        D = Request,
+        R = Response,
+        NodeId = u64,
+        Node = openraft::BasicNode,
+        Term = u64,
+        LeaderId = openraft::impls::leader_id_std::LeaderId<Self::Term, Self::NodeId>,
+        Entry = openraft::Entry<<Self::LeaderId as openraft::vote::RaftLeaderId>::Committed, Self::D, Self::NodeId, Self::Node>,
+        AsyncRuntime = openraft_rt_tokio::TokioRuntime,
+);
 
-impl openraft::RaftTypeConfig for TypeConfig {
-    type D = Request;
-    type R = Response;
-    type NodeId = NodeId;
-    type Node = openraft::BasicNode;
-    type Entry = openraft::Entry<TypeConfig>;
-    type SnapshotData = std::io::Cursor<Vec<u8>>;
-    type AsyncRuntime = openraft::TokioRuntime;
-    type Responder = openraft::impls::OneshotResponder<TypeConfig>;
-}
-
-pub type LogEntry = openraft::Entry<TypeConfig>;
+pub type LogEntry = <TypeConfig as openraft::RaftTypeConfig>::Entry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ThinWriteOp {
@@ -102,6 +99,36 @@ pub enum Request {
     MigrationGc { epoch: u64 },
 }
 
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Request::Put { key, .. } => write!(f, "Put(key_len={})", key.len()),
+            Request::Delete { key } => write!(f, "Delete(key_len={})", key.len()),
+            Request::PutConditional { key, .. } => {
+                write!(f, "PutConditional(key_len={})", key.len())
+            }
+            Request::WriteBatch(batch) => write!(f, "WriteBatch(ops={})", batch.len()),
+            Request::Meta(_) => write!(f, "Meta"),
+            Request::MigrationBarrier { token } => write!(f, "MigrationBarrier({})", token),
+            Request::MigrationWrite { epoch, ops } => {
+                write!(f, "MigrationWrite(epoch={}, ops={})", epoch, ops.len())
+            }
+            Request::MigrationGc { epoch } => write!(f, "MigrationGc(epoch={})", epoch),
+        }
+    }
+}
+
+impl std::fmt::Display for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Response::Ok => write!(f, "Ok"),
+            Response::Value(None) => write!(f, "Value(None)"),
+            Response::Value(Some(v)) => write!(f, "Value(len={})", v.len()),
+            Response::Error(msg) => write!(f, "Error({})", msg),
+        }
+    }
+}
+
 impl Request {
     pub fn to_batch(self) -> ThinWriteBatch {
         match self {
@@ -150,6 +177,8 @@ pub enum Response {
 }
 
 /// Raft 节点运行时配置
+pub use crate::cluster::log_committer::LogCommitterConfig;
+
 #[derive(Debug, Clone)]
 pub struct RaftNodeConfig {
     pub node_id: NodeId,
@@ -167,6 +196,8 @@ pub struct RaftNodeConfig {
     pub max_entry_size: u64,
     pub rpc_timeout_ms: u64,
     pub grpc_max_message_size: u64,
+    /// LogCommitter 配置 (Some 则启用异步批量写入, None 则为同步旧路径).
+    pub log_committer_config: Option<LogCommitterConfig>,
 }
 
 impl Default for RaftNodeConfig {
@@ -184,6 +215,7 @@ impl Default for RaftNodeConfig {
             max_entry_size: 8 * 1024 * 1024,
             rpc_timeout_ms: 200,
             grpc_max_message_size: 64 * 1024 * 1024,
+            log_committer_config: Some(LogCommitterConfig::default()),
         }
     }
 }
@@ -225,16 +257,17 @@ mod tests {
 
     #[test]
     fn test_request_serde_roundtrip() {
-        use openraft::{CommittedLeaderId, Entry, EntryPayload, LogId};
-        let entry = Entry::<TypeConfig> {
-            log_id: LogId::new(CommittedLeaderId::new(1, 1), 1),
+        use openraft::vote::leader_id_std::CommittedLeaderId;
+        use openraft::{EntryPayload, LogId};
+        let entry = LogEntry {
+            log_id: LogId::new(CommittedLeaderId::new(1), 1),
             payload: EntryPayload::Normal(Request::Put {
                 key: b"k".to_vec(),
                 value: b"v".to_vec(),
             }),
         };
         let bytes = rmp_serde::to_vec(&entry).unwrap();
-        let decoded: Entry<TypeConfig> = rmp_serde::from_slice(&bytes).unwrap();
+        let decoded: LogEntry = rmp_serde::from_slice(&bytes).unwrap();
         assert!(matches!(
             decoded.payload,
             EntryPayload::Normal(Request::Put { .. })

@@ -12,6 +12,8 @@ pub mod metrics;
 pub mod multi_raft_node;
 pub mod network;
 pub mod node;
+pub mod log_committer;
+pub mod pending_log;
 pub mod replica_allocator;
 pub mod router;
 pub mod sharded_storage;
