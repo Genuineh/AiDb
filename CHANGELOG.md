@@ -10,6 +10,7 @@
 ### Added
 
 - **性能日志微秒级插桩**: 5 处 `target: "perf"` 日志从毫秒改为微秒精度 — `raft_propose_ok` (node.rs), `raft_append_log` (storage/log.rs), `raft_apply_batch` (storage/apply.rs), `raft_rpc_ae_done` (network.rs), `db_write_done` (engine/db/inner.rs). 支持 eBPF 火焰图交叉验证.
+- **集群写性能优化 (Single-WAL & Raft Batch Tuning)**: 在 `OpenRaftStorage::apply_entries_internal` 阶段写入 LSM StateMachine DB 时引入 `DB::write_without_wal` 免去 DB 自身重复 WAL 磁盘写入, 消除双重 WAL 100% 写放大；调优 `max_payload_entries` 默认值从 100 提升至 512, 提升单次 gRPC 传输打包效率.
 - **OpenRaft v0.10.0-alpha.31 升级**: 适配 `RaftTypeConfig` API 变更 (`declare_raft_types!` 宏); `Entry` 4 泛型参数; `RaftLogStorage` / `RaftStateMachine` / `RaftLogReader` trait 重命名与 `io::Error` 统一; `RaftNetworkV2` / `IOFlushed` callback; `LeaderId` 结构变化.
 - **PendingLogOverlay**: Raft log 的内存缓冲区, 在 LogCommitter 异步 flush 完成前使 entry 立即可读, 支持 generation 隔离. 文件: `src/cluster/pending_log.rs`.
 - **LogCommitter**: 异步批量 I/O actor, 基于 `spawn_blocking` + bounded mpsc channel, 支持 `max_commands` / `max_entries` / `max_bytes` / `delay_us` 四维 batching, generation 保护; `IoCommand` enum (Append / SaveVote / TruncateAfter / Purge / FlushAndSync / Shutdown); `oneshot::Sender` 确认信号. 文件: `src/cluster/log_committer.rs` + `RaftNodeConfig.log_committer_config`.
