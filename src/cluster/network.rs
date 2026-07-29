@@ -257,7 +257,12 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                 ))));
             }
         };
-        tracing::info!(target: "perf", group_id, grpc_ms = t0.elapsed().as_millis(), "raft_rpc_ae_done");
+        tracing::info!(
+            target: "perf",
+            group_id,
+            grpc_us = t0.elapsed().as_micros(),
+            "raft_rpc_ae_done"
+        );
 
         let resp = response.into_inner();
         if resp.success {
@@ -507,6 +512,9 @@ impl RaftNetworkClientFactory {
 /// Tonic's `Channel::from_shared` requires a valid URI; bare addresses
 /// like `127.0.0.1:20349` are rejected.
 fn normalize_grpc_addr(addr: &str) -> String {
+    if addr.is_empty() {
+        return String::new();
+    }
     if addr.contains("://") {
         addr.to_string()
     } else {

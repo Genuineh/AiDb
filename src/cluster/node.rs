@@ -365,7 +365,14 @@ impl OpenRaftNode {
             match self.raft.client_write(request.clone()).await {
                 Ok(response) => {
                     let elapsed = t0.elapsed();
-                    tracing::info!(target: "perf", group_id = self.group_id, total_ms = elapsed.as_millis(), client_write_ms = t1.elapsed().as_millis(), attempt, "raft_propose_ok");
+                    tracing::info!(
+                        target: "perf",
+                        group_id = self.group_id,
+                        total_us = elapsed.as_micros(),
+                        client_write_us = t1.elapsed().as_micros(),
+                        attempt,
+                        "raft_propose_ok"
+                    );
                     // size-based snapshot trigger (F-008)
                     self.track_proposed_bytes(estimated_size);
                     return Ok(response.data);

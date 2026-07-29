@@ -167,7 +167,7 @@ impl OpenRaftStorage {
                             batch_size = count,
                             from_index = entries[batch_start].log_id.index,
                             to_index = last_log_id.index,
-                            ms = t0.elapsed().as_millis(),
+                            us = t0.elapsed().as_micros(),
                             "raft_apply_batch",
                         );
 

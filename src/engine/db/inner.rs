@@ -821,7 +821,7 @@ impl DB {
             self.wait_group_commit_sync(last_seq)?;
         }
 
-        let lock_hold_ms = lock_acquired.elapsed().as_millis();
+        let lock_hold_us = lock_acquired.elapsed().as_micros();
         if key_delta > 0 {
             self.total_key_count
                 .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
@@ -842,8 +842,14 @@ impl DB {
             );
         }
         self.maybe_freeze()?;
-        let total_ms = t0.elapsed().as_millis();
-        tracing::info!(target: "perf", op_count = batch.len(), total_ms, lock_hold_ms, "db_write_done");
+        let total_us = t0.elapsed().as_micros();
+        tracing::info!(
+            target: "perf",
+            op_count = batch.len(),
+            total_us,
+            lock_hold_us,
+            "db_write_done"
+        );
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation_duration("write_batch", op_start.elapsed().as_secs_f64());
