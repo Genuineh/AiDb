@@ -856,6 +856,85 @@ impl DB {
         Ok(())
     }
 
+    /// 写入 WriteBatch 但不经由 DB 自身的 WAL (适用于 StateMachine 写入, 避免双重 WAL 磁盘开销).
+    #[tracing::instrument(level = "debug", name = "db_write_batch_no_wal", skip(self, batch))]
+    pub fn write_without_wal(&self, batch: &WriteBatch) -> Result<()> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+        let t0 = std::time::Instant::now();
+        #[cfg(feature = "monitoring")]
+        let op_start = std::time::Instant::now();
+        self.check_not_closed()?;
+        self.check_write_stall();
+        #[cfg(feature = "monitoring")]
+        crate::metrics::record_operation("write_batch_no_wal");
+
+        let n = batch.len() as u64;
+        let _guard = self.write_lock.lock();
+        let lock_acquired = std::time::Instant::now();
+        let base = self.alloc_sequence(n)?;
+
+        let mut key_delta: isize = 0;
+        {
+            let mt = self.memtable.read();
+            for (i, op) in batch.operations.iter().enumerate() {
+                let seq = base + i as u64;
+                match op {
+                    WriteOp::Put { key, value } => {
+                        Self::validate_user_key(key)?;
+                        if !mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
+                            key_delta += 1;
+                        }
+                        mt.put(key, value, seq)?;
+                    }
+                    WriteOp::Delete { key } => {
+                        Self::validate_user_key(key)?;
+                        if mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
+                            key_delta -= 1;
+                        }
+                        mt.delete(key, seq)?;
+                    }
+                }
+            }
+        }
+        drop(_guard);
+
+        let lock_hold_us = lock_acquired.elapsed().as_micros();
+        if key_delta > 0 {
+            self.total_key_count
+                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(
+                self.total_key_count.load(AtomicOrdering::Relaxed),
+            );
+        } else if key_delta < 0 {
+            let sub = (-key_delta) as usize;
+            self.total_key_count
+                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
+                    Some(c.saturating_sub(sub))
+                })
+                .ok();
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(
+                self.total_key_count.load(AtomicOrdering::Relaxed),
+            );
+        }
+        self.maybe_freeze()?;
+        let total_us = t0.elapsed().as_micros();
+        tracing::info!(
+            target: "perf",
+            op_count = batch.len(),
+            total_us,
+            lock_hold_us,
+            "db_write_no_wal_done"
+        );
+        tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch_no_wal");
+        #[cfg(feature = "monitoring")]
+        crate::metrics::record_operation_duration("write_batch_no_wal", op_start.elapsed().as_secs_f64());
+        Ok(())
+    }
+
     /// 删除 `[start, end)` 半开区间内的全部 user key (RangeTombstone, O(1) 写入).
     #[tracing::instrument(name = "db_delete_range", skip(self, start, end))]
     pub fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {

@@ -208,7 +208,7 @@ impl Default for RaftNodeConfig {
             election_timeout_min: 500,
             election_timeout_max: 1000,
             heartbeat_interval: 100,
-            max_payload_entries: 100,
+            max_payload_entries: 512,
             snapshot_logs_since_last: 1000,
             snapshot_size_threshold: None,
             linearizable_read: false,

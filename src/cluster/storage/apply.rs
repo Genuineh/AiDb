@@ -154,7 +154,7 @@ impl OpenRaftStorage {
                         #[cfg(feature = "cluster-test-util")]
                         crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyBeforePersist);
                         self.db
-                            .write(&batch)
+                            .write_without_wal(&batch)
                             .map_err(|e| Error::Cluster(map_db_err(e)))?;
                         #[cfg(feature = "cluster-test-util")]
                         crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyAfterPersist);
