@@ -57,9 +57,9 @@ pub struct LogCommitterConfig {
 impl Default for LogCommitterConfig {
     fn default() -> Self {
         Self {
-            max_commands: 32,
-            max_entries: 256,
-            max_bytes: 1_048_576, // 1MB
+            max_commands: 64,
+            max_entries: 512,
+            max_bytes: 2_048_576, // 2MB
             delay_us: 0,
         }
     }
@@ -272,7 +272,7 @@ async fn run_committer(
     }
 }
 
-/// 构建一个 batch: 收第一个命令后, 按配置凑批或立即返回.
+/// 构建一个 batch: 收到首个命令后, 使用非阻塞 try_recv 快速清空通道积压命令 (自适应凑批, 0 超时硬等待).
 async fn build_batch(
     rx: &mut mpsc::UnboundedReceiver<IoCommand>,
     cfg: &LogCommitterConfig,
@@ -280,20 +280,11 @@ async fn build_batch(
     let first = rx.recv().await?;
     let mut batch = BatchState::new(first);
 
-    if cfg.delay_us == 0 {
-        return Some(batch.commands);
-    }
-
-    let deadline = Instant::now() + Duration::from_micros(cfg.delay_us);
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() || !batch.can_add(cfg) {
-            break;
-        }
-        match tokio::time::timeout(remaining, rx.recv()).await {
-            Ok(Some(cmd)) => batch.add(cmd),
-            Ok(None) => break,
-            Err(_) => break,
+    while batch.can_add(cfg) {
+        match rx.try_recv() {
+            Ok(cmd) => batch.add(cmd),
+            Err(mpsc::error::TryRecvError::Empty) => break,
+            Err(mpsc::error::TryRecvError::Disconnected) => break,
         }
     }
     Some(batch.commands)

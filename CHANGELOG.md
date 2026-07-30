@@ -9,6 +9,9 @@
 
 ### Added
 
+- **LogCommitter 自适应 Raft 组提交优化 (Adaptive Non-Blocking Group Commit)**:
+  - 重构 `build_batch`: 采用非阻塞 `try_recv()` 在微秒级内拉取通道积压的 `IoCommand`，消除 `delay_us` 强行等待，实现高并发下的自适应组提交 (Group Commit)，同时保持单请求 0 延迟等待惩罚.
+  - 调整 `LogCommitterConfig::default()` 容量上限至 `max_commands: 64`, `max_entries: 512`, `max_bytes: 2MB`. 文件: `src/cluster/log_committer.rs`.
 - **LSM Tree 读路径零分配优化**:
   - 新增 `encode_internal_key_buffered`: 利用 `[u8; 256]` 栈缓冲区替代堆动态内存分配, 消除构造 `seek_key` 时的 `Vec<u8>` 堆申请.
   - 重构 `get_from_sstables`: 按引用在读锁 `tables = self.sstables.read()` 下直接只读迭代 `&tables[0]` (L0) 与 `&tables[1..]` (L1+), 消除每次读请求全量克隆 `tables[0]` / `tables[1..]` 导致的动态堆分配及几十次 `Arc::clone` 原子计数开销. 文件: `src/engine/db/inner.rs`, `src/engine/memtable/internal_key.rs`.
