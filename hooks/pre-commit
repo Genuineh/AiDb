@@ -9,17 +9,8 @@ cargo fmt --check || {
 }
 
 export RUSTFLAGS='-D warnings'
-cargo clippy --all-targets || {
-  echo "ERROR: Clippy found issues."
-  exit 1
-}
-
-if ! command -v protoc >/dev/null 2>&1; then
-  echo "ERROR: protoc required for cluster clippy (same as CI). Install protobuf-compiler."
-  exit 1
-fi
-cargo clippy --all-targets --features cluster || {
-  echo "ERROR: Cluster clippy found issues."
+cargo clippy --all-targets --all-features || {
+  echo "ERROR: Clippy found issues under --all-features."
   exit 1
 }
 

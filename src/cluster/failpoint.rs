@@ -40,6 +40,7 @@ impl FailPoint {
     }
 
     /// 从字符串解析 failpoint 名称 (大小写不敏感).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<FailPoint> {
         let lower = s.to_lowercase();
         match lower.as_str() {
@@ -85,6 +86,12 @@ struct FailPointState {
 /// 故障注入注册表.
 pub struct FailPointRegistry {
     inner: RwLock<HashMap<FailPoint, FailPointState>>,
+}
+
+impl Default for FailPointRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FailPointRegistry {
@@ -193,7 +200,7 @@ static FAILPOINT_REGISTRY: OnceLock<FailPointRegistry> = OnceLock::new();
 
 /// 获取全局 failpoint 注册表.
 pub fn registry() -> &'static FailPointRegistry {
-    FAILPOINT_REGISTRY.get_or_init(|| FailPointRegistry::new())
+    FAILPOINT_REGISTRY.get_or_init(FailPointRegistry::new)
 }
 
 /// 触发 failpoint 的宏/函数, 条件编译.
