@@ -310,7 +310,7 @@ impl CompactionJob {
             let value_type = extract_value_type(&key)?;
             let seq = extract_sequence(&key)?;
 
-            if last_user_key.as_deref().map_or(true, |prev| prev != user_key) {
+            if last_user_key.as_deref() != Some(user_key) {
                 range_tracker.advance_past(user_key);
             }
 
@@ -493,6 +493,7 @@ fn should_filter_impl(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_sub_compaction(
     readers: &[Arc<SSTableReader>],
     file_number: u64,
@@ -559,7 +560,7 @@ fn write_sub_compaction(
             }
         }
 
-        if last_user_key.as_deref().map_or(true, |prev| prev != user_key) {
+        if last_user_key.as_deref() != Some(user_key) {
             range_tracker.advance_past(user_key);
         }
 

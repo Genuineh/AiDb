@@ -22,7 +22,7 @@ struct EvenFilter;
 
 impl CompactionFilter for EvenFilter {
     fn filter(&self, _level: usize, _key: &[u8], value: &[u8]) -> FilterDecision {
-        if value.last().map_or(false, |b| b % 2 == 0) {
+        if value.last().is_some_and(|b| b % 2 == 0) {
             FilterDecision::Remove
         } else {
             FilterDecision::Keep

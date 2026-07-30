@@ -7,10 +7,12 @@ use tempfile::tempdir;
 #[test]
 fn test_large_memtable_flush_completes() {
     let dir = tempdir().unwrap();
-    let mut opts = Options::default();
-    opts.memtable_size = 64 * 1024 * 1024;
-    opts.max_write_buffer_number = 2;
-    opts.sync_wal = false;
+    let opts = Options {
+        memtable_size: 64 * 1024 * 1024,
+        max_write_buffer_number: 2,
+        sync_wal: false,
+        ..Default::default()
+    };
     let db = DB::open(dir.path(), opts).unwrap();
     let value = vec![b'x'; 64 * 1024];
     for i in 0..1100u32 {

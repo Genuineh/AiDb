@@ -21,6 +21,9 @@ pub enum PointState {
     Absent,
 }
 
+/// 墓碑记录元组 (start, end, seq)
+pub type TombstoneRecord = (Vec<u8>, Vec<u8>, u64);
+
 /// 已冻结、等待 flush 的 MemTable (无 put/delete, 仅读).
 pub struct ImmutableMemTable {
     table: MemTable,
@@ -60,7 +63,7 @@ impl ImmutableMemTable {
         self.table.has_range_tombstones()
     }
 
-    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
+    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<TombstoneRecord>> {
         self.table.collect_range_tombstones()
     }
 
@@ -184,7 +187,7 @@ impl MemTable {
         ))
     }
 
-    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<(Vec<u8>, Vec<u8>, u64)>> {
+    pub(crate) fn collect_range_tombstones(&self) -> Result<Vec<TombstoneRecord>> {
         Ok(self
             .range_index
             .read()

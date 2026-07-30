@@ -13,7 +13,7 @@ use crate::engine::compaction::{
     VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
-    encode_internal_key, encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable,
+    encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable,
     PointState, ValueType, SEQUENCE_LIMIT,
 };
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
@@ -670,12 +670,12 @@ impl DB {
         let mut absorb_point = |state: PointState| {
             match state {
                 PointState::Put(value, seq) => {
-                    if best_put.as_ref().map_or(true, |(_, s)| seq > *s) {
+                    if best_put.as_ref().is_none_or(|(_, s)| seq > *s) {
                         best_put = Some((value, seq));
                     }
                 }
                 PointState::Delete(seq) => {
-                    if best_delete.map_or(true, |s| seq > s) {
+                    if best_delete.is_none_or(|s| seq > s) {
                         best_delete = Some(seq);
                     }
                 }
@@ -685,7 +685,7 @@ impl DB {
 
         let mut absorb_range = |seq: Option<u64>| {
             if let Some(s) = seq {
-                if best_range.map_or(true, |b| s > b) {
+                if best_range.is_none_or(|b| s > b) {
                     best_range = Some(s);
                 }
             }
