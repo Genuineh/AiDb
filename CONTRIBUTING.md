@@ -31,7 +31,7 @@ src/
 
 ## Git hooks
 
-推送前建议安装 pre-commit (fmt + clippy, **不含 test**):
+建议安装 Git 钩子 (`pre-commit` 代码与全 Feature Clippy 校验、`commit-msg` Conventional Commits 提交规范校验):
 
 ```bash
 ./install-hooks.sh   # 软链 hooks/* → .git/hooks/
@@ -40,15 +40,9 @@ src/
 [`hooks/pre-commit`](hooks/pre-commit) 依次执行:
 
 1. `cargo fmt --check`
-2. `cargo clippy --all-targets` (`RUSTFLAGS='-D warnings'`)
-3. `cargo clippy --all-targets --features cluster` (需本机 `protoc`)
+2. `cargo clippy --all-targets --all-features` (`RUSTFLAGS='-D warnings'`)
 
-cluster clippy 与 CI `test-cluster` job 一致:
-
-```bash
-# Debian/Ubuntu
-sudo apt-get install -y protobuf-compiler
-```
+[`hooks/commit-msg`](hooks/commit-msg) 校验提交说明是否遵循 Conventional Commits 规范 (如 `feat:`, `fix:`, `chore:` 等).
 
 **注意**: hook **不跑** `cargo test`; 测试在 CI (或 push 前手动) 执行.
 
@@ -56,7 +50,8 @@ sudo apt-get install -y protobuf-compiler
 
 | 层级 | 做什么 | 何时失败 |
 |------|--------|----------|
-| pre-commit | fmt + clippy (默认 + cluster) | `git commit` |
+| pre-commit | fmt + clippy (`--all-features`) | `git commit` |
+| commit-msg | Conventional Commits 描述格式校验 | `git commit` |
 | CI `test-default` | fmt → clippy → test (默认 feature) | push / PR |
 | CI `test-cluster` | clippy + test (`--features cluster`, 装 protoc) | push / PR |
 | CI `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) | `test-default` 通过后 |
