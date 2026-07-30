@@ -2,7 +2,7 @@
 
 use crate::engine::memtable::{
     encode_internal_key, extract_sequence, extract_user_key, extract_value_type, range_covers,
-    ImmutableMemTable, InternalKeyBytes, K_MAX_SEQUENCE, MemTable, MemTableIterator, ValueType,
+    ImmutableMemTable, InternalKeyBytes, MemTable, MemTableIterator, ValueType, K_MAX_SEQUENCE,
 };
 use crate::engine::sstable::{SSTableIterator, SSTableReader};
 use crate::error::Result;
@@ -340,9 +340,7 @@ impl DBIterator {
     fn max_covering_range_seq(&self, user_key: &[u8]) -> Option<u64> {
         self.range_tombstones
             .iter()
-            .filter(|(start, end, seq)| {
-                *seq <= self.sequence && range_covers(start, end, user_key)
-            })
+            .filter(|(start, end, seq)| *seq <= self.sequence && range_covers(start, end, user_key))
             .map(|(_, _, seq)| *seq)
             .max()
     }

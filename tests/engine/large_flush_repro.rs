@@ -25,6 +25,9 @@ fn test_large_memtable_flush_completes() {
     );
     db.flush().unwrap();
     assert_eq!(db.immutable_memtable_count(), 0);
-    assert!(db.level0_sstable_count() >= 1, "L0 SST should exist after flush");
+    assert!(
+        db.level0_sstable_count() >= 1,
+        "L0 SST should exist after flush"
+    );
     db.close().unwrap();
 }

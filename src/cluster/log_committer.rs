@@ -17,7 +17,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use openraft::vote::leader_id_std::{CommittedLeaderId, LeaderId};
 use openraft::{LogId, Vote};
@@ -111,6 +111,7 @@ pub(crate) enum IoCommand {
     FlushAndSync {
         done: oneshot::Sender<()>,
     },
+    #[allow(dead_code)]
     Shutdown,
 }
 
@@ -140,40 +141,40 @@ impl LogCommitterHandle {
             count,
             done: tx,
         })
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
         rx.await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "committer channel closed"))?
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|_| std::io::Error::other("committer channel closed"))?
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     /// 发送 SaveVote 命令, 等待完成.
     pub async fn save_vote(&self, vote: VOf) -> std::io::Result<()> {
         let (tx, rx) = oneshot::channel();
         self.send(IoCommand::SaveVote { vote, done: tx })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         rx.await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "committer channel closed"))?
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|_| std::io::Error::other("committer channel closed"))?
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     /// 发送 TruncateAfter 命令, 等待完成.
     pub async fn truncate_after(&self, log_id: Option<LIdOf>) -> std::io::Result<()> {
         let (tx, rx) = oneshot::channel();
         self.send(IoCommand::TruncateAfter { log_id, done: tx })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         rx.await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "committer channel closed"))?
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|_| std::io::Error::other("committer channel closed"))?
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     /// 发送 Purge 命令, 等待完成.
     pub async fn purge(&self, log_id: LIdOf) -> std::io::Result<()> {
         let (tx, rx) = oneshot::channel();
         self.send(IoCommand::Purge { log_id, done: tx })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         rx.await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "committer channel closed"))?
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|_| std::io::Error::other("committer channel closed"))?
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     /// 同步等待所有 pending 命令 flush 完毕.
@@ -294,6 +295,7 @@ struct BatchState {
     commands: Vec<IoCommand>,
     entry_count: u64,
     approx_bytes: usize,
+    #[allow(dead_code)]
     first_cmd_at: Instant,
 }
 
@@ -353,7 +355,11 @@ async fn flush_batch(
                 count,
                 done,
             } => {
-                appends.push(AppendOp { first_index, count, done });
+                appends.push(AppendOp {
+                    first_index,
+                    count,
+                    done,
+                });
                 *pending_commands = pending_commands.saturating_sub(1);
                 *pending_entries = pending_entries.saturating_sub(count);
             }
@@ -374,8 +380,12 @@ async fn flush_batch(
         }
     }
 
-    metrics.pending_commands.store(*pending_commands, Ordering::Relaxed);
-    metrics.pending_entries.store(*pending_entries, Ordering::Relaxed);
+    metrics
+        .pending_commands
+        .store(*pending_commands, Ordering::Relaxed);
+    metrics
+        .pending_entries
+        .store(*pending_entries, Ordering::Relaxed);
 
     // 提取 append entry 数据 (从 overlay drain)
     // 递增 generation 以防止过时 flush 误删新 entry
@@ -399,12 +409,19 @@ async fn flush_batch(
         result
     };
     // Overlay 清理所需的数据: 每个 append batch 的范围.
-    let overlay_ranges: Vec<(u64, u64)> = batch_entries.iter().map(|(start, entries)| (*start, entries.len() as u64)).collect();
+    let overlay_ranges: Vec<(u64, u64)> = batch_entries
+        .iter()
+        .map(|(start, entries)| (*start, entries.len() as u64))
+        .collect();
 
     let total_entries: u64 = batch_entries.iter().map(|(_, e)| e.len() as u64).sum();
-    let last_entry = batch_entries.last().and_then(|(_, entries)| entries.last()).cloned();
+    let last_entry = batch_entries
+        .last()
+        .and_then(|(_, entries)| entries.last())
+        .cloned();
     let total_cmds_val =
-        (appends.len() + truncates.len() + purges.len() + usize::from(vote_to_save.is_some())) as u64;
+        (appends.len() + truncates.len() + purges.len() + usize::from(vote_to_save.is_some()))
+            as u64;
 
     let db_clone = Arc::clone(db);
     let gid = group_id;
@@ -413,18 +430,31 @@ async fn flush_batch(
     let vote = vote_to_save;
 
     let result = tokio::task::spawn_blocking(move || {
-        sync_flush(&db_clone, gid, &batch_entries, vote, &truncate_data, &purge_data)
+        sync_flush(
+            &db_clone,
+            gid,
+            &batch_entries,
+            vote,
+            &truncate_data,
+            &purge_data,
+        )
     })
     .await;
 
     match result {
         Ok(Ok(())) => {
             metrics.flush_count.fetch_add(1, Ordering::Relaxed);
-            metrics.total_entries_flushed.fetch_add(total_entries, Ordering::Relaxed);
-            metrics.total_commands_flushed.fetch_add(total_cmds_val, Ordering::Relaxed);
+            metrics
+                .total_entries_flushed
+                .fetch_add(total_entries, Ordering::Relaxed);
+            metrics
+                .total_commands_flushed
+                .fetch_add(total_cmds_val, Ordering::Relaxed);
 
             if let Some(ref last) = last_entry {
-                metrics.durable_index.store(last.log_id.index, Ordering::Relaxed);
+                metrics
+                    .durable_index
+                    .store(last.log_id.index, Ordering::Relaxed);
             }
 
             // 从 overlay 移除已 flush 的 entry
@@ -493,16 +523,30 @@ fn send_all_errors(
     err_msg: &str,
 ) {
     for op in appends {
-        let _ = op.done.send(Err(crate::error::Error::Cluster(ClusterError::Internal(err_msg.to_string()))));
+        let _ = op
+            .done
+            .send(Err(crate::error::Error::Cluster(ClusterError::Internal(
+                err_msg.to_string(),
+            ))));
     }
     if let Some(done) = vote_done {
-        let _ = done.send(Err(crate::error::Error::Cluster(ClusterError::Internal(err_msg.to_string()))));
+        let _ = done.send(Err(crate::error::Error::Cluster(ClusterError::Internal(
+            err_msg.to_string(),
+        ))));
     }
     for op in truncates {
-        let _ = op.done.send(Err(crate::error::Error::Cluster(ClusterError::Internal(err_msg.to_string()))));
+        let _ = op
+            .done
+            .send(Err(crate::error::Error::Cluster(ClusterError::Internal(
+                err_msg.to_string(),
+            ))));
     }
     for op in purges {
-        let _ = op.done.send(Err(crate::error::Error::Cluster(ClusterError::Internal(err_msg.to_string()))));
+        let _ = op
+            .done
+            .send(Err(crate::error::Error::Cluster(ClusterError::Internal(
+                err_msg.to_string(),
+            ))));
     }
 }
 
@@ -536,8 +580,8 @@ fn sync_flush(
         }
 
         if let Some(v) = vote {
-            let data = rmp_serde::to_vec(&v)
-                .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+            let data =
+                rmp_serde::to_vec(&v).map_err(|e| ClusterError::Serialization(e.to_string()))?;
             batch.put(keys::vote_key(group_id), data);
         }
 
@@ -546,10 +590,8 @@ fn sync_flush(
             let start = keys::log_key(group_id, 0);
             let end = keys::log_key(group_id, lid.index.saturating_add(1));
             if let Ok(iter) = db.scan(Some(&start), Some(&end)) {
-                for item in iter {
-                    if let Ok((key, _)) = item {
-                        batch.delete(key);
-                    }
+                for (key, _) in iter.flatten() {
+                    batch.delete(key);
                 }
             }
         }
@@ -591,7 +633,7 @@ fn sync_flush(
 mod tests {
     use super::*;
     use crate::cluster::storage::keys::{log_key, vote_key};
-    use crate::cluster::types::{Request, TypeConfig};
+    use crate::cluster::types::Request;
     use crate::config::Options;
     use openraft::vote::leader_id_std::CommittedLeaderId;
     use openraft::vote::leader_id_std::LeaderId;
@@ -688,7 +730,10 @@ mod tests {
         }
         handle.append(1, 3).await.unwrap();
 
-        handle.purge(LogId::new(CommittedLeaderId::new(1), 2)).await.unwrap();
+        handle
+            .purge(LogId::new(CommittedLeaderId::new(1), 2))
+            .await
+            .unwrap();
 
         assert!(db.get(&log_key(1, 3)).unwrap().is_some(), "entry 3 exists");
     }

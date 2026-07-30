@@ -56,8 +56,9 @@ impl MetaStateMachine {
     pub fn reload_from_db(&self) -> Result<()> {
         let cluster_meta = match self.db.get(&meta_cluster_meta_key())? {
             Some(bytes) => {
-                let meta: ClusterMeta = rmp_serde::from_slice(&bytes)
-                    .map_err(|e| Error::Cluster(ClusterError::Serialization(format!("cluster_meta: {}", e))))?;
+                let meta: ClusterMeta = rmp_serde::from_slice(&bytes).map_err(|e| {
+                    Error::Cluster(ClusterError::Serialization(format!("cluster_meta: {}", e)))
+                })?;
                 if meta.format_version > 1 {
                     return Err(Error::Corruption(format!(
                         "unsupported meta format_version {}",
@@ -71,8 +72,9 @@ impl MetaStateMachine {
 
         let slot_table = match self.db.get(&meta_slot_table_key())? {
             Some(bytes) => {
-                let table: SlotTable = rmp_serde::from_slice(&bytes)
-                    .map_err(|e| Error::Cluster(ClusterError::Serialization(format!("slot_table: {}", e))))?;
+                let table: SlotTable = rmp_serde::from_slice(&bytes).map_err(|e| {
+                    Error::Cluster(ClusterError::Serialization(format!("slot_table: {}", e)))
+                })?;
                 if table.len() != SLOT_COUNT {
                     return Err(Error::Corruption(format!(
                         "invalid slot_table length {}",
@@ -85,14 +87,22 @@ impl MetaStateMachine {
         };
 
         let migration_state = match self.db.get(&meta_migration_state_key())? {
-            Some(bytes) => rmp_serde::from_slice(&bytes)
-                .map_err(|e| Error::Cluster(ClusterError::Serialization(format!("migration_state: {}", e))))?,
+            Some(bytes) => rmp_serde::from_slice(&bytes).map_err(|e| {
+                Error::Cluster(ClusterError::Serialization(format!(
+                    "migration_state: {}",
+                    e
+                )))
+            })?,
             None => None,
         };
 
         let migration_epoch = match self.db.get(&meta_migration_epoch_key())? {
-            Some(bytes) => rmp_serde::from_slice(&bytes)
-                .map_err(|e| Error::Cluster(ClusterError::Serialization(format!("migration_epoch: {}", e))))?,
+            Some(bytes) => rmp_serde::from_slice(&bytes).map_err(|e| {
+                Error::Cluster(ClusterError::Serialization(format!(
+                    "migration_epoch: {}",
+                    e
+                )))
+            })?,
             None => None,
         };
 
@@ -1101,7 +1111,10 @@ mod tests {
             slots: vec![0, 1],
         })
         .unwrap();
-        assert!(sm.get_migration_epoch().is_none(), "无活跃迁移时 epoch 必须为 None");
+        assert!(
+            sm.get_migration_epoch().is_none(),
+            "无活跃迁移时 epoch 必须为 None"
+        );
 
         sm.apply_meta_request(MetaRequest::BeginSlotMigration {
             source_group: 1,

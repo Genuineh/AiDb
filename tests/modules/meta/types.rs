@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use aidb::cluster::types::LogEntry;
-use aidb::cluster::{MetaRequest, Request, TypeConfig};
+use aidb::cluster::{MetaRequest, Request};
 
 #[test]
 fn test_meta_types_serde_roundtrip() {

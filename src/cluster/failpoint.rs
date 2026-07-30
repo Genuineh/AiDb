@@ -43,11 +43,17 @@ impl FailPoint {
     pub fn from_str(s: &str) -> Option<FailPoint> {
         let lower = s.to_lowercase();
         match lower.as_str() {
-            "appendbeforedbwrite" | "append_before_db_write" => Some(FailPoint::AppendBeforeDbWrite),
+            "appendbeforedbwrite" | "append_before_db_write" => {
+                Some(FailPoint::AppendBeforeDbWrite)
+            }
             "applybeforepersist" | "apply_before_persist" => Some(FailPoint::ApplyBeforePersist),
             "applyafterpersist" | "apply_after_persist" => Some(FailPoint::ApplyAfterPersist),
-            "truncatebeforepersist" | "truncate_before_persist" => Some(FailPoint::TruncateBeforePersist),
-            "truncateafterpersist" | "truncate_after_persist" => Some(FailPoint::TruncateAfterPersist),
+            "truncatebeforepersist" | "truncate_before_persist" => {
+                Some(FailPoint::TruncateBeforePersist)
+            }
+            "truncateafterpersist" | "truncate_after_persist" => {
+                Some(FailPoint::TruncateAfterPersist)
+            }
             "purgebeforepersist" | "purge_before_persist" => Some(FailPoint::PurgeBeforePersist),
             "purgeafterpersist" | "purge_after_persist" => Some(FailPoint::PurgeAfterPersist),
             _ => None,

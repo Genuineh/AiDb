@@ -369,9 +369,11 @@ impl SlotMigrationManager {
 
     fn persist_run_record(&self, record: &MigrationRunRecord) -> Result<()> {
         let path = Self::run_record_path(&self.checkpoint_dir);
-        let tmp = self.checkpoint_dir.join(format!("{}.tmp", MIGRATION_RUN_FILE));
-        let bytes = bincode::serialize(record)
-            .map_err(|e| ClusterError::Serialization(e.to_string()))?;
+        let tmp = self
+            .checkpoint_dir
+            .join(format!("{}.tmp", MIGRATION_RUN_FILE));
+        let bytes =
+            bincode::serialize(record).map_err(|e| ClusterError::Serialization(e.to_string()))?;
         std::fs::write(&tmp, bytes).map_err(ClusterError::Io)?;
         std::fs::rename(&tmp, &path).map_err(ClusterError::Io)?;
         Ok(())
@@ -384,7 +386,9 @@ impl SlotMigrationManager {
 
     fn write_quiesce_token(&self, token: u64) -> Result<()> {
         let path = self.quiesce_token_path();
-        let tmp = self.checkpoint_dir.join(format!("{}.tmp", QUIESCE_TOKEN_FILE));
+        let tmp = self
+            .checkpoint_dir
+            .join(format!("{}.tmp", QUIESCE_TOKEN_FILE));
         std::fs::write(&tmp, token.to_string()).map_err(ClusterError::Io)?;
         std::fs::rename(&tmp, &path).map_err(ClusterError::Io)?;
         Ok(())
@@ -516,7 +520,7 @@ impl SlotMigrationManager {
             Some(SlotMigrationState::Frozen { target_group, .. }) => {
                 let target = target_group;
                 let work = async {
-                    let token = Self::now_ms() ^ (self.node_id as u64).wrapping_mul(0x9e37);
+                    let token = Self::now_ms() ^ self.node_id.wrapping_mul(0x9e37);
                     match self
                         .multi_raft
                         .propose_group(target, Request::MigrationBarrier { token })
@@ -582,9 +586,15 @@ impl SlotMigrationManager {
         let epoch = run.migration_id;
 
         let work = async {
-            let first = self.multi_raft.read_migration_tip(target_group, epoch).await?;
+            let first = self
+                .multi_raft
+                .read_migration_tip(target_group, epoch)
+                .await?;
             tokio::time::sleep(std::time::Duration::from_millis(QUIESCE_STABLE_MS)).await;
-            let second = self.multi_raft.read_migration_tip(target_group, epoch).await?;
+            let second = self
+                .multi_raft
+                .read_migration_tip(target_group, epoch)
+                .await?;
             if first != second {
                 return Err(ClusterError::InvalidState(
                     "migration oplog tip not stable yet, retry drain".into(),
@@ -593,8 +603,7 @@ impl SlotMigrationManager {
             }
             Ok(())
         };
-        match tokio::time::timeout(std::time::Duration::from_millis(QUIESCE_TIMEOUT_MS), work)
-            .await
+        match tokio::time::timeout(std::time::Duration::from_millis(QUIESCE_TIMEOUT_MS), work).await
         {
             Ok(r) => r,
             Err(_) => Err(ClusterError::Timeout("drain_oplog_tip_stable timed out".into()).into()),

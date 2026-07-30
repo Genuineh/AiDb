@@ -186,10 +186,7 @@ fn overlap_with_reader(
 /// `usize::MAX` 哨兵确保第一个文件总是被初始 candidate 接受;
 /// 后续文件严格按 overlap count 和 file_number tie-break 比较.
 /// 平局按 file_number 升序确定, 保证确定性.
-fn pick_seed_level_n(
-    levels: &[Vec<Arc<SSTableReader>>],
-    level: usize,
-) -> Arc<SSTableReader> {
+fn pick_seed_level_n(levels: &[Vec<Arc<SSTableReader>>], level: usize) -> Arc<SSTableReader> {
     let target = level + 1;
     debug_assert!(target < levels.len(), "target level must exist");
     let mut best = (levels[level][0].clone(), usize::MAX);
@@ -447,11 +444,12 @@ mod tests {
         levels[1].push(file(dir.path(), 2, 1, b"m"));
         levels[2].push(file(dir.path(), 3, 2, b"a"));
         levels[2].push(file(dir.path(), 4, 2, b"b"));
-        let task = picker
-            .pick_compaction(&levels)
-            .expect("level1 overflow");
+        let task = picker.pick_compaction(&levels).expect("level1 overflow");
         // file("a") overlaps 2, file("m") overlaps 0 → seed=file("m") → trivial move
-        assert!(task.is_trivial_move, "seed with zero overlap should be trivial move");
+        assert!(
+            task.is_trivial_move,
+            "seed with zero overlap should be trivial move"
+        );
     }
 
     #[test]
@@ -464,9 +462,7 @@ mod tests {
         // L1: file num=2 key="a", file num=1 key="b". L2 无重叠文件.
         levels[1].push(big_file(dir.path(), 2, 1, b"a", 300));
         levels[1].push(big_file(dir.path(), 1, 1, b"b", 300));
-        let task = picker
-            .pick_compaction(&levels)
-            .expect("level1 overflow");
+        let task = picker.pick_compaction(&levels).expect("level1 overflow");
         assert!(task.is_trivial_move, "no overlap → trivial move");
         // tie-break: 两者 overlap 均为 0, 选 file_number 最小的 (num=1, key="b")
         assert_eq!(task.inputs.len(), 1);
@@ -485,11 +481,15 @@ mod tests {
         levels[1].push(big_file(dir.path(), 2, 1, b"b", 300));
         levels[2].push(file(dir.path(), 3, 2, b"a"));
         levels[2].push(file(dir.path(), 4, 2, b"b"));
-        let task = picker
-            .pick_compaction(&levels)
-            .expect("level1 overflow");
-        assert!(!task.is_trivial_move, "all files overlap → must do real compaction");
-        assert!(!task.inputs.is_empty(), "inputs should include overlapping files");
+        let task = picker.pick_compaction(&levels).expect("level1 overflow");
+        assert!(
+            !task.is_trivial_move,
+            "all files overlap → must do real compaction"
+        );
+        assert!(
+            !task.inputs.is_empty(),
+            "inputs should include overlapping files"
+        );
         assert_eq!(task.output_level, 2);
     }
 }

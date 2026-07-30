@@ -52,9 +52,7 @@ fn probe_one_put_on_disk_size() -> u64 {
     let db = DB::open(d.path(), wal_opts(0)).unwrap();
     write_test_batch(&db, 1, b"v");
     drop(db);
-    std::fs::metadata(d.path().join("wal_1.log"))
-        .unwrap()
-        .len()
+    std::fs::metadata(d.path().join("wal_1.log")).unwrap().len()
 }
 
 fn max_wal_size_for_mid_batch_rotate() -> u64 {
@@ -115,9 +113,7 @@ fn test_large_batch_exceeds_max_wal_size_no_mid_batch_rotate() {
         1,
         "inventory expects no mid-batch rotate (single WAL file)"
     );
-    let wal1_size = std::fs::metadata(d.path().join("wal_1.log"))
-        .unwrap()
-        .len();
+    let wal1_size = std::fs::metadata(d.path().join("wal_1.log")).unwrap().len();
     assert!(
         wal1_size > max_wal_size,
         "batch total should exceed max_wal_size={max_wal_size}, wal_1.log={wal1_size}"

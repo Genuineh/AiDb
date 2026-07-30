@@ -138,7 +138,12 @@ fn mig_prefix(group_id: u64, epoch: u64) -> Vec<u8> {
 /// 单个 user key 的迁移 tombstone: 记录该 key 在本 epoch 内最后一次是被
 /// Put 还是 Del, 以及 apply 时分配的单调 seq (见 `migration_oplog.rs`).
 pub fn mig_tombstone_key(group_id: u64, epoch: u64, user_key: &[u8]) -> Vec<u8> {
-    [mig_prefix(group_id, epoch), b"/ts/".to_vec(), user_key.to_vec()].concat()
+    [
+        mig_prefix(group_id, epoch),
+        b"/ts/".to_vec(),
+        user_key.to_vec(),
+    ]
+    .concat()
 }
 
 /// 本 epoch 内已分配的最大 seq (tip), 随 target group Raft apply 单调递增.
@@ -196,8 +201,14 @@ mod tests {
         let end = mig_range_end(gid, epoch);
         let tip = mig_tip_key(gid, epoch);
         let ts = mig_tombstone_key(gid, epoch, b"user-key");
-        assert!(start <= tip && tip < end, "tip key must fall within [start, end)");
-        assert!(start <= ts && ts < end, "tombstone key must fall within [start, end)");
+        assert!(
+            start <= tip && tip < end,
+            "tip key must fall within [start, end)"
+        );
+        assert!(
+            start <= ts && ts < end,
+            "tombstone key must fall within [start, end)"
+        );
     }
 
     #[test]
@@ -207,8 +218,14 @@ mod tests {
         let a_end = mig_range_end(1, 1);
         let b_tip = mig_tip_key(1, 2);
         let c_tip = mig_tip_key(2, 1);
-        assert!(!(a_start <= b_tip && b_tip < a_end), "different epoch must not collide");
-        assert!(!(a_start <= c_tip && c_tip < a_end), "different group must not collide");
+        assert!(
+            !(a_start <= b_tip && b_tip < a_end),
+            "different epoch must not collide"
+        );
+        assert!(
+            !(a_start <= c_tip && c_tip < a_end),
+            "different group must not collide"
+        );
     }
 
     #[test]

@@ -39,7 +39,11 @@ mod tests {
 
     #[test]
     fn test_properties_roundtrip() {
-        let p = SstProperties { num_entries: 42, raw_key_size: 1024, raw_value_size: 4096 };
+        let p = SstProperties {
+            num_entries: 42,
+            raw_key_size: 1024,
+            raw_value_size: 4096,
+        };
         let e = p.encode();
         let d = SstProperties::decode(&e).unwrap();
         assert_eq!(d, p);

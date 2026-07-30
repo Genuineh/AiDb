@@ -110,9 +110,9 @@ impl ShardInner {
         }
         let before = self.lru_queue.len();
         let cache = &self.cache;
-        self.lru_queue.retain(|(key, counter)| {
-            matches!(cache.get(key), Some((_, stored)) if stored == counter)
-        });
+        self.lru_queue.retain(
+            |(key, counter)| matches!(cache.get(key), Some((_, stored)) if stored == counter),
+        );
         tracing::debug!(
             target: "cache",
             before,
@@ -255,8 +255,7 @@ impl BlockCache {
             return;
         }
 
-        let max_evictions =
-            (self.capacity_per_shard / ASSUMED_BLOCK_SIZE).max(MIN_MAX_EVICTIONS);
+        let max_evictions = (self.capacity_per_shard / ASSUMED_BLOCK_SIZE).max(MIN_MAX_EVICTIONS);
         let idx = shard_index(&key);
         let mut guard = self.shards[idx].inner.lock();
 
@@ -296,10 +295,7 @@ impl BlockCache {
             }
         }
 
-        let inserted = guard
-            .cache
-            .insert(key.clone(), (value, counter))
-            .is_none();
+        let inserted = guard.cache.insert(key.clone(), (value, counter)).is_none();
         if inserted {
             guard.current_size += value_len;
         }
@@ -335,20 +331,14 @@ impl BlockCache {
         if !guard.cache.contains_key(&key) {
             return None;
         }
-        let counter = guard.pin_counts.entry(key.clone()).or_insert_with(|| {
-            AtomicU64::new(0)
-        });
+        let counter = guard
+            .pin_counts
+            .entry(key.clone())
+            .or_insert_with(|| AtomicU64::new(0));
         let prev = counter.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(
-            prev < u64::MAX,
-            "pin_count overflow for key {:?}",
-            key
-        );
+        debug_assert!(prev < u64::MAX, "pin_count overflow for key {:?}", key);
         drop(guard);
-        Some(PinGuard {
-            key,
-            cache: self,
-        })
+        Some(PinGuard { key, cache: self })
     }
 
     /// 手动解 pin (等同于 drop PinGuard). 公开以便无 PinGuard 场景使用.

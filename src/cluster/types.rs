@@ -71,8 +71,13 @@ impl ThinWriteBatch {
 // Note: intentionally without adjacently tagged serde — rmp_serde cannot roundtrip
 // tagged enums nested in openraft::Entry; see test_request_serde_roundtrip.
 pub enum Request {
-    Put { key: Vec<u8>, value: Vec<u8> },
-    Delete { key: Vec<u8> },
+    Put {
+        key: Vec<u8>,
+        value: Vec<u8>,
+    },
+    Delete {
+        key: Vec<u8>,
+    },
     /// 条件 put: `sm_key` 已存在则跳过. 全量拷贝 (`SlotMigrationExecutor`)
     /// 专用. `migration_epoch` 为 `Some` 时, apply 内还会先查该 epoch 下
     /// `key` 的迁移 tombstone —— 若最后一次是 Del, 直接跳过 (不复活),
@@ -86,17 +91,24 @@ pub enum Request {
     WriteBatch(ThinWriteBatch),
     Meta(MetaRequest),
     /// Slot 迁移收尾写屏障: apply 时不改用户数据, 仅推进 Raft last_applied.
-    MigrationBarrier { token: u64 },
+    MigrationBarrier {
+        token: u64,
+    },
     /// FIX-0056-A1: 迁移期用户写 (`ops`) 与该 epoch 的 tombstone/tip 更新
     /// 打进同一 apply, 一次 entry 原子生效. `ops` 里每个 Put/Delete 都会
     /// 在 apply 内被分配一个单调递增的 seq, 写入
     /// `mig_tombstone_key(group, epoch, key)`, 并推进
     /// `mig_tip_key(group, epoch)` (见 `migration_oplog.rs`).
-    MigrationWrite { epoch: u64, ops: ThinWriteBatch },
+    MigrationWrite {
+        epoch: u64,
+        ops: ThinWriteBatch,
+    },
     /// FIX-0056-A1: 删除 target group 上 `epoch` 对应的全部
     /// `mig/{gid}/{epoch}/*` tombstone/tip key (Commit/Cancel 后 GC).
     /// 复制生效 (与用户写一样走 Raft apply), 而非旁路本地删除.
-    MigrationGc { epoch: u64 },
+    MigrationGc {
+        epoch: u64,
+    },
 }
 
 impl std::fmt::Display for Request {

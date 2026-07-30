@@ -55,15 +55,11 @@ impl MemTableRep for SkipMapRep {
         self.map.back()
     }
 
-    fn entry_key<'a>(
-        entry: &'a Entry<'a, InternalKeyBytes, Arc<[u8]>>,
-    ) -> &'a InternalKeyBytes {
+    fn entry_key<'a>(entry: &'a Entry<'a, InternalKeyBytes, Arc<[u8]>>) -> &'a InternalKeyBytes {
         entry.key()
     }
 
-    fn entry_value(
-        entry: &Entry<'_, InternalKeyBytes, Arc<[u8]>>,
-    ) -> Arc<[u8]> {
+    fn entry_value(entry: &Entry<'_, InternalKeyBytes, Arc<[u8]>>) -> Arc<[u8]> {
         Arc::clone(entry.value())
     }
 

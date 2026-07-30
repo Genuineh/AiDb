@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+commit_msg_file="$1"
+commit_msg=$(grep -v '^#' "$commit_msg_file" | sed '/^$/d' | head -n 1)
+
+# Regex for Conventional Commits
+pattern="^(feat|fix|refactor|test|docs|chore|perf|style|ci)(\([a-zA-Z0-9_-]+\))?: .+"
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+    echo "ERROR: Invalid commit message format."
+    echo "Commit message must follow Conventional Commits format:"
+    echo "  <type>(<scope>): <subject>"
+    echo ""
+    echo "Allowed types:"
+    echo "  feat, fix, refactor, test, docs, chore, perf, style, ci"
+    echo ""
+    echo "Examples:"
+    echo "  feat: 添加 WAL 崩溃恢复"
+    echo "  fix(info): eliminate eq_op clippy error"
+    echo "  chore: update cargo dependencies"
+    echo ""
+    echo "Your commit message was:"
+    echo "  $commit_msg"
+    exit 1
+fi

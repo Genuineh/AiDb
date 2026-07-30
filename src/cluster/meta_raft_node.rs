@@ -673,8 +673,14 @@ mod tests {
             ),
         );
 
-        assert!(matches!(res_a, Ok(Ok(Response::Ok))), "RegisterNode failed: {res_a:?}");
-        assert!(matches!(res_b, Ok(Ok(Response::Ok))), "AssignSlots failed: {res_b:?}");
+        assert!(
+            matches!(res_a, Ok(Ok(Response::Ok))),
+            "RegisterNode failed: {res_a:?}"
+        );
+        assert!(
+            matches!(res_b, Ok(Ok(Response::Ok))),
+            "AssignSlots failed: {res_b:?}"
+        );
 
         // 最终状态一致: 节点存在且 slot 已分配
         let meta = node.get_cluster_meta();

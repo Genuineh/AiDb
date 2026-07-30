@@ -3,7 +3,9 @@
 use openraft::{EntryPayload, MessageSummary};
 
 use crate::cluster::meta_types::{MetaRequest, METARAFT_GROUP_ID};
-use crate::cluster::migration_oplog::{decode_tip, decode_tombstone, encode_tip, encode_tombstone, MigOp};
+use crate::cluster::migration_oplog::{
+    decode_tip, decode_tombstone, encode_tip, encode_tombstone, MigOp,
+};
 use crate::cluster::storage::keys::{
     last_applied_key, membership_key, mig_range_end, mig_range_start, mig_tip_key,
     mig_tombstone_key, sm_key,
@@ -32,7 +34,11 @@ impl OpenRaftStorage {
     }
 
     #[cfg(test)]
-    pub(crate) fn apply_migration_write_to_sm(&self, epoch: u64, ops: &ThinWriteBatch) -> Result<()> {
+    pub(crate) fn apply_migration_write_to_sm(
+        &self,
+        epoch: u64,
+        ops: &ThinWriteBatch,
+    ) -> Result<()> {
         let mut db_batch = WriteBatch::new();
         self.append_migration_write_to_batch(&mut db_batch, epoch, ops)?;
         if db_batch.is_empty() {
@@ -152,12 +158,16 @@ impl OpenRaftStorage {
                             Self::serialize_last_applied(&last_log_id)?,
                         );
                         #[cfg(feature = "cluster-test-util")]
-                        crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyBeforePersist);
+                        crate::cluster::failpoint::fire(
+                            crate::cluster::FailPoint::ApplyBeforePersist,
+                        );
                         self.db
                             .write_without_wal(&batch)
                             .map_err(|e| Error::Cluster(map_db_err(e)))?;
                         #[cfg(feature = "cluster-test-util")]
-                        crate::cluster::failpoint::fire(crate::cluster::FailPoint::ApplyAfterPersist);
+                        crate::cluster::failpoint::fire(
+                            crate::cluster::FailPoint::ApplyAfterPersist,
+                        );
                         self.state.write().last_applied = Some(last_log_id);
 
                         let count = batched_responses.len();
@@ -334,10 +344,7 @@ impl OpenRaftStorage {
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
     }
 
-    fn persist_last_applied_atomic(
-        &self,
-        log_id: &LIdOf,
-    ) -> Result<()> {
+    fn persist_last_applied_atomic(&self, log_id: &LIdOf) -> Result<()> {
         let mut batch = WriteBatch::new();
         batch.put(
             last_applied_key(self.group_id),
@@ -371,11 +378,7 @@ impl OpenRaftStorage {
         Ok(Response::Ok)
     }
 
-    fn apply_meta_entry(
-        &self,
-        req: &MetaRequest,
-        log_id: &LIdOf,
-    ) -> Result<Response> {
+    fn apply_meta_entry(&self, req: &MetaRequest, log_id: &LIdOf) -> Result<Response> {
         let meta_state = self.meta_state.as_ref().expect("meta_state required");
         let mut batch = WriteBatch::new();
         let response = match meta_state.apply_meta_request(req.clone()) {
@@ -552,7 +555,10 @@ mod tests {
             let mut ops = ThinWriteBatch::new();
             ops.put(key.to_vec(), b"v".to_vec());
             crate::cluster::types::LogEntry {
-                log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), index),
+                log_id: LogId::new(
+                    openraft::vote::leader_id_std::CommittedLeaderId::new(1),
+                    index,
+                ),
                 payload: EntryPayload::Normal(Request::MigrationWrite { epoch: 3, ops }),
             }
         };
@@ -645,7 +651,11 @@ mod tests {
             .apply_entries_internal(std::slice::from_ref(&gc_entry))
             .unwrap();
 
-        assert_eq!(storage.get_migration_tip(1).unwrap(), 0, "epoch 1 的 tip 必须被 GC 清零");
+        assert_eq!(
+            storage.get_migration_tip(1).unwrap(),
+            0,
+            "epoch 1 的 tip 必须被 GC 清零"
+        );
         assert!(
             storage
                 .db
@@ -777,10 +787,15 @@ mod tests {
         ];
         for (i, req) in entries.into_iter().enumerate() {
             let entry = crate::cluster::types::LogEntry {
-                log_id: LogId::new(openraft::vote::leader_id_std::CommittedLeaderId::new(1), i as u64 + 1),
+                log_id: LogId::new(
+                    openraft::vote::leader_id_std::CommittedLeaderId::new(1),
+                    i as u64 + 1,
+                ),
                 payload: EntryPayload::Normal(Request::Meta(req)),
             };
-            storage.apply_entries_internal(std::slice::from_ref(&entry)).unwrap();
+            storage
+                .apply_entries_internal(std::slice::from_ref(&entry))
+                .unwrap();
         }
 
         let meta_state = storage.meta_state.as_ref().unwrap();
@@ -818,9 +833,14 @@ mod tests {
                 value: b"v1".to_vec(),
             }),
         };
-        storage.apply_entries_internal(std::slice::from_ref(&e1)).unwrap();
+        storage
+            .apply_entries_internal(std::slice::from_ref(&e1))
+            .unwrap();
         assert_eq!(
-            storage.read_last_applied_from_db().unwrap().map(|id| id.index),
+            storage
+                .read_last_applied_from_db()
+                .unwrap()
+                .map(|id| id.index),
             Some(1)
         );
 

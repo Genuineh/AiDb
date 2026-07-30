@@ -252,9 +252,7 @@ impl SSTableReader {
     pub fn max_range_tombstone_seq(&self, user_key: &[u8], max_seq: u64) -> Option<u64> {
         self.range_tombstones
             .iter()
-            .filter(|r| {
-                r.sequence <= max_seq && range_covers(&r.start, &r.end, user_key)
-            })
+            .filter(|r| r.sequence <= max_seq && range_covers(&r.start, &r.end, user_key))
             .map(|r| r.sequence)
             .max()
     }

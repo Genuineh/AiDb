@@ -1,5 +1,4 @@
 use aidb::cluster::types::LogEntry;
-use aidb::cluster::types::{TypeConfig};
 use aidb::cluster::{RaftNodeConfig, Request};
 use openraft::vote::leader_id_std::CommittedLeaderId;
 use openraft::{EntryPayload, LogId};

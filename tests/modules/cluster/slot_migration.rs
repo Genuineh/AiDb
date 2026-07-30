@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use aidb::cluster::lifecycle_manager::{LifecycleManager, MetaRaftProvider};
 use aidb::cluster::multi_raft_node::LifecycleConfig;
 use aidb::cluster::slot_migration::{ActiveMigration, SlotMigrationManager};
 use aidb::cluster::types::Request;
@@ -22,7 +23,6 @@ use aidb::cluster::{
     RaftServiceDispatcher, Router, SlotMigrationState, SlotTable,
 };
 use aidb::config::{MigrationConfig, Options};
-use aidb::cluster::lifecycle_manager::{LifecycleManager, MetaRaftProvider};
 use aidb::DB;
 use tempfile::TempDir;
 
@@ -58,7 +58,8 @@ async fn setup(
 
     let meta_dir = TempDir::new().unwrap();
     let meta_db = DB::open(meta_dir.path().join("meta"), Options::for_testing()).unwrap();
-    let meta_factory = RaftNetworkClientFactory::new(1, aidb::cluster::METARAFT_GROUP_ID, 30, 65 * 1024 * 1024);
+    let meta_factory =
+        RaftNetworkClientFactory::new(1, aidb::cluster::METARAFT_GROUP_ID, 30, 65 * 1024 * 1024);
     let meta_cfg = RaftNodeConfig {
         node_id: 1,
         group_id: aidb::cluster::METARAFT_GROUP_ID,
@@ -69,7 +70,11 @@ async fn setup(
         snapshot_logs_since_last: 200,
         ..Default::default()
     };
-    let meta_raft = Arc::new(MetaRaftNode::new(meta_cfg, meta_db, meta_factory).await.unwrap());
+    let meta_raft = Arc::new(
+        MetaRaftNode::new(meta_cfg, meta_db, meta_factory)
+            .await
+            .unwrap(),
+    );
     meta_raft
         .initialize(vec![(1, "http://127.0.0.1:1".into())])
         .await
@@ -80,7 +85,10 @@ async fn setup(
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(meta_raft.is_leader().await, "meta raft should elect itself as leader");
+    assert!(
+        meta_raft.is_leader().await,
+        "meta raft should elect itself as leader"
+    );
 
     meta_raft
         .propose(MetaRequest::RegisterNode {
@@ -120,8 +128,9 @@ async fn setup(
         HashMap::new(),
     ));
     let dispatcher = Arc::new(RaftServiceDispatcher::new());
-    let lifecycle = LifecycleManager::new(1, router.clone(), Arc::new(MetaRaftProv(meta_raft.clone())))
-        .with_tick_interval(Duration::from_millis(30));
+    let lifecycle =
+        LifecycleManager::new(1, router.clone(), Arc::new(MetaRaftProv(meta_raft.clone())))
+            .with_tick_interval(Duration::from_millis(30));
     let multi_raft = Arc::new(MultiRaftNode::new_with_lifecycle(
         1,
         router.clone(),
@@ -148,12 +157,19 @@ async fn setup(
     // 等两个 group 都在本地创建出来并选出 leader.
     for _ in 0..100 {
         let ids = multi_raft.local_group_ids();
-        if ids.len() == 2 && multi_raft.is_elected_leader_sync(1) && multi_raft.is_elected_leader_sync(2) {
+        if ids.len() == 2
+            && multi_raft.is_elected_leader_sync(1)
+            && multi_raft.is_elected_leader_sync(2)
+        {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert_eq!(multi_raft.local_group_ids().len(), 2, "both groups must be created locally");
+    assert_eq!(
+        multi_raft.local_group_ids().len(),
+        2,
+        "both groups must be created locally"
+    );
     assert!(multi_raft.is_elected_leader_sync(1) && multi_raft.is_elected_leader_sync(2));
 
     let migration_manager = SlotMigrationManager::new(
@@ -165,11 +181,20 @@ async fn setup(
         MigrationConfig::default(),
     );
 
-    (meta_raft, multi_raft, migration_manager, migrated_slots, data_dir)
+    (
+        meta_raft,
+        multi_raft,
+        migration_manager,
+        migrated_slots,
+        data_dir,
+    )
 }
 
 fn active_migration_from_state(meta_raft: &MetaRaftNode, migration_id: u64) -> ActiveMigration {
-    match meta_raft.get_migration_state().expect("migration should be active") {
+    match meta_raft
+        .get_migration_state()
+        .expect("migration should be active")
+    {
         SlotMigrationState::Prepare {
             source_group,
             target_group,
@@ -252,7 +277,10 @@ async fn commit_after_full_run_succeeds_and_moves_data() {
     let active = active_migration_from_state(&meta_raft, migration_id);
 
     let result = sm.run_pending_migration(active).await.unwrap();
-    assert!(result.is_completed, "migration should fully complete in one pass");
+    assert!(
+        result.is_completed,
+        "migration should fully complete in one pass"
+    );
 
     sm.finish_migration()
         .await
@@ -322,7 +350,12 @@ async fn finish_migration_after_del_on_target_still_works() {
     // Migrating 期间客户端 DEL 落在 target: source 仍有 key, target 已删.
     // final_verify 不得做 source⊆target, 收尾链仍应成功 (target-wins).
     multi_raft
-        .propose_group(2, Request::Delete { key: TEST_KEY.to_vec() })
+        .propose_group(
+            2,
+            Request::Delete {
+                key: TEST_KEY.to_vec(),
+            },
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -438,7 +471,10 @@ async fn put_conditional_does_not_resurrect_after_migration_del_tombstone() {
         )
         .await
         .unwrap();
-    assert_eq!(multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(), None);
+    assert_eq!(
+        multi_raft.get_key_from_group(2, TEST_KEY).await.unwrap(),
+        None
+    );
 
     // 全量拷贝路径 (PutConditional) 此时才追上来, 尝试补拷 source 快照值:
     // 必须被 Del tombstone 拦住, 不能复活.
@@ -489,7 +525,10 @@ async fn finish_migration_drains_oplog_tip_and_gcs_on_commit() {
         .await
         .unwrap();
     assert_eq!(
-        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        multi_raft
+            .read_migration_tip(2, migration_id)
+            .await
+            .unwrap(),
         1
     );
 
@@ -508,7 +547,10 @@ async fn finish_migration_drains_oplog_tip_and_gcs_on_commit() {
     );
     // Commit 后应 GC 掉该 epoch 的 oplog —— tip 缺失即读回 0.
     assert_eq!(
-        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        multi_raft
+            .read_migration_tip(2, migration_id)
+            .await
+            .unwrap(),
         0,
         "commit 后必须 GC 掉迁移 oplog (tombstone/tip)"
     );
@@ -541,7 +583,10 @@ async fn cancel_migration_gcs_oplog_too() {
         .await
         .unwrap();
     assert_eq!(
-        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        multi_raft
+            .read_migration_tip(2, migration_id)
+            .await
+            .unwrap(),
         1
     );
 
@@ -552,7 +597,10 @@ async fn cancel_migration_gcs_oplog_too() {
         aidb::cluster::SlotStatus::Assigned(1)
     );
     assert_eq!(
-        multi_raft.read_migration_tip(2, migration_id).await.unwrap(),
+        multi_raft
+            .read_migration_tip(2, migration_id)
+            .await
+            .unwrap(),
         0,
         "cancel 后也必须 GC 掉迁移 oplog"
     );

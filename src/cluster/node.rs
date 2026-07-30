@@ -10,7 +10,7 @@ use openraft::type_config::async_runtime::WatchReceiver;
 use openraft::{Config, Raft, RaftMetrics, TryAsRef};
 use tracing::instrument;
 
-use crate::cluster::log_committer::{spawn_committer, LogCommitterConfig, LogCommitterHandle};
+use crate::cluster::log_committer::spawn_committer;
 use crate::cluster::network::{RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl};
 use crate::cluster::storage::OpenRaftStorage;
 use crate::cluster::types::{
@@ -58,16 +58,13 @@ impl OpenRaftNode {
         }
 
         // 可选: 创建 LogCommitter.
-        let committer = config.log_committer_config.as_ref().map(|cfg| {
-            spawn_committer(config.group_id, db.clone(), cfg.clone())
-        });
+        let committer = config
+            .log_committer_config
+            .as_ref()
+            .map(|cfg| spawn_committer(config.group_id, db.clone(), cfg.clone()));
 
-        let storage = OpenRaftStorage::new_with_committer(
-            db.clone(),
-            config.group_id,
-            None,
-            committer,
-        )?;
+        let storage =
+            OpenRaftStorage::new_with_committer(db.clone(), config.group_id, None, committer)?;
         Self::new_with_storage(config, db, storage, network_factory).await
     }
 
@@ -319,10 +316,7 @@ impl OpenRaftNode {
     }
 
     /// 从 RaftMetrics 提取指定节点的 matched log index.
-    fn matched_log_index(
-        metrics: &RaftMetrics<TypeConfig>,
-        node_id: NodeId,
-    ) -> u64 {
+    fn matched_log_index(metrics: &RaftMetrics<TypeConfig>, node_id: NodeId) -> u64 {
         metrics
             .replication
             .as_ref()
@@ -493,7 +487,10 @@ impl OpenRaftNode {
     async fn ensure_leader_for_linear_read(&self) -> Result<()> {
         if self.linearizable_read {
             // Linearizable read: quorum 确认当前仍是 leader + wait applied index
-            self.raft.ensure_linearizable(openraft::ReadPolicy::ReadIndex).await.map_err(map_linearizable_error)?;
+            self.raft
+                .ensure_linearizable(openraft::ReadPolicy::ReadIndex)
+                .await
+                .map_err(map_linearizable_error)?;
         } else {
             // 退化路径: 本地 leader check (保持 Redis Cluster 最终一致性)
             if !self.is_leader().await {

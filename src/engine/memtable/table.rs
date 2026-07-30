@@ -1,8 +1,8 @@
 //! MemTable — 内存写入缓冲 (SkipMap).
 
 use super::internal_key::{
-    check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence, extract_user_key,
-    extract_value_type, ValueType, K_MAX_SEQUENCE,
+    check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence,
+    extract_user_key, extract_value_type, ValueType, K_MAX_SEQUENCE,
 };
 use super::iterator::MemTableIterator;
 use super::key_bytes::InternalKeyBytes;
@@ -132,7 +132,11 @@ impl MemTable {
     #[tracing::instrument(name = "mem_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
-        let ik = InternalKeyBytes(encode_internal_key_arc(key, sequence, ValueType::TypeDelete));
+        let ik = InternalKeyBytes(encode_internal_key_arc(
+            key,
+            sequence,
+            ValueType::TypeDelete,
+        ));
         self.rep.insert(ik, Arc::from(&[] as &[u8]));
         tracing::debug!(target: "mem", "mem.delete");
         self.sync_active_metric();
@@ -143,8 +147,11 @@ impl MemTable {
     #[tracing::instrument(name = "mem_delete_range", skip(self, start, end))]
     pub fn put_range_delete(&self, start: &[u8], end: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
-        let ik =
-            InternalKeyBytes(encode_internal_key_arc(start, sequence, ValueType::TypeRangeDelete));
+        let ik = InternalKeyBytes(encode_internal_key_arc(
+            start,
+            sequence,
+            ValueType::TypeRangeDelete,
+        ));
         let val = Arc::from(end);
         self.rep.insert(ik, val);
         self.range_index.write().push(RangeTombstoneRecord {

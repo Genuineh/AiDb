@@ -2,8 +2,8 @@
 
 use crate::common::dataflow::capture_spans;
 use aidb::config::Options;
-use aidb::DB;
 use aidb::WriteBatch;
+use aidb::DB;
 use std::sync::Arc;
 use tempfile::tempdir;
 

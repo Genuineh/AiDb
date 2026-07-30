@@ -3,8 +3,8 @@
 //! 验证高频写入与 compaction 并发执行时数据完整性.
 //! 这些测试默认 `#[ignore]` (耗时), 在 CI `test-slow` job 中用 `--ignored` 运行.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -91,7 +91,12 @@ fn test_concurrent_write_with_filter() {
     // 设置一个"全保留"的 filter, 验证 filter 在并发场景不会崩溃
     struct KeepAllFilter;
     impl aidb::engine::compaction::CompactionFilter for KeepAllFilter {
-        fn filter(&self, _level: usize, _key: &[u8], _value: &[u8]) -> aidb::engine::compaction::FilterDecision {
+        fn filter(
+            &self,
+            _level: usize,
+            _key: &[u8],
+            _value: &[u8],
+        ) -> aidb::engine::compaction::FilterDecision {
             aidb::engine::compaction::FilterDecision::Keep
         }
     }

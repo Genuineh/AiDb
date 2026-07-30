@@ -360,7 +360,8 @@ pub fn memtable_set_active(bytes: usize) {
 #[cfg(feature = "monitoring")]
 pub fn record_compaction(phase: &str) {
     if let Some(m) = metrics() {
-        m.compaction_total.add(1, &[kv(ATTR_COMPACTION_PHASE, phase)]);
+        m.compaction_total
+            .add(1, &[kv(ATTR_COMPACTION_PHASE, phase)]);
     }
 }
 
@@ -565,10 +566,7 @@ pub mod testutil {
                     continue;
                 }
                 if let AggregatedMetrics::F64(MetricData::Histogram(h)) = m.data() {
-                    total += h
-                        .data_points()
-                        .map(|dp| dp.count() as u64)
-                        .sum::<u64>();
+                    total += h.data_points().map(|dp| dp.count() as u64).sum::<u64>();
                 }
             }
         }

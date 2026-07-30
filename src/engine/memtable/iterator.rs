@@ -53,10 +53,7 @@ impl<'a> MemTableIterator<'a> {
 
     /// 返回原始 InternalKeyBytes (持有 Arc<[u8]>, clone 为 O(1) ref bump).
     pub(crate) fn key_bytes(&self) -> &InternalKeyBytes {
-        self.current
-            .as_ref()
-            .expect("iterator not valid")
-            .key()
+        self.current.as_ref().expect("iterator not valid").key()
     }
 
     pub fn value(&self) -> &[u8] {

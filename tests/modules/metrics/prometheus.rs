@@ -48,9 +48,7 @@ fn test_block_cache_otel_counters_and_size() {
     );
 
     cache.clear();
-    assert!(
-        testutil::gauge_value(&exporter, "aidb_block_cache_size_bytes").abs() < f64::EPSILON
-    );
+    assert!(testutil::gauge_value(&exporter, "aidb_block_cache_size_bytes").abs() < f64::EPSILON);
 }
 
 #[test]
@@ -94,12 +92,8 @@ fn test_db_operation_and_flush_duration_histograms() {
     let flush_before = testutil::histogram_count(&exporter, "aidb_flush_duration_seconds");
 
     db.put(b"k", b"v").unwrap();
-    assert!(
-        testutil::histogram_count(&exporter, "aidb_operation_duration_seconds") > op_before
-    );
-    assert!(
-        testutil::counter_sum(&exporter, "db.client.operations") >= 1
-    );
+    assert!(testutil::histogram_count(&exporter, "aidb_operation_duration_seconds") > op_before);
+    assert!(testutil::counter_sum(&exporter, "db.client.operations") >= 1);
 
     db.get(b"k").unwrap();
     assert!(
@@ -107,9 +101,7 @@ fn test_db_operation_and_flush_duration_histograms() {
     );
 
     db.flush().unwrap();
-    assert!(
-        testutil::histogram_count(&exporter, "aidb_flush_duration_seconds") > flush_before
-    );
+    assert!(testutil::histogram_count(&exporter, "aidb_flush_duration_seconds") > flush_before);
 
     db.close().unwrap();
 }

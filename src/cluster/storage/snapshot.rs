@@ -11,7 +11,7 @@ use crate::cluster::types::TypeConfig;
 use crate::error::{ClusterError, Error, Result};
 use crate::DB;
 
-use super::{CLId, LIdOf, MOf, SMOf, OpenRaftStorage};
+use super::{CLId, LIdOf, MOf, OpenRaftStorage, SMOf};
 
 /// snapshot 传输格式: 由原来的逐条 KV (SnapshotKv) 改为 DB 目录文件级打包.
 ///
@@ -39,9 +39,7 @@ impl SnapshotBundle {
         for src_path in &file_paths {
             let relative = src_path
                 .strip_prefix(db_path)
-                .map_err(|_| {
-                    Error::InvalidArgument("checkpoint file outside db dir".into())
-                })?
+                .map_err(|_| Error::InvalidArgument("checkpoint file outside db dir".into()))?
                 .to_string_lossy()
                 .to_string();
             let data = std::fs::read(src_path)?;
@@ -96,11 +94,7 @@ impl OpenRaftSnapshotBuilder {
 
 impl OpenRaftStorage {
     /// 文件级 snapshot 安装: 关闭旧 DB → 清空目录 → 写入新文件 → 重新打开 DB.
-    pub(crate) fn install_snapshot_atomic(
-        &mut self,
-        meta: &SMOf,
-        data: &[u8],
-    ) -> Result<()> {
+    pub(crate) fn install_snapshot_atomic(&mut self, meta: &SMOf, data: &[u8]) -> Result<()> {
         let bundle: SnapshotBundle = bincode::deserialize(data)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
 
@@ -113,7 +107,7 @@ impl OpenRaftStorage {
         // 清空 DB 目录, 保留目录本身.
         if db_path.exists() {
             let dir_entries: Vec<_> = std::fs::read_dir(&db_path)
-                .map_err(|e| Error::Io(e))?
+                .map_err(Error::Io)?
                 .filter_map(|e| e.ok())
                 .collect();
             for entry in dir_entries {
@@ -154,9 +148,7 @@ impl OpenRaftStorage {
         // 重建 MetaStateMachine (旧实例持有已关闭的 DB 引用).
         if self.meta_state.is_some() {
             let new_meta = std::sync::Arc::new(
-                crate::cluster::meta_state_machine::MetaStateMachine::new(Arc::clone(
-                    &self.db,
-                ))?,
+                crate::cluster::meta_state_machine::MetaStateMachine::new(Arc::clone(&self.db))?,
             );
             self.meta_state = Some(new_meta);
         }
@@ -177,22 +169,24 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
 
     async fn build_snapshot(
         &mut self,
-    ) -> std::result::Result<Snapshot<CLId, u64, openraft::BasicNode, Cursor<Vec<u8>>>, std::io::Error> {
-        let data = prepare_snapshot_bundle(&self.db).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+    ) -> std::result::Result<
+        Snapshot<CLId, u64, openraft::BasicNode, Cursor<Vec<u8>>>,
+        std::io::Error,
+    > {
+        let data =
+            prepare_snapshot_bundle(&self.db).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let membership: MOf = self
             .db
             .get(&super::keys::membership_key(self.group_id))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .map_err(|e| std::io::Error::other(e.to_string()))?
             .map(|d| bincode::deserialize(&d).unwrap_or_default())
             .unwrap_or_default();
 
         let last_applied: Option<LIdOf> = self
             .db
             .get(&super::keys::last_applied_key(self.group_id))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .map_err(|e| std::io::Error::other(e.to_string()))?
             .and_then(|d| rmp_serde::from_slice(&d).ok());
 
         let snapshot_id = format!("snap-{}", last_applied.map(|id| id.index).unwrap_or(0));
@@ -243,7 +237,9 @@ mod tests {
             last_membership: StoredMembership::default(),
             snapshot_id: "snap-5".into(),
         };
-        storage.install_snapshot_atomic(&meta, &bundle_data).unwrap();
+        storage
+            .install_snapshot_atomic(&meta, &bundle_data)
+            .unwrap();
 
         assert_eq!(
             storage.get_state_machine_value(b"old").unwrap(),
@@ -358,14 +354,12 @@ mod tests {
             last_membership: StoredMembership::default(),
             snapshot_id: "meta-snap-3".into(),
         };
-        storage2.install_snapshot_atomic(&snap_meta, &bundle_data).unwrap();
+        storage2
+            .install_snapshot_atomic(&snap_meta, &bundle_data)
+            .unwrap();
 
         // Verify state reloaded correctly
-        let recovered = storage2
-            .meta_state
-            .as_ref()
-            .unwrap()
-            .get_cluster_meta();
+        let recovered = storage2.meta_state.as_ref().unwrap().get_cluster_meta();
         assert_eq!(recovered.nodes.len(), 1);
         assert!(recovered.nodes.contains_key(&1));
         assert_eq!(recovered.cluster_id, "uninitialized");

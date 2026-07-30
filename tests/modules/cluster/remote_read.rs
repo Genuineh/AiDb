@@ -65,7 +65,11 @@ async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
         snapshot_logs_since_last: 200,
         ..Default::default()
     };
-    let meta_raft = Arc::new(MetaRaftNode::new(meta_cfg, meta_db, meta_factory).await.unwrap());
+    let meta_raft = Arc::new(
+        MetaRaftNode::new(meta_cfg, meta_db, meta_factory)
+            .await
+            .unwrap(),
+    );
     meta_raft
         .initialize(vec![(1, "http://127.0.0.1:1".into())])
         .await
@@ -76,7 +80,10 @@ async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(meta_raft.is_leader().await, "meta raft should elect itself as leader");
+    assert!(
+        meta_raft.is_leader().await,
+        "meta raft should elect itself as leader"
+    );
 
     meta_raft
         .propose(MetaRequest::RegisterNode {
@@ -104,7 +111,9 @@ async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
     let lifecycle =
         LifecycleManager::new(1, router.clone(), Arc::new(MetaRaftProv(meta_raft.clone())))
             .with_tick_interval(Duration::from_millis(30));
-    let multi_raft = Arc::new(MultiRaftNode::new_with_lifecycle(1, router, dispatcher, lifecycle));
+    let multi_raft = Arc::new(MultiRaftNode::new_with_lifecycle(
+        1, router, dispatcher, lifecycle,
+    ));
 
     let data_dir = TempDir::new().unwrap();
     let _shutdown_rx = multi_raft.start_lifecycle_with_data(LifecycleConfig {
@@ -269,7 +278,13 @@ async fn get_migration_tombstone_remote_reads_leader_tombstone_across_nodes() {
     let mut del_ops = ThinWriteBatch::new();
     del_ops.delete(b"k1".to_vec());
     leader
-        .propose_group(TARGET_GROUP, Request::MigrationWrite { epoch: 5, ops: del_ops })
+        .propose_group(
+            TARGET_GROUP,
+            Request::MigrationWrite {
+                epoch: 5,
+                ops: del_ops,
+            },
+        )
         .await
         .unwrap();
 
@@ -303,7 +318,13 @@ async fn get_migration_tombstone_local_delegates_without_remote_rpc() {
     let mut put_ops = ThinWriteBatch::new();
     put_ops.put(b"k1".to_vec(), b"v1".to_vec());
     leader
-        .propose_group(TARGET_GROUP, Request::MigrationWrite { epoch: 5, ops: put_ops })
+        .propose_group(
+            TARGET_GROUP,
+            Request::MigrationWrite {
+                epoch: 5,
+                ops: put_ops,
+            },
+        )
         .await
         .unwrap();
 
@@ -387,10 +408,8 @@ impl raft_rpc::raft_service_server::RaftService for SlowGetKeyService {
     async fn get_migration_tombstone(
         &self,
         _request: tonic::Request<raft_rpc::GetMigrationTombstoneRequest>,
-    ) -> std::result::Result<
-        tonic::Response<raft_rpc::GetMigrationTombstoneResponse>,
-        tonic::Status,
-    > {
+    ) -> std::result::Result<tonic::Response<raft_rpc::GetMigrationTombstoneResponse>, tonic::Status>
+    {
         Err(tonic::Status::unimplemented("not used in this test"))
     }
 }

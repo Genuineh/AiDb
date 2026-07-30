@@ -104,7 +104,12 @@ fn test_recovery_after_compaction() {
         let db = DB::open(dir.path(), recovery_opts()).unwrap();
         for i in 0..10u8 {
             let v = db.get(&[i]).unwrap();
-            assert_eq!(v, Some(vec![i + 100]), "key {} should have overwritten value", i);
+            assert_eq!(
+                v,
+                Some(vec![i + 100]),
+                "key {} should have overwritten value",
+                i
+            );
         }
         for i in 10u8..20u8 {
             let v = db.get(&[i]).unwrap();
@@ -154,20 +159,21 @@ fn test_recovery_after_multiple_compactions() {
     {
         let db = DB::open(dir.path(), recovery_opts()).unwrap();
         for i in 0..5u8 {
-            assert_eq!(db.get(&[i]).unwrap(), Some(vec![i + 10]),
-                "overwritten key {}", i);
+            assert_eq!(
+                db.get(&[i]).unwrap(),
+                Some(vec![i + 10]),
+                "overwritten key {}",
+                i
+            );
         }
         for i in 5..10u8 {
-            assert_eq!(db.get(&[i]).unwrap(), Some(vec![i]),
-                "unchanged key {}", i);
+            assert_eq!(db.get(&[i]).unwrap(), Some(vec![i]), "unchanged key {}", i);
         }
         for i in 10..15u8 {
-            assert_eq!(db.get(&[i]).unwrap(), None,
-                "deleted key {}", i);
+            assert_eq!(db.get(&[i]).unwrap(), None, "deleted key {}", i);
         }
         for i in 15..30u8 {
-            assert_eq!(db.get(&[i]).unwrap(), Some(vec![i]),
-                "new key {}", i);
+            assert_eq!(db.get(&[i]).unwrap(), Some(vec![i]), "new key {}", i);
         }
         db.close().unwrap();
     }

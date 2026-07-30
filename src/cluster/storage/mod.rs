@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use openraft::{
     storage::{LogState, RaftLogStorage, RaftStateMachine},
-    BasicNode, LogId, RaftLogReader, Snapshot, SnapshotMeta, StoredMembership, Vote,
+    LogId, RaftLogReader, Snapshot, SnapshotMeta, StoredMembership, Vote,
 };
 use parking_lot::RwLock;
 use tracing::instrument;
@@ -24,7 +24,7 @@ use crate::cluster::log_committer::{LogCommitterHandle, LogCommitterMetrics};
 use crate::cluster::meta_state_machine::MetaStateMachine;
 use crate::cluster::storage::log::db_to_storage_err;
 use crate::cluster::storage::snapshot::prepare_snapshot_bundle;
-use crate::cluster::types::{NodeId, TypeConfig};
+use crate::cluster::types::TypeConfig;
 use crate::error::Result;
 use crate::DB;
 
@@ -65,7 +65,17 @@ impl OpenRaftStorage {
     }
 
     /// 获取 PendingLogOverlay 引用 (用于 get_log_entries 读 pending entry).
-    pub(crate) fn pending_overlay(&self) -> Option<Arc<parking_lot::Mutex<crate::cluster::pending_log::PendingLogOverlay<<TypeConfig as openraft::RaftTypeConfig>::Entry>>>> {
+    pub(crate) fn pending_overlay(
+        &self,
+    ) -> Option<
+        Arc<
+            parking_lot::Mutex<
+                crate::cluster::pending_log::PendingLogOverlay<
+                    <TypeConfig as openraft::RaftTypeConfig>::Entry,
+                >,
+            >,
+        >,
+    > {
         self.committer.as_ref().map(|h| h.overlay.clone())
     }
 }
@@ -110,7 +120,8 @@ impl RaftLogReader<TypeConfig> for OpenRaftStorage {
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + openraft::OptionalSend>(
         &mut self,
         range: RB,
-    ) -> std::result::Result<Vec<<TypeConfig as openraft::RaftTypeConfig>::Entry>, std::io::Error> {
+    ) -> std::result::Result<Vec<<TypeConfig as openraft::RaftTypeConfig>::Entry>, std::io::Error>
+    {
         self.get_log_entries(range).map_err(db_to_storage_err)
     }
 
@@ -123,9 +134,7 @@ impl RaftLogReader<TypeConfig> for OpenRaftStorage {
 impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
     type LogReader = Self;
 
-    async fn get_log_state(
-        &mut self,
-    ) -> std::result::Result<LogState<TypeConfig>, std::io::Error> {
+    async fn get_log_state(&mut self) -> std::result::Result<LogState<TypeConfig>, std::io::Error> {
         let state = self.state.read();
         Ok(LogState {
             last_purged_log_id: state.last_purged_log_id,
@@ -138,23 +147,25 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
     }
 
     #[instrument(name = "raft_save_vote", skip(self), fields(term = vote.leader_id.term))]
-    async fn save_vote(
-        &mut self,
-        vote: &VOf,
-    ) -> std::result::Result<(), std::io::Error> {
+    async fn save_vote(&mut self, vote: &VOf) -> std::result::Result<(), std::io::Error> {
         if let Some(ref committer) = self.committer {
             // 先更新内存状态, 再异步写 DB.
             self.state.write().vote = Some(*vote);
             committer.save_vote(*vote).await
         } else {
             self.save_vote_internal(vote)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::other(e.to_string()))
         }
     }
 
-    async fn append<I>(&mut self, entries: I, callback: openraft::storage::IOFlushed<TypeConfig>) -> std::result::Result<(), std::io::Error>
+    async fn append<I>(
+        &mut self,
+        entries: I,
+        callback: openraft::storage::IOFlushed<TypeConfig>,
+    ) -> std::result::Result<(), std::io::Error>
     where
-        I: IntoIterator<Item = <TypeConfig as openraft::RaftTypeConfig>::Entry> + openraft::OptionalSend,
+        I: IntoIterator<Item = <TypeConfig as openraft::RaftTypeConfig>::Entry>
+            + openraft::OptionalSend,
         I::IntoIter: openraft::OptionalSend,
     {
         let entries_vec: Vec<_> = entries.into_iter().collect();
@@ -190,7 +201,7 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             #[cfg(feature = "cluster-test-util")]
             crate::cluster::failpoint::fire(crate::cluster::FailPoint::AppendBeforeDbWrite);
             self.append_log_entries(&entries_vec)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
             callback.io_completed(Ok(()));
             Ok(())
         }
@@ -216,12 +227,18 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             let mut state = self.state.write();
             if let Some(lid) = log_id {
                 if lid.index > 0 {
-                    let prev_key = crate::cluster::storage::keys::log_key(self.group_id, lid.index - 1);
+                    let prev_key =
+                        crate::cluster::storage::keys::log_key(self.group_id, lid.index - 1);
                     let prev_entry = self
                         .db
                         .get(&prev_key)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
-                        .and_then(|data| rmp_serde::from_slice::<<TypeConfig as openraft::RaftTypeConfig>::Entry>(&data).ok());
+                        .map_err(|e| std::io::Error::other(e.to_string()))?
+                        .and_then(|data| {
+                            rmp_serde::from_slice::<
+                                    <TypeConfig as openraft::RaftTypeConfig>::Entry,
+                                >(&data)
+                                .ok()
+                        });
                     state.last_log_id = prev_entry.map(|e| e.log_id);
                 } else {
                     state.last_log_id = None;
@@ -237,17 +254,14 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             #[cfg(feature = "cluster-test-util")]
             crate::cluster::failpoint::fire(crate::cluster::FailPoint::TruncateBeforePersist);
             self.delete_logs_from(lid)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
             #[cfg(feature = "cluster-test-util")]
             crate::cluster::failpoint::fire(crate::cluster::FailPoint::TruncateAfterPersist);
             Ok(())
         }
     }
 
-    async fn purge(
-        &mut self,
-        log_id: LIdOf,
-    ) -> std::result::Result<(), std::io::Error> {
+    async fn purge(&mut self, log_id: LIdOf) -> std::result::Result<(), std::io::Error> {
         if let Some(ref committer) = self.committer {
             // Purge overlay immediately.
             {
@@ -271,7 +285,7 @@ impl RaftLogStorage<TypeConfig> for OpenRaftStorage {
             #[cfg(feature = "cluster-test-util")]
             crate::cluster::failpoint::fire(crate::cluster::FailPoint::PurgeBeforePersist);
             self.purge_logs_upto_internal(log_id)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
             #[cfg(feature = "cluster-test-util")]
             crate::cluster::failpoint::fire(crate::cluster::FailPoint::PurgeAfterPersist);
             Ok(())
@@ -283,20 +297,22 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
     type SnapshotData = std::io::Cursor<Vec<u8>>;
     type SnapshotBuilder = snapshot::OpenRaftSnapshotBuilder;
 
-    async fn applied_state(
-        &mut self,
-    ) -> std::result::Result<(Option<LIdOf>, MOf), std::io::Error> {
+    async fn applied_state(&mut self) -> std::result::Result<(Option<LIdOf>, MOf), std::io::Error> {
         let state = self.state.read();
-        let membership = self.load_membership().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+        let membership = self
+            .load_membership()
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         Ok((state.last_applied, membership))
     }
 
     async fn apply<Strm>(&mut self, entries: Strm) -> std::result::Result<(), std::io::Error>
     where
-        Strm: futures_util::Stream<Item = std::result::Result<openraft::storage::EntryResponder<TypeConfig>, std::io::Error>>
-            + Unpin
+        Strm: futures_util::Stream<
+                Item = std::result::Result<
+                    openraft::storage::EntryResponder<TypeConfig>,
+                    std::io::Error,
+                >,
+            > + Unpin
             + openraft::OptionalSend,
     {
         use futures_util::StreamExt;
@@ -306,9 +322,7 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
         let mut responders = Vec::new();
 
         while let Some(item) = entries.next().await {
-            let (entry, responder) = item.map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-            })?;
+            let (entry, responder) = item.map_err(|e| std::io::Error::other(e.to_string()))?;
             batch_entries.push(entry);
             responders.push(responder);
         }
@@ -317,11 +331,11 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
             return Ok(());
         }
 
-        let responses = self.apply_entries_internal(&batch_entries).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+        let responses = self
+            .apply_entries_internal(&batch_entries)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        for (response, responder_opt) in responses.into_iter().zip(responders.into_iter()) {
+        for (response, responder_opt) in responses.into_iter().zip(responders) {
             if let Some(responder) = responder_opt {
                 responder.send(response);
             }
@@ -358,7 +372,7 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
         if let Some(ref temp_path) = *self.snapshot_temp_path.read() {
             if let Err(e) = std::fs::write(temp_path, &data) {
                 let _ = std::fs::remove_file(temp_path);
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                return Err(std::io::Error::other(e.to_string()));
             }
             // fsync the parent directory to ensure metadata durability
             if let Some(parent) = temp_path.parent() {
@@ -375,7 +389,7 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
                 let _ = std::fs::remove_file(temp_path);
             }
             *self.snapshot_temp_path.write() = None;
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+            std::io::Error::other(e.to_string())
         })?;
 
         // Clear PendingLogOverlay and in-memory state after snapshot install
@@ -388,7 +402,8 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
             committer.overlay.lock().clear();
         }
         // Reload state from the new DB
-        self.load_state().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        self.load_state()
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         // Clean up temp file after successful install
         if let Some(ref temp_path) = *self.snapshot_temp_path.read() {
@@ -399,18 +414,22 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     #[instrument(name = "raft_snapshot", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> std::result::Result<Option<Snapshot<CLId, u64, openraft::BasicNode, Cursor<Vec<u8>>>>, std::io::Error> {
+    ) -> std::result::Result<
+        Option<Snapshot<CLId, u64, openraft::BasicNode, Cursor<Vec<u8>>>>,
+        std::io::Error,
+    > {
         let state = self.state.read();
         let Some(meta) = state.snapshot_meta.clone() else {
             return Ok(None);
         };
         drop(state);
 
-        let data = prepare_snapshot_bundle(&self.db)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let data =
+            prepare_snapshot_bundle(&self.db).map_err(|e| std::io::Error::other(e.to_string()))?;
         Ok(Some(Snapshot {
             meta,
             snapshot: Cursor::new(data),

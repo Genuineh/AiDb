@@ -166,8 +166,10 @@ impl RaftNetworkClient {
 
     async fn get_client(
         &mut self,
-    ) -> std::result::Result<&mut RaftServiceClient<tonic::transport::Channel>, NetworkError<TypeConfig>>
-    {
+    ) -> std::result::Result<
+        &mut RaftServiceClient<tonic::transport::Channel>,
+        NetworkError<TypeConfig>,
+    > {
         if self.client.is_none() {
             // Fallback: lazy connect (backward compat, 缓存未命中时)
             tracing::debug!(
@@ -201,10 +203,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,
         _option: RPCOption,
-    ) -> std::result::Result<
-        AppendEntriesResponse<TypeConfig>,
-        RPCError<TypeConfig>,
-    > {
+    ) -> std::result::Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
         #[cfg(feature = "monitoring")]
         crate::cluster::metrics::record_raft_rpc("append_entries", "outgoing");
         let req_timeout = self.request_timeout;
@@ -213,8 +212,11 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
 
         let mut entries = Vec::new();
         for entry in rpc.entries {
-            let payload = rmp_serde::to_vec(&entry.payload)
-                .map_err(|e| RPCError::Network(NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e))))?;
+            let payload = rmp_serde::to_vec(&entry.payload).map_err(|e| {
+                RPCError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&e),
+                ))
+            })?;
             entries.push(raft_rpc::LogEntry {
                 log_index: entry.log_id.index,
                 log_term: entry.log_id.leader_id.term,
@@ -232,11 +234,11 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
             vote_committed: rpc.vote.committed,
             prev_log_index: rpc.prev_log_id.map(|id| id.index),
             prev_log_term: rpc.prev_log_id.map(|id| id.leader_id.term),
-            prev_log_leader_id: rpc.prev_log_id.map(|id| 0), // v0.10 CommittedLeaderId has no node_id
+            prev_log_leader_id: rpc.prev_log_id.map(|_id| 0), // v0.10 CommittedLeaderId has no node_id
             entries,
             leader_commit_index: rpc.leader_commit.map(|id| id.index),
             leader_commit_term: rpc.leader_commit.map(|id| id.leader_id.term),
-            leader_commit_leader_id: rpc.leader_commit.map(|id| 0), // v0.10 CommittedLeaderId has no node_id
+            leader_commit_leader_id: rpc.leader_commit.map(|_id| 0), // v0.10 CommittedLeaderId has no node_id
         };
 
         let rpc_future = client.append_entries(TonicRequest::new(request));
@@ -244,7 +246,9 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
-                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e))));
+                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&e),
+                )));
             }
             Ok(Err(e)) => return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&e))),
             Err(_) => {
@@ -252,9 +256,9 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                     std::io::ErrorKind::TimedOut,
                     format!("AppendEntries timeout after {}ms", req_timeout.as_millis()),
                 );
-                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(
-                    &io_err,
-                ))));
+                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&io_err),
+                )));
             }
         };
         tracing::info!(
@@ -282,34 +286,39 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         }
     }
 
-    #[instrument(name = "raft_rpc_full_snapshot", skip(self, vote, snapshot, cancel, _option))]
+    #[instrument(
+        name = "raft_rpc_full_snapshot",
+        skip(self, vote, snapshot, cancel, _option)
+    )]
     async fn full_snapshot(
         &mut self,
         vote: openraft::alias::VoteOf<TypeConfig>,
         snapshot: openraft::alias::SnapshotOf<TypeConfig, Self::SnapshotData>,
-        cancel: impl std::future::Future<Output = openraft::error::ReplicationClosed> + openraft::OptionalSend + 'static,
+        cancel: impl std::future::Future<Output = openraft::error::ReplicationClosed>
+            + openraft::OptionalSend
+            + 'static,
         _option: RPCOption,
     ) -> std::result::Result<
         SnapshotResponse<TypeConfig>,
         openraft::error::StreamingError<TypeConfig>,
     > {
-        let _ = cancel; // Not using cancellation in this implementation
+        drop(cancel); // Not using cancellation in this implementation
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
-        let client = self.get_client().await.map_err(|e| {
-            openraft::error::StreamingError::Network(e)
-        })?;
+        let client = self
+            .get_client()
+            .await
+            .map_err(openraft::error::StreamingError::Network)?;
 
         let meta = raft_rpc::SnapshotMeta {
             last_log_index: snapshot.meta.last_log_id.map(|id| id.index),
             last_log_term: snapshot.meta.last_log_id.map(|id| id.leader_id.term),
             last_log_leader_id: snapshot.meta.last_log_id.map(|id| id.leader_id.term),
-            last_membership: bincode::serialize(&snapshot.meta.last_membership)
-                .map_err(|e| {
-                    openraft::error::StreamingError::Network(
-                        NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e)),
-                    )
-                })?,
+            last_membership: bincode::serialize(&snapshot.meta.last_membership).map_err(|e| {
+                openraft::error::StreamingError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&e),
+                ))
+            })?,
             snapshot_id: snapshot.meta.snapshot_id.clone(),
         };
 
@@ -327,14 +336,18 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
-                return Err(openraft::error::StreamingError::Unreachable(
-                    Unreachable::<TypeConfig>::new(&e),
-                ));
+                return Err(openraft::error::StreamingError::Unreachable(Unreachable::<
+                    TypeConfig,
+                >::new(
+                    &e
+                )));
             }
             Ok(Err(e)) => {
-                return Err(openraft::error::StreamingError::Network(
-                    NetworkError::<TypeConfig>::new(&e),
-                ));
+                return Err(openraft::error::StreamingError::Network(NetworkError::<
+                    TypeConfig,
+                >::new(
+                    &e
+                )));
             }
             Err(_) => {
                 let io_err = std::io::Error::new(
@@ -344,9 +357,11 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                         req_timeout.as_millis()
                     ),
                 );
-                return Err(openraft::error::StreamingError::Unreachable(
-                    Unreachable::<TypeConfig>::new(&io_err),
-                ));
+                return Err(openraft::error::StreamingError::Unreachable(Unreachable::<
+                    TypeConfig,
+                >::new(
+                    &io_err
+                )));
             }
         };
 
@@ -361,10 +376,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         &mut self,
         rpc: VoteRequest<TypeConfig>,
         _option: RPCOption,
-    ) -> std::result::Result<
-        VoteResponse<TypeConfig>,
-        RPCError<TypeConfig>,
-    > {
+    ) -> std::result::Result<VoteResponse<TypeConfig>, RPCError<TypeConfig>> {
         #[cfg(feature = "monitoring")]
         crate::cluster::metrics::record_raft_rpc("vote", "outgoing");
         let req_timeout = self.request_timeout;
@@ -378,14 +390,16 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
             vote_committed: rpc.vote.committed,
             last_log_index: rpc.last_log_id.map(|id| id.index).unwrap_or(0),
             last_log_term: rpc.last_log_id.map(|id| id.leader_id.term).unwrap_or(0),
-            last_log_leader_id: rpc.last_log_id.map(|id| 0).unwrap_or(0),
+            last_log_leader_id: rpc.last_log_id.map(|_id| 0).unwrap_or(0),
         };
 
         let rpc_future = client.vote(TonicRequest::new(request));
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
-                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e))));
+                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&e),
+                )));
             }
             Ok(Err(e)) => return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&e))),
             Err(_) => {
@@ -393,9 +407,9 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                     std::io::ErrorKind::TimedOut,
                     format!("Vote timeout after {}ms", req_timeout.as_millis()),
                 );
-                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(
-                    &io_err,
-                ))));
+                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&io_err),
+                )));
             }
         };
 
@@ -419,9 +433,10 @@ fn map_rpc_status_error(rpc_name: &str, status: tonic::Status) -> Error {
             leader_addr: None,
             is_ask: false,
         }),
-        tonic::Code::NotFound => {
-            Error::Cluster(ClusterError::Raft(format!("{rpc_name}: {}", status.message())))
-        }
+        tonic::Code::NotFound => Error::Cluster(ClusterError::Raft(format!(
+            "{rpc_name}: {}",
+            status.message()
+        ))),
         _ => Error::Cluster(ClusterError::Raft(format!(
             "{rpc_name} failed: {}",
             status.message()
@@ -489,7 +504,8 @@ impl RaftNetworkClientFactory {
         target: NodeId,
         addr: &str,
         max_message_size: usize,
-    ) -> std::result::Result<RaftServiceClient<tonic::transport::Channel>, NetworkError<TypeConfig>> {
+    ) -> std::result::Result<RaftServiceClient<tonic::transport::Channel>, NetworkError<TypeConfig>>
+    {
         // DashMap 内置分片锁, get/insert 无全局锁竞争
         if let Some(client) = self.channels.get(&target) {
             return Ok(client.clone());
@@ -571,6 +587,7 @@ impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
 /// 多 Group Raft gRPC 服务调度器
 /// 所有数据 Group 共享此实例, 通过 group_id 分发 RPC
 pub struct RaftServiceDispatcher {
+    #[allow(clippy::type_complexity)]
     groups: Arc<RwLock<HashMap<u64, Arc<openraft::Raft<TypeConfig, OpenRaftStorage>>>>>,
     /// FIX-0056-A1: `GetKey`/`GetMigrationTip` 需要 `OpenRaftNode` 级别的
     /// leader-check / linearizable 读语义 (`get()`/`get_migration_tip()`),
@@ -588,7 +605,11 @@ impl RaftServiceDispatcher {
         }
     }
 
-    pub fn register_group(&self, group_id: u64, raft: Arc<openraft::Raft<TypeConfig, OpenRaftStorage>>) {
+    pub fn register_group(
+        &self,
+        group_id: u64,
+        raft: Arc<openraft::Raft<TypeConfig, OpenRaftStorage>>,
+    ) {
         self.groups.write().insert(group_id, raft);
     }
 
@@ -604,7 +625,10 @@ impl RaftServiceDispatcher {
         self.nodes.write().remove(&group_id);
     }
 
-    pub fn get_raft(&self, group_id: u64) -> Option<Arc<openraft::Raft<TypeConfig, OpenRaftStorage>>> {
+    pub fn get_raft(
+        &self,
+        group_id: u64,
+    ) -> Option<Arc<openraft::Raft<TypeConfig, OpenRaftStorage>>> {
         self.groups.read().get(&group_id).cloned()
     }
 
@@ -697,8 +721,9 @@ impl RaftService for RaftServiceImpl {
 
         let mut entries = Vec::new();
         for entry in req.entries {
-            let payload: openraft::EntryPayload<Request, NodeId, openraft::BasicNode> = rmp_serde::from_slice(&entry.payload)
-                .map_err(|e| tonic::Status::internal(format!("deserialize entry: {e}")))?;
+            let payload: openraft::EntryPayload<Request, NodeId, openraft::BasicNode> =
+                rmp_serde::from_slice(&entry.payload)
+                    .map_err(|e| tonic::Status::internal(format!("deserialize entry: {e}")))?;
             entries.push(crate::cluster::types::LogEntry {
                 log_id: openraft::LogId::new(
                     openraft::vote::leader_id_std::CommittedLeaderId::new(entry.log_term),
@@ -713,7 +738,7 @@ impl RaftService for RaftServiceImpl {
             req.prev_log_term,
             req.prev_log_leader_id,
         ) {
-            (Some(index), Some(term), Some(leader_id)) => Some(openraft::LogId::new(
+            (Some(index), Some(term), Some(_leader_id)) => Some(openraft::LogId::new(
                 openraft::vote::leader_id_std::CommittedLeaderId::new(term),
                 index,
             )),
@@ -725,7 +750,7 @@ impl RaftService for RaftServiceImpl {
             req.leader_commit_term,
             req.leader_commit_leader_id,
         ) {
-            (Some(index), Some(term), Some(leader_id)) => Some(openraft::LogId::new(
+            (Some(index), Some(term), Some(_leader_id)) => Some(openraft::LogId::new(
                 openraft::vote::leader_id_std::CommittedLeaderId::new(term),
                 index,
             )),
@@ -797,7 +822,7 @@ impl RaftService for RaftServiceImpl {
             meta.last_log_term,
             meta.last_log_leader_id,
         ) {
-            (Some(index), Some(term), Some(leader_id)) => Some(openraft::LogId::new(
+            (Some(index), Some(term), Some(_leader_id)) => Some(openraft::LogId::new(
                 openraft::vote::leader_id_std::CommittedLeaderId::new(term),
                 index,
             )),
@@ -874,7 +899,9 @@ impl RaftService for RaftServiceImpl {
             .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
 
         match node.get_migration_tip(req.epoch).await {
-            Ok(tip) => Ok(tonic::Response::new(raft_rpc::GetMigrationTipResponse { tip })),
+            Ok(tip) => Ok(tonic::Response::new(raft_rpc::GetMigrationTipResponse {
+                tip,
+            })),
             Err(e) => Err(map_node_error_to_status(e)),
         }
     }
@@ -882,10 +909,8 @@ impl RaftService for RaftServiceImpl {
     async fn get_migration_tombstone(
         &self,
         request: TonicRequest<raft_rpc::GetMigrationTombstoneRequest>,
-    ) -> std::result::Result<
-        tonic::Response<raft_rpc::GetMigrationTombstoneResponse>,
-        tonic::Status,
-    > {
+    ) -> std::result::Result<tonic::Response<raft_rpc::GetMigrationTombstoneResponse>, tonic::Status>
+    {
         let req = request.into_inner();
         let node = self
             .dispatcher
@@ -893,9 +918,11 @@ impl RaftService for RaftServiceImpl {
             .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
 
         match node.get_migration_tombstone(req.epoch, req.key).await {
-            Ok(op) => Ok(tonic::Response::new(raft_rpc::GetMigrationTombstoneResponse {
-                op_tag: op.map(|o| o.tag()).unwrap_or(0) as u32,
-            })),
+            Ok(op) => Ok(tonic::Response::new(
+                raft_rpc::GetMigrationTombstoneResponse {
+                    op_tag: op.map(|o| o.tag()).unwrap_or(0) as u32,
+                },
+            )),
             Err(e) => Err(map_node_error_to_status(e)),
         }
     }

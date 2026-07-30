@@ -16,9 +16,10 @@ pub fn apply_entry(mt: &MemTable, entry: &WalEntry) -> Result<()> {
         }
         OpType::TypeDelete => mt.delete(&entry.key, entry.sequence),
         OpType::TypeDeleteRange => {
-            let end = entry.value.as_deref().ok_or_else(|| {
-                Error::Corruption("delete_range entry missing value".into())
-            })?;
+            let end = entry
+                .value
+                .as_deref()
+                .ok_or_else(|| Error::Corruption("delete_range entry missing value".into()))?;
             mt.put_range_delete(&entry.key, end, entry.sequence)
         }
         OpType::BatchStart | OpType::FileHeader => Ok(()),

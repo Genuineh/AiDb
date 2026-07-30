@@ -76,7 +76,11 @@ impl Writer {
 
     /// 兼容旧接口: sync_wal 由上层管理, 同时支持预分配.
     #[tracing::instrument(name = "wal_writer_open_with_sync_pre", skip(path))]
-    pub fn open_with_sync_preallocate(path: &Path, _sync_wal: bool, preallocate_bytes: u64) -> Result<Self> {
+    pub fn open_with_sync_preallocate(
+        path: &Path,
+        _sync_wal: bool,
+        preallocate_bytes: u64,
+    ) -> Result<Self> {
         Self::open_with_preallocate(path, preallocate_bytes)
     }
 
@@ -92,10 +96,7 @@ impl Writer {
         }
 
         let block_offset = (file.metadata()?.len() % BLOCK_SIZE as u64) as usize;
-        Ok(Writer {
-            file,
-            block_offset,
-        })
+        Ok(Writer { file, block_offset })
     }
 
     /// 单条 Record 的 data 最大长度 (Length 字段为 u16)

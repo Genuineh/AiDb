@@ -183,7 +183,10 @@ impl CompactionJob {
                 continue;
             }
             if self.output_level > 0
-                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+                && matches!(
+                    value_type,
+                    ValueType::TypeDelete | ValueType::TypeRangeDelete
+                )
             {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
@@ -241,7 +244,10 @@ impl CompactionJob {
                 continue;
             }
             if self.output_level > 0
-                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+                && matches!(
+                    value_type,
+                    ValueType::TypeDelete | ValueType::TypeRangeDelete
+                )
             {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
@@ -350,7 +356,10 @@ impl CompactionJob {
             }
 
             if self.output_level > 0
-                && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+                && matches!(
+                    value_type,
+                    ValueType::TypeDelete | ValueType::TypeRangeDelete
+                )
             {
                 last_user_key = Some(user_key.to_vec());
                 tracker.observe(seq, self.min_snapshot_sequence);
@@ -600,7 +609,10 @@ fn write_sub_compaction(
         }
 
         if output_level > 0
-            && matches!(value_type, ValueType::TypeDelete | ValueType::TypeRangeDelete)
+            && matches!(
+                value_type,
+                ValueType::TypeDelete | ValueType::TypeRangeDelete
+            )
         {
             last_user_key = Some(user_key.to_vec());
             tracker.observe(seq, min_snap_seq);

@@ -53,7 +53,9 @@ async fn test_linearizable_follower_not_leader_has_leader_addr() {
     let mut leader_addr = None;
     for _ in 0..10 {
         match follower.get(KEY.to_vec()).await {
-            Err(Error::Cluster(ClusterError::NotLeader { leader_addr: addr, .. })) => {
+            Err(Error::Cluster(ClusterError::NotLeader {
+                leader_addr: addr, ..
+            })) => {
                 leader_addr = Some(addr);
                 break;
             }

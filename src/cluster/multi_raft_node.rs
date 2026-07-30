@@ -10,8 +10,8 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::instrument;
 
-use openraft::RaftNetworkFactory;
 use openraft::type_config::async_runtime::WatchReceiver;
+use openraft::RaftNetworkFactory;
 
 use crate::cluster::lifecycle_manager::{LifecycleManager, MetaRaftProvider};
 use crate::cluster::meta_types::{default_slot_table, ClusterMeta, SlotMigrationState, SlotTable};
@@ -349,6 +349,7 @@ impl MultiRaftNode {
         self.shutdown_tx.lock().as_ref().unwrap().subscribe()
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_group_inner(
         group_id: u64,
         init_as_voter: bool,
@@ -467,9 +468,11 @@ impl MultiRaftNode {
             groups
                 .read()
                 .iter()
-                .filter_map(|(gid, node)| match node.raft().metrics().borrow_watched().running_state {
-                    Ok(()) => None,
-                    Err(ref fatal) => Some((*gid, fatal.to_string())),
+                .filter_map(|(gid, node)| {
+                    match node.raft().metrics().borrow_watched().running_state {
+                        Ok(()) => None,
+                        Err(ref fatal) => Some((*gid, fatal.to_string())),
+                    }
                 })
                 .collect()
         };
@@ -477,7 +480,9 @@ impl MultiRaftNode {
         // 已恢复健康的 group 清除退避计数, 下次真正故障时重新从最短退避开始.
         if !fatal_groups.is_empty() || !restart_state.read().is_empty() {
             let fatal_ids: HashSet<u64> = fatal_groups.iter().map(|(gid, _)| *gid).collect();
-            restart_state.write().retain(|gid, _| fatal_ids.contains(gid));
+            restart_state
+                .write()
+                .retain(|gid, _| fatal_ids.contains(gid));
         }
 
         for (group_id, reason) in fatal_groups {
@@ -500,7 +505,10 @@ impl MultiRaftNode {
             };
 
             if !should_attempt {
-                tracing::debug!(group_id, "raft group still in self-heal backoff window, skip this tick");
+                tracing::debug!(
+                    group_id,
+                    "raft group still in self-heal backoff window, skip this tick"
+                );
                 continue;
             }
 
@@ -512,7 +520,14 @@ impl MultiRaftNode {
 
             Self::remove_group_inner(group_id, groups, storages, dispatcher).await;
             Self::create_group_inner(
-                group_id, false, None, groups, storages, dispatcher, cfg, net_factory,
+                group_id,
+                false,
+                None,
+                groups,
+                storages,
+                dispatcher,
+                cfg,
+                net_factory,
             )
             .await;
 
@@ -758,12 +773,14 @@ impl MultiRaftNode {
     /// 返回 Err —— 调用方 (`get_key_from_group_remote` / `read_migration_tip`)
     /// 不得把"找不到 leader"悄悄当成"key 不存在"或 tip=0.
     async fn remote_leader_client(&self, group_id: u64) -> Result<RaftNetworkClient> {
-        let leader = self.router.get_group_leader(group_id).ok_or_else(|| {
-            ClusterError::Raft(format!("no known leader for group {group_id}"))
-        })?;
-        let addr = self.router.get_node_addr(leader).ok_or_else(|| {
-            ClusterError::Raft(format!("no rpc address known for node {leader}"))
-        })?;
+        let leader = self
+            .router
+            .get_group_leader(group_id)
+            .ok_or_else(|| ClusterError::Raft(format!("no known leader for group {group_id}")))?;
+        let addr = self
+            .router
+            .get_node_addr(leader)
+            .ok_or_else(|| ClusterError::Raft(format!("no rpc address known for node {leader}")))?;
         let mut factory = self.network_factory.read().clone().with_group_id(group_id);
         let basic_node = openraft::BasicNode { addr };
         Ok(factory.new_client(leader, &basic_node).await)
@@ -841,7 +858,9 @@ impl MultiRaftNode {
         group_id: u64,
         key_range: Option<(Vec<u8>, Vec<u8>)>,
     ) -> Result<Vec<Vec<u8>>> {
-        use crate::cluster::storage::keys::{sm_key, sm_range_end, sm_range_start, user_key_from_sm_key};
+        use crate::cluster::storage::keys::{
+            sm_key, sm_range_end, sm_range_start, user_key_from_sm_key,
+        };
 
         let db = {
             let storages = self.storages.read();
@@ -996,7 +1015,10 @@ mod tests {
         assert_eq!(b0, std::time::Duration::from_secs(2));
         assert_eq!(b1, std::time::Duration::from_secs(4));
         assert_eq!(b2, std::time::Duration::from_secs(8));
-        assert!(b1 > b0 && b2 > b1, "backoff must strictly increase at first");
+        assert!(
+            b1 > b0 && b2 > b1,
+            "backoff must strictly increase at first"
+        );
         assert_eq!(
             b_far,
             std::time::Duration::from_secs(60),
@@ -1055,7 +1077,10 @@ mod tests {
             &net_factory,
         )
         .await;
-        assert!(groups.read().contains_key(&GROUP_ID), "group should be created");
+        assert!(
+            groups.read().contains_key(&GROUP_ID),
+            "group should be created"
+        );
 
         let node = groups.read().get(&GROUP_ID).cloned().unwrap();
         wait_for(std::time::Duration::from_secs(5), || {
@@ -1089,7 +1114,11 @@ mod tests {
         );
 
         wait_for(std::time::Duration::from_secs(5), || {
-            node.raft().metrics().borrow_watched().running_state.is_err()
+            node.raft()
+                .metrics()
+                .borrow_watched()
+                .running_state
+                .is_err()
         })
         .await;
 
@@ -1126,7 +1155,12 @@ mod tests {
             "dispatcher must track the reopened OpenRaftNode, not a stale fatal reference"
         );
         assert!(
-            node2.raft().metrics().borrow_watched().running_state.is_ok(),
+            node2
+                .raft()
+                .metrics()
+                .borrow_watched()
+                .running_state
+                .is_ok(),
             "reopened group must not still be in a Fatal state"
         );
 

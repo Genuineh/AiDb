@@ -13,8 +13,8 @@ use crate::engine::compaction::{
     VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
-    encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable,
-    PointState, ValueType, SEQUENCE_LIMIT,
+    encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable, PointState,
+    ValueType, SEQUENCE_LIMIT,
 };
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::engine::wal::manager::WALManager;
@@ -387,8 +387,7 @@ impl DB {
         let mt_mem = self
             .approximate_memory_bytes()
             .saturating_sub(self.block_cache_size());
-        let mt_limit =
-            (self.options.memtable_size * self.options.max_write_buffer_number) as u64;
+        let mt_limit = (self.options.memtable_size * self.options.max_write_buffer_number) as u64;
 
         if mt_mem > mt_limit.saturating_mul(4) / 5 {
             // stop: MemTable 总内存超过 80% 量级硬上限, 主动 freeze + flush 释放.
@@ -423,8 +422,7 @@ impl DB {
 
         if mt_mem > mt_limit.saturating_mul(3) / 5 {
             // slowdown: MemTable 总内存超 60% 硬上限, 按超出比例线性 sleep.
-            let excess =
-                (mt_mem - mt_limit.saturating_mul(3) / 5) as f64;
+            let excess = (mt_mem - mt_limit.saturating_mul(3) / 5) as f64;
             let span = (mt_limit.saturating_mul(4) / 5)
                 .saturating_sub(mt_limit.saturating_mul(3) / 5) as f64;
             let sleep_ms = if span > 0.0 {
@@ -476,11 +474,10 @@ impl DB {
                 // stop: 轮询等待, 主动触发 compaction
                 while {
                     let tables = self.sstables.read();
-                    CompactionPicker::calculate_level_size(&tables[level_index]) > target.saturating_mul(2)
+                    CompactionPicker::calculate_level_size(&tables[level_index])
+                        > target.saturating_mul(2)
                 } {
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        opts.write_stall_poll_ms,
-                    ));
+                    std::thread::sleep(std::time::Duration::from_millis(opts.write_stall_poll_ms));
                     self.maybe_trigger_compaction();
                 }
                 return;
@@ -525,7 +522,10 @@ impl DB {
         }
 
         // Phase 3: MemTable (after WAL is durable)
-        let existed = self.memtable.read().contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
+        let existed = self
+            .memtable
+            .read()
+            .contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
         self.memtable.read().put(key, value, seq)?;
 
         if !existed {
@@ -667,20 +667,18 @@ impl DB {
         let mut best_delete: Option<u64> = None;
         let mut best_range: Option<u64> = None;
 
-        let mut absorb_point = |state: PointState| {
-            match state {
-                PointState::Put(value, seq) => {
-                    if best_put.as_ref().is_none_or(|(_, s)| seq > *s) {
-                        best_put = Some((value, seq));
-                    }
+        let mut absorb_point = |state: PointState| match state {
+            PointState::Put(value, seq) => {
+                if best_put.as_ref().is_none_or(|(_, s)| seq > *s) {
+                    best_put = Some((value, seq));
                 }
-                PointState::Delete(seq) => {
-                    if best_delete.is_none_or(|s| seq > s) {
-                        best_delete = Some(seq);
-                    }
-                }
-                PointState::Absent => {}
             }
+            PointState::Delete(seq) => {
+                if best_delete.is_none_or(|s| seq > s) {
+                    best_delete = Some(seq);
+                }
+            }
+            PointState::Absent => {}
         };
 
         let mut absorb_range = |seq: Option<u64>| {
@@ -850,9 +848,7 @@ impl DB {
             self.total_key_count
                 .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
             #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(
-                self.total_key_count.load(AtomicOrdering::Relaxed),
-            );
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
         } else if key_delta < 0 {
             let sub = (-key_delta) as usize;
             self.total_key_count
@@ -861,9 +857,7 @@ impl DB {
                 })
                 .ok();
             #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(
-                self.total_key_count.load(AtomicOrdering::Relaxed),
-            );
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
         }
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
@@ -929,9 +923,7 @@ impl DB {
             self.total_key_count
                 .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
             #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(
-                self.total_key_count.load(AtomicOrdering::Relaxed),
-            );
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
         } else if key_delta < 0 {
             let sub = (-key_delta) as usize;
             self.total_key_count
@@ -940,9 +932,7 @@ impl DB {
                 })
                 .ok();
             #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(
-                self.total_key_count.load(AtomicOrdering::Relaxed),
-            );
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
         }
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
@@ -955,7 +945,10 @@ impl DB {
         );
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch_no_wal");
         #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration("write_batch_no_wal", op_start.elapsed().as_secs_f64());
+        crate::metrics::record_operation_duration(
+            "write_batch_no_wal",
+            op_start.elapsed().as_secs_f64(),
+        );
         Ok(())
     }
 
@@ -1246,13 +1239,19 @@ impl DB {
                 })?;
                 sst_guard[task.output_level].retain(|f| f.file_number() != num);
             }
-            let l0_output_count = results.iter().filter(|r| r.entry_count > 0 && task.output_level == 0).count();
+            let l0_output_count = results
+                .iter()
+                .filter(|r| r.entry_count > 0 && task.output_level == 0)
+                .count();
             if task.level == 0 {
-                self.l0_sstable_count.fetch_sub(task.inputs.len(), AtomicOrdering::Relaxed);
+                self.l0_sstable_count
+                    .fetch_sub(task.inputs.len(), AtomicOrdering::Relaxed);
             }
             if task.output_level == 0 {
-                self.l0_sstable_count.fetch_sub(task.expanded_inputs.len(), AtomicOrdering::Relaxed);
-                self.l0_sstable_count.fetch_add(l0_output_count, AtomicOrdering::Relaxed);
+                self.l0_sstable_count
+                    .fetch_sub(task.expanded_inputs.len(), AtomicOrdering::Relaxed);
+                self.l0_sstable_count
+                    .fetch_add(l0_output_count, AtomicOrdering::Relaxed);
             }
             #[cfg(feature = "monitoring")]
             {
@@ -1474,7 +1473,8 @@ impl DB {
             max
         };
 
-        self.group_commit_synced_seq.store(synced_seq, AtomicOrdering::Release);
+        self.group_commit_synced_seq
+            .store(synced_seq, AtomicOrdering::Release);
         Ok(())
     }
 
