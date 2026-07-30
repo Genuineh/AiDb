@@ -13,8 +13,8 @@ use crate::engine::compaction::{
     VersionEdit, VersionSet,
 };
 use crate::engine::memtable::{
-    encode_internal_key, extract_sequence, ImmutableMemTable, MemTable, PointState, ValueType,
-    SEQUENCE_LIMIT,
+    encode_internal_key, encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable,
+    PointState, ValueType, SEQUENCE_LIMIT,
 };
 use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::engine::wal::manager::WALManager;
@@ -585,53 +585,77 @@ impl DB {
 
     /// 无 range tombstone 时走旧短路路径 (mem → imm → sst 逐层返回).
     fn get_at_sequence_fast(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
-        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
-        if let Some((value, ty)) = self.memtable.read().search(&seek_key)? {
-            return Ok(match ty {
-                ValueType::TypePut => Some(value.as_ref().to_vec()),
-                ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
-            });
-        }
-        for imm in self.immutable_memtables.read().iter().rev() {
-            if let Some((value, ty)) = imm.search(&seek_key)? {
-                return Ok(match ty {
-                    ValueType::TypePut => Some(value.as_ref().to_vec()),
-                    ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
-                });
+        let mut hit: Option<Option<Vec<u8>>> = None;
+        let mut err: Option<Error> = None;
+
+        encode_internal_key_buffered(key, max_seq, ValueType::TypePut, |seek_key| {
+            match self.memtable.read().search(seek_key) {
+                Ok(Some((value, ty))) => {
+                    hit = Some(match ty {
+                        ValueType::TypePut => Some(value.as_ref().to_vec()),
+                        ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                    });
+                    return;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    err = Some(e);
+                    return;
+                }
             }
+            for imm in self.immutable_memtables.read().iter().rev() {
+                match imm.search(seek_key) {
+                    Ok(Some((value, ty))) => {
+                        hit = Some(match ty {
+                            ValueType::TypePut => Some(value.as_ref().to_vec()),
+                            ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                        });
+                        return;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        err = Some(e);
+                        return;
+                    }
+                }
+            }
+        });
+
+        if let Some(e) = err {
+            return Err(e);
         }
+        if let Some(res) = hit {
+            return Ok(res);
+        }
+
         self.get_from_sstables(key, max_seq)
     }
 
     fn get_from_sstables(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
-        let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
-        let l0_readers: Vec<Arc<SSTableReader>>;
-        let l1_plus_readers: Vec<Vec<Arc<SSTableReader>>>;
-        {
+        encode_internal_key_buffered(key, max_seq, ValueType::TypePut, |seek_key| {
             let tables = self.sstables.read();
-            l0_readers = tables[0].clone();
-            l1_plus_readers = tables.iter().skip(1).cloned().collect();
-        }
-
-        for reader in &l0_readers {
-            if let Some((value, ty)) = reader.get(&seek_key)? {
-                return Ok(match ty {
-                    ValueType::TypePut => Some(value),
-                    ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
-                });
-            }
-        }
-        for level in &l1_plus_readers {
-            if let Some(reader) = find_sstable_for_key(level, key) {
-                if let Some((value, ty)) = reader.get(&seek_key)? {
+            // L0 文件按由新到旧排列在 tables[0] (0 = 最新落盘), 顺序遍历
+            for reader in &tables[0] {
+                if let Some((value, ty)) = reader.get(seek_key)? {
                     return Ok(match ty {
                         ValueType::TypePut => Some(value),
                         ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
                     });
                 }
             }
-        }
-        Ok(None)
+            // L1+ 逐层查找
+            for level in tables.iter().skip(1) {
+                if let Some(reader) = find_sstable_for_key(level, key) {
+                    if let Some((value, ty)) = reader.get(seek_key)? {
+                        return Ok(match ty {
+                            ValueType::TypePut => Some(value),
+                            ValueType::TypeDelete | ValueType::TypeRangeDelete => None,
+                        });
+                    }
+                }
+            }
+            Ok(None)
+        })
     }
 
     fn get_at_sequence_with_range_tombstones(

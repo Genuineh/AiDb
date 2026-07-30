@@ -57,6 +57,32 @@ pub fn encode_internal_key(user_key: &[u8], sequence: u64, value_type: ValueType
     buf
 }
 
+/// 零堆分配: 将 InternalKey 写入栈缓冲区 `[u8; 256]` 并在闭包中传递切片 (user_key 长度 <= 248).
+pub fn encode_internal_key_buffered<F, R>(
+    user_key: &[u8],
+    sequence: u64,
+    value_type: ValueType,
+    f: F,
+) -> R
+where
+    F: FnOnce(&[u8]) -> R,
+{
+    let target_len = user_key.len() + 8;
+    if target_len <= 256 {
+        let mut buf = [0u8; 256];
+        buf[..user_key.len()].copy_from_slice(user_key);
+        let seq_bytes = (sequence << 8).to_be_bytes();
+        for (i, &b) in seq_bytes[..7].iter().enumerate() {
+            buf[user_key.len() + i] = !b;
+        }
+        buf[user_key.len() + 7] = value_type as u8;
+        f(&buf[..target_len])
+    } else {
+        let encoded = encode_internal_key(user_key, sequence, value_type);
+        f(&encoded)
+    }
+}
+
 /// encode_internal_key 的 `Arc<[u8]>` 变体。通过 `Vec::into()` 一步到位, 免去
 /// 调用方手动 `from_slice` 产生的中间变量和重复解引用 (F-019)。
 pub fn encode_internal_key_arc(

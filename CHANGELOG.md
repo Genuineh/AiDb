@@ -9,6 +9,9 @@
 
 ### Added
 
+- **LSM Tree 读路径零分配优化**:
+  - 新增 `encode_internal_key_buffered`: 利用 `[u8; 256]` 栈缓冲区替代堆动态内存分配, 消除构造 `seek_key` 时的 `Vec<u8>` 堆申请.
+  - 重构 `get_from_sstables`: 按引用在读锁 `tables = self.sstables.read()` 下直接只读迭代 `&tables[0]` (L0) 与 `&tables[1..]` (L1+), 消除每次读请求全量克隆 `tables[0]` / `tables[1..]` 导致的动态堆分配及几十次 `Arc::clone` 原子计数开销. 文件: `src/engine/db/inner.rs`, `src/engine/memtable/internal_key.rs`.
 - **性能日志微秒级插桩**: 5 处 `target: "perf"` 日志从毫秒改为微秒精度 — `raft_propose_ok` (node.rs), `raft_append_log` (storage/log.rs), `raft_apply_batch` (storage/apply.rs), `raft_rpc_ae_done` (network.rs), `db_write_done` (engine/db/inner.rs). 支持 eBPF 火焰图交叉验证.
 - **集群写性能优化 (Single-WAL & Raft Batch Tuning)**: 在 `OpenRaftStorage::apply_entries_internal` 阶段写入 LSM StateMachine DB 时引入 `DB::write_without_wal` 免去 DB 自身重复 WAL 磁盘写入, 消除双重 WAL 100% 写放大；调优 `max_payload_entries` 默认值从 100 提升至 512, 提升单次 gRPC 传输打包效率.
 - **OpenRaft v0.10.0-alpha.31 升级**: 适配 `RaftTypeConfig` API 变更 (`declare_raft_types!` 宏); `Entry` 4 泛型参数; `RaftLogStorage` / `RaftStateMachine` / `RaftLogReader` trait 重命名与 `io::Error` 统一; `RaftNetworkV2` / `IOFlushed` callback; `LeaderId` 结构变化.
