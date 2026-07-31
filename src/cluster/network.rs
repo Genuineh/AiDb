@@ -21,7 +21,7 @@ use tracing::instrument;
 
 use crate::cluster::node::OpenRaftNode;
 use crate::cluster::storage::OpenRaftStorage;
-use crate::cluster::types::{ClusterError, NodeId, Request, TypeConfig};
+use crate::cluster::types::{ClusterError, NodeId, Request, Response, TypeConfig};
 use crate::error::{Error, Result};
 
 #[allow(clippy::all)]
@@ -162,6 +162,46 @@ impl RaftNetworkClient {
         };
         let tag = response.into_inner().op_tag;
         Ok(crate::cluster::migration_oplog::MigOp::from_tag(tag as u8))
+    }
+
+    /// 跨节点迁移写: 向目标 group leader 节点 propose 一条数据面请求.
+    ///
+    /// 用于 `propose_group` 在 group 非本地时的远程 fallback (在线 slot
+    /// 迁移的 `PutConditional` 全量拷贝 / `MigrationBarrier` 写屏障等必须
+    /// 落到持有 target group 的节点). 请求/响应以 bincode 序列化, 与
+    /// `GetKey` 共用同一 gRPC 通道与超时语义; 对端 `NotLeader` 映射为
+    /// `failed_precondition`, 由调用方决定转发/重试.
+    pub async fn remote_propose(&mut self, group_id: u64, request: &Request) -> Result<Response> {
+        let req_timeout = self.request_timeout;
+        let client = self
+            .get_client()
+            .await
+            .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
+
+        let payload = bincode::serialize(request)
+            .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))?;
+        let request = raft_rpc::RemoteProposeRequest {
+            group_id,
+            request: payload,
+        };
+        let response = match timeout(
+            req_timeout,
+            client.remote_propose(TonicRequest::new(request)),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(status)) => return Err(map_rpc_status_error("RemotePropose", status)),
+            Err(_) => {
+                return Err(Error::Cluster(ClusterError::Timeout(format!(
+                    "RemotePropose timeout after {}ms",
+                    req_timeout.as_millis()
+                ))));
+            }
+        };
+        let payload = response.into_inner().response;
+        bincode::deserialize(&payload)
+            .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))
     }
 
     async fn get_client(
@@ -923,6 +963,30 @@ impl RaftService for RaftServiceImpl {
                     op_tag: op.map(|o| o.tag()).unwrap_or(0) as u32,
                 },
             )),
+            Err(e) => Err(map_node_error_to_status(e)),
+        }
+    }
+
+    async fn remote_propose(
+        &self,
+        request: TonicRequest<raft_rpc::RemoteProposeRequest>,
+    ) -> std::result::Result<tonic::Response<raft_rpc::RemoteProposeResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let node = self
+            .dispatcher
+            .get_node(req.group_id)
+            .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
+
+        let inner: Request = bincode::deserialize(&req.request)
+            .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
+        match node.propose(inner).await {
+            Ok(resp) => {
+                let payload = bincode::serialize(&resp)
+                    .map_err(|e| tonic::Status::internal(e.to_string()))?;
+                Ok(tonic::Response::new(raft_rpc::RemoteProposeResponse {
+                    response: payload,
+                }))
+            }
             Err(e) => Err(map_node_error_to_status(e)),
         }
     }

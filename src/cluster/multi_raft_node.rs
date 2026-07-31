@@ -666,13 +666,25 @@ impl MultiRaftNode {
     // ---- 读写操作 ----
 
     /// 向指定 Group 提交提案 (propose).
+    ///
+    /// Group 在本地时直接走本地 `OpenRaftNode::propose`; 否则 RPC 到该
+    /// group 当前已知的 leader (`RemotePropose`, 与 Raft RPC 同一数据面
+    /// gRPC 通道) —— 在线 slot 迁移的 `PutConditional` / `MigrationBarrier`
+    /// 需要跨节点落到持有 target group 的节点. 超时/失败原样返回 Err.
     #[instrument(skip(self, request))]
     pub async fn propose_group(&self, group_id: u64, request: Request) -> Result<Response> {
         let group = self.groups.read().get(&group_id).cloned();
         match group {
             Some(node) => node.propose(request).await,
-            None => Err(ClusterError::Raft(format!("group {} not found locally", group_id)).into()),
+            None => self.propose_group_remote(group_id, request).await,
         }
+    }
+
+    /// `propose_group` 的跨节点 fallback: RPC 到目标 group 当前 leader 节点
+    /// 执行 propose.
+    async fn propose_group_remote(&self, group_id: u64, request: Request) -> Result<Response> {
+        let mut client = self.remote_leader_client(group_id).await?;
+        client.remote_propose(group_id, &request).await
     }
 
     /// 按 key 路由并提交提案 (单 key SET/DEL 入口).
@@ -769,20 +781,25 @@ impl MultiRaftNode {
     }
 
     /// FIX-0056-A1: 构造指向 `group_id` 当前已知 leader 的 `RaftNetworkClient`
-    /// (与本地 Raft 对等通信同一 gRPC 通道/连接池). Leader 未知或地址缺失时
-    /// 返回 Err —— 调用方 (`get_key_from_group_remote` / `read_migration_tip`)
-    /// 不得把"找不到 leader"悄悄当成"key 不存在"或 tip=0.
+    /// (与本地 Raft 对等通信同一 gRPC 通道/连接池). Leader 未知时返回 Err ——
+    /// 调用方 (`get_key_from_group_remote` / `read_migration_tip` /
+    /// `propose_group_remote`) 不得把"找不到 leader"悄悄当成"key 不存在"
+    /// 或 tip=0.
+    ///
+    /// 目标地址取 `network_factory` 内注册的 **rpc_addr** (Raft 对等通信
+    /// 同款), 而不是 `router.node_addrs` —— 后者优先 `client_addr`
+    /// (外部可达的 client 端口), 容器内跨节点 RPC 连它必然 Connection
+    /// refused. `new_client` 收到空 `BasicNode.addr` 时会回退到 factory
+    /// 缓存的 rpc_addr.
     async fn remote_leader_client(&self, group_id: u64) -> Result<RaftNetworkClient> {
         let leader = self
             .router
             .get_group_leader(group_id)
             .ok_or_else(|| ClusterError::Raft(format!("no known leader for group {group_id}")))?;
-        let addr = self
-            .router
-            .get_node_addr(leader)
-            .ok_or_else(|| ClusterError::Raft(format!("no rpc address known for node {leader}")))?;
         let mut factory = self.network_factory.read().clone().with_group_id(group_id);
-        let basic_node = openraft::BasicNode { addr };
+        let basic_node = openraft::BasicNode {
+            addr: String::new(),
+        };
         Ok(factory.new_client(leader, &basic_node).await)
     }
 

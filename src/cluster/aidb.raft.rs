@@ -180,6 +180,24 @@ pub struct GetMigrationTombstoneResponse {
     #[prost(uint32, tag = "1")]
     pub op_tag: u32,
 }
+/// 跨节点迁移写: 向持有 target group 的节点 propose 一条数据面请求
+/// (MIGRATE 全量拷贝 PutConditional / quiesce 写屏障 MigrationBarrier 等).
+/// 与 GetKey 等扩展共用同一数据面 gRPC 通道, 目标为 group 当前 leader 节点;
+/// request/response 以 bincode 序列化 aidb::cluster::{Request, Response}.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoteProposeRequest {
+    #[prost(uint64, tag = "1")]
+    pub group_id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub request: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoteProposeResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub response: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated client implementations.
 pub mod raft_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -411,6 +429,31 @@ pub mod raft_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn remote_propose(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoteProposeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoteProposeResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aidb.raft.RaftService/RemotePropose",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("aidb.raft.RaftService", "RemotePropose"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -454,6 +497,13 @@ pub mod raft_service_server {
             request: tonic::Request<super::GetMigrationTombstoneRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetMigrationTombstoneResponse>,
+            tonic::Status,
+        >;
+        async fn remote_propose(
+            &self,
+            request: tonic::Request<super::RemoteProposeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoteProposeResponse>,
             tonic::Status,
         >;
     }
@@ -796,6 +846,52 @@ pub mod raft_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetMigrationTombstoneSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aidb.raft.RaftService/RemotePropose" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoteProposeSvc<T: RaftService>(pub Arc<T>);
+                    impl<
+                        T: RaftService,
+                    > tonic::server::UnaryService<super::RemoteProposeRequest>
+                    for RemoteProposeSvc<T> {
+                        type Response = super::RemoteProposeResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoteProposeRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as RaftService>::remote_propose(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RemoteProposeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
