@@ -712,7 +712,20 @@ impl MultiRaftNode {
     // ---- Phase 15 转发方法 ----
 
     /// 从指定 Group 的状态机直接读取 key (绕过路由).
+    ///
+    /// Group 在本地时直接走本地 leader-check / linearizable 读; 非本地时
+    /// fallback 到 `get_key_from_group_remote` (RPC 到该 group leader) —
+    /// slot 迁移 executor 在源节点上执行 `verify_migration` 时会对目标
+    /// group 读取 key, 此时目标 group 不在本地, 必须跨节点读取.
     pub async fn get_key_from_group(&self, group_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        if !self.is_group_local(group_id) {
+            return self.get_key_from_group_remote(group_id, key).await;
+        }
+        self.get_key_local(group_id, key).await
+    }
+
+    /// 本地 group 直读 (不检查是否本地, 由调用方保证).
+    async fn get_key_local(&self, group_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let group = self.groups.read().get(&group_id).cloned();
         match group {
             Some(node) => node.get(key.to_vec()).await,
@@ -722,17 +735,17 @@ impl MultiRaftNode {
 
     /// FIX-0056-A1"读导向"点 3: `get_key_from_group` 的跨节点合并读 fallback.
     ///
-    /// Group 在本地时直接走 `get_key_from_group` (本地 leader-check /
-    /// linearizable 读). 否则 RPC 到该 group 当前已知的 leader (`GetKey`,
-    /// 与 Raft RPC 同一数据面 gRPC 通道), 超时/失败原样返回 Err —— 调用方
-    /// 必须将其映射为 `TRYAGAIN`, 禁止静默 fallback 到可能陈旧的本地视图.
+    /// Group 在本地时直接走本地 leader-check / linearizable 读. 否则 RPC 到
+    /// 该 group 当前已知的 leader (`GetKey`, 与 Raft RPC 同一数据面 gRPC
+    /// 通道), 超时/失败原样返回 Err —— 调用方必须将其映射为 `TRYAGAIN`,
+    /// 禁止静默 fallback 到可能陈旧的本地视图.
     pub async fn get_key_from_group_remote(
         &self,
         group_id: u64,
         key: &[u8],
     ) -> Result<Option<Vec<u8>>> {
         if self.is_group_local(group_id) {
-            return self.get_key_from_group(group_id, key).await;
+            return self.get_key_local(group_id, key).await;
         }
         let mut client = self.remote_leader_client(group_id).await?;
         client.get_key(key).await
@@ -786,19 +799,30 @@ impl MultiRaftNode {
     /// `propose_group_remote`) 不得把"找不到 leader"悄悄当成"key 不存在"
     /// 或 tip=0.
     ///
-    /// 目标地址取 `network_factory` 内注册的 **rpc_addr** (Raft 对等通信
-    /// 同款), 而不是 `router.node_addrs` —— 后者优先 `client_addr`
-    /// (外部可达的 client 端口), 容器内跨节点 RPC 连它必然 Connection
-    /// refused. `new_client` 收到空 `BasicNode.addr` 时会回退到 factory
-    /// 缓存的 rpc_addr.
+    /// 目标地址解析顺序:
+    /// 1. **MetaRaft 元数据中的 `rpc_addr`** — 跨 group 节点从未参与本地
+    ///    Raft 对等通信, `network_factory` 缓存中没有其地址; 而元数据里
+    ///    保存的是容器内可达的 Raft 对等地址, 是唯一可靠来源.
+    /// 2. 元数据缺失 (如未接线 lifecycle 的测试环境) 时回退到 factory 缓存的
+    ///    rpc_addr (`new_client` 收到空 `BasicNode.addr` 时自动回退).
+    ///
+    /// 不能用 `router.node_addrs` —— 后者优先 `client_addr` (外部可达的
+    /// client 端口), 容器内跨节点 RPC 连它必然 Connection refused.
     async fn remote_leader_client(&self, group_id: u64) -> Result<RaftNetworkClient> {
         let leader = self
             .router
             .get_group_leader(group_id)
             .ok_or_else(|| ClusterError::Raft(format!("no known leader for group {group_id}")))?;
         let mut factory = self.network_factory.read().clone().with_group_id(group_id);
+        let rpc_addr = self
+            .lifecycle
+            .meta_raft()
+            .get_cluster_meta()
+            .nodes
+            .get(&leader)
+            .map(|n| n.rpc_addr.clone());
         let basic_node = openraft::BasicNode {
-            addr: String::new(),
+            addr: rpc_addr.unwrap_or_default(),
         };
         Ok(factory.new_client(leader, &basic_node).await)
     }
