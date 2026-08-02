@@ -22,9 +22,6 @@ impl Checkpoint {
     #[tracing::instrument(name = "bgsave_checkpoint", skip(db), fields(dest = %dest.as_ref().display()))]
     pub fn create(db: &DB, dest: impl AsRef<Path>) -> Result<PathBuf> {
         let dest = dest.as_ref();
-        if dest.exists() {
-            remove_dir_if_exists(dest)?;
-        }
 
         db.flush()?;
 
@@ -34,11 +31,27 @@ impl Checkpoint {
         // Pin SST readers so compaction cannot unlink while we link/copy.
         let _pinned = db.pin_sstables();
 
-        let tmp = checkpoint_tmp_path(dest);
-        if tmp.exists() {
-            remove_dir_if_exists(&tmp)?;
-        }
-        fs::create_dir_all(&tmp)?;
+        // 优先在 dest 父目录构建 tmp, 完成后原子 rename 到 dest.
+        // 若父目录不可写 (如 backup 目录是容器根挂载点, parent 落在根 /),
+        // 退化为在 dest 内部构建, 完成后搬移内容再删除 tmp 目录.
+        let parent_tmp = checkpoint_tmp_path(dest);
+        let inside_tmp = dest.join(".checkpoint_tmp");
+        let (tmp, inside) = match fs::create_dir_all(&parent_tmp) {
+            Ok(_) => {
+                if parent_tmp.exists() {
+                    remove_dir_if_exists(&parent_tmp)?;
+                }
+                (parent_tmp, false)
+            }
+            Err(_) => {
+                fs::create_dir_all(dest)?;
+                if inside_tmp.exists() {
+                    remove_dir_if_exists(&inside_tmp)?;
+                }
+                fs::create_dir_all(&inside_tmp)?;
+                (inside_tmp, true)
+            }
+        };
 
         let files = db.collect_checkpoint_file_paths()?;
         let file_count = files.len();
@@ -54,12 +67,39 @@ impl Checkpoint {
         }
 
         sync_dir(&tmp)?;
-        if dest.exists() {
-            remove_dir_if_exists(dest)?;
-        }
-        fs::rename(&tmp, dest)?;
-        if let Some(parent) = dest.parent() {
-            sync_dir(parent)?;
+
+        if inside {
+            // 清理 dest 内旧内容 (保留 tmp), 再把 tmp 内容搬移进 dest.
+            for entry in fs::read_dir(dest)? {
+                let path = entry?.path();
+                if path == tmp {
+                    continue;
+                }
+                if path.is_dir() {
+                    fs::remove_dir_all(&path)?;
+                } else {
+                    fs::remove_file(&path)?;
+                }
+            }
+            for entry in fs::read_dir(&tmp)? {
+                let path = entry?.path();
+                let rel = path.strip_prefix(&tmp).expect("under tmp");
+                let target = dest.join(rel);
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::rename(&path, &target)?;
+            }
+            fs::remove_dir(&tmp)?;
+            sync_dir(dest)?;
+        } else {
+            if dest.exists() {
+                remove_dir_if_exists(dest)?;
+            }
+            fs::rename(&tmp, dest)?;
+            if let Some(parent) = dest.parent() {
+                sync_dir(parent)?;
+            }
         }
 
         tracing::info!(
@@ -219,6 +259,40 @@ mod tests {
         let _ = db.drain_compactions();
 
         checkpoint_handle.join().unwrap();
+        Checkpoint::verify_openable(&backup, Options::for_testing()).unwrap();
+    }
+
+    #[test]
+    fn test_checkpoint_fallback_unwritable_parent() {
+        // 模拟 backup 目录是挂载点根: 父目录不可写, tmp 必须落在 dest 内部.
+        // DB 与 backup 分属不同目录, 避免父目录只读影响 DB 自身写入.
+        let db_dir = tempdir().unwrap();
+        let backup_dir = tempdir().unwrap();
+        let db = open_db(db_dir.path());
+        db.put(b"k1", b"v1").unwrap();
+        db.flush().unwrap();
+
+        let backup = backup_dir.path().join("backup");
+        let parent = backup_dir.path();
+        // 模拟真实场景: backup 目录 (挂载点根) 已由部署脚本预创建.
+        fs::create_dir_all(&backup).unwrap();
+        // 父目录去掉写权限, 使 checkpoint_tmp_path (父目录下 backup.tmp) 创建失败.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(parent, fs::Permissions::from_mode(0o555)).unwrap();
+        }
+
+        let result = Checkpoint::create(&db, &backup);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(parent, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // 作为 root 运行时父目录只读不生效, 走 rename 路径; 非 root 则走 fallback.
+        // 无论哪条路径, 结果都必须是可 open 的 checkpoint.
+        let path = result.expect("checkpoint create must succeed via fallback");
+        assert_eq!(path, backup);
         Checkpoint::verify_openable(&backup, Options::for_testing()).unwrap();
     }
 }
