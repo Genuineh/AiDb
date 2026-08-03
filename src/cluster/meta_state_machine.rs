@@ -1,4 +1,37 @@
-//! MetaRaft state machine — cluster metadata apply path.
+//! MetaRaft 状态机 — 集群元数据 (节点 / Group / SlotTable / 迁移状态) 的权威
+//! apply 路径. 本文件承载控制面 gid=0 上的 Raft 状态机: `MetaRequest` 先经
+//! `validate_meta_request` (validate_with_state 只读校验) 再 `apply_meta_request`
+//! (apply_mutate 修改内存态), 产出 `ApplyOutput` 交给外层 `storage/apply.rs`
+//! 以单 WriteBatch 原子落库 (与 `last_applied` 同批).
+//!
+//! # 数据流 (apply 流程)
+//!
+//! ```text
+//! MetaRequest (以 Raft Normal entry 到达, 仅作用于 gid=0)
+//!   ├─ validate_meta_request
+//!   │    └─ validate_with_state 只读 cluster_meta / slot_table / migration_state
+//!   ├─ apply_meta_request
+//!   │    ├─ apply_mutate 修改内存态 (cluster_meta / slot_table / migration_state)
+//!   │    ├─ cluster_meta.version += 1
+//!   │    ├─ migration_epoch: Begin -> 新 version; Commit/Cancel -> None
+//!   │    └─ ApplyOutput { kv_pairs }: 4 个 meta key 的序列化快照
+//!   └─ storage/apply.rs 单 WriteBatch 写 \x00meta_raft/* + last_applied
+//! ```
+//!
+//! 持久化 key 见 `storage/keys.rs` 的 `\x00meta_raft/*` (cluster_meta / slot_table /
+//! migration_state / migration_epoch). 启动时经 `reload_from_db` 恢复内存态;
+//! 若发现 `format_version > 1` 则报 `Error::Corruption` (防止旧版本数据被静默误读).
+//!
+//! # Invariant
+//!
+//! - 每次成功 apply 后 `ClusterMeta.version += 1`; `BumpEpoch` 先 +1 再 apply
+//!   (净 +2), 保证其 version 变化与普通变更可区分.
+//! - Slot 状态转换受限: `AssignSlots` 仅接受 `Unallocated` 槽; 迁移起点必须是
+//!   `Assigned(source)`. 违反视为 InvalidState, 由 leader 权威拒绝.
+//! - 迁移相位严格推进: Prepare -> Migrating -> Frozen -> ReadyToCommit -> Commit,
+//!   commit 阶段只接受 `ReadyToCommit` 目标.
+//! - 内存态与磁盘态一致: apply 仅在全部修改成功后才落 ApplyOutput; 内存态是
+//!   Raft 共识的唯一事实来源, 磁盘只做持久化.
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -1,4 +1,26 @@
-//! DB 配置: 选项不超过 20 个, 保持简单.
+//! 配置结构 — 单机 LSM 引擎 `Options`, 以及 feature-gated 的集群配置
+//! `ClusterConfig` / `MigrationConfig`; 含默认值、预设 (for_testing /
+//! for_production 等) 与打开 DB 前的校验 (`Options::validate`).
+//!
+//! # 分层
+//!
+//! ```text
+//! Options          引擎层: MemTable / SSTable / WAL / Compaction / 运行时调优
+//! ClusterConfig    集群: group_count / replication_factor / log 限制 /
+//!                   MigrationConfig / snapshot_size_threshold
+//! MigrationConfig  迁移: max_batch_size / progress_report_interval /
+//!                   max_retries / retry_base_delay_ms / verify_sample_factor
+//! ```
+//!
+//! # Invariant
+//!
+//! - Raft 模式要求 `use_wal = true` (在 `node.rs` 强制校验, 见
+//!   `docs/modules/03-cluster.md`).
+//! - `Options::validate` 在 DB 打开前检查 memtable / block / level0 / poll 间隔
+//!   等下限, `min_sub_compactions <= max_sub_compactions`.
+//! - `ClusterConfig::for_testing()` 用 4 slot、RF=1; 生产默认 256 group、RF=3.
+//! - `snapshot_size_threshold: None` = 禁用 size-based snapshot, 仅依赖
+//!   `LogsSinceLast` 策略.
 
 /// 压缩算法
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -1,4 +1,28 @@
-//! Raft log persistence (vote + log entries).
+//! Raft log 持久化 — vote 与 log entry 在 LSM 上的读写, 以及启动时从 DB 恢复
+//! 内存态. key 布局见 `storage/keys.rs` 的 `\x00raft/{gid}/*`.
+//!
+//! # 数据流
+//!
+//! ```text
+//! RaftLogStorage (gid 维度)
+//!   ├─ save_vote       -> vote_key
+//!   ├─ append          -> log/{idx} 逐条 + last_log_id_key
+//!   ├─ truncate_after  -> delete_range(log/{idx} .. log0) + 回写 last_log_id
+//!   ├─ purge           -> delete_range(上次 purge 之后 .. idx) + last_purged_log_id_key
+//!   └─ get_log_entries -> PendingLogOverlay 优先, DB 点查 fallback
+//!
+//! load_state (构造时)
+//!   ├─ try_deser_or_clean: 反序列化失败 -> wipe_group_raft_data (openraft 升级兼容)
+//!   ├─ last_log_id: 持久化 key 优先 (O(1)), 缺失/悬挂则 O(N) 扫描重建
+//!   └─ membership 缺失时从 log 反查最近 Membership entry 重建
+//! ```
+//!
+//! # Invariant
+//!
+//! - `get_log_entries` 按 index 点查: overlay 立即可读, DB 兜底.
+//! - `purge` / `truncate` 使用 `delete_range` 批量删, 避免 log 累积后逐条 delete.
+//! - `last_log_id` 持久化 key 存在但对应 entry 丢失 (悬挂) 时走扫描重建.
+//! - 数据不兼容 (如版本升级) 时 wipe 该 group 全部 raft 数据并重建.
 
 use std::ops::{Bound, RangeBounds};
 

@@ -1,4 +1,27 @@
-//! gRPC network layer for Raft.
+//! gRPC 网络层 — Raft 对等 RPC (vote / append_entries / full_snapshot) 与扩展
+//! RPC (get_key / migration tip+tombstone / remote_propose) 的 client / server,
+//! 以及按 `group_id` 分发的统一 dispatcher. 一个端口承载 MetaRaft (gid=0) 与
+//! 全部数据 Group (gid≥1).
+//!
+//! # 数据流
+//!
+//! ```text
+//! 本地 openraft::Raft core
+//!   └─ RaftNetworkClientFactory::new_client(target, node)
+//!        ├─ channel 连接池 (DashMap 按 node_id 缓存, 复用 TCP/HTTP2)
+//!        └─ RaftNetworkClient (携带 group_id)
+//!             └─ gRPC -> 对端 RaftServiceImpl (RaftServiceDispatcher)
+//!                  ├─ dispatcher.get_raft(group_id)   -> vote/append/snapshot
+//!                  └─ dispatcher.get_node(group_id)   -> get_key/migration/remote_propose
+//! ```
+//!
+//! # Invariant
+//!
+//! - Raft RPC 一律发往 `rpc_addr` (BasicNode.address 字段); `client_addr` 仅供
+//!   客户端 MOVED 重定向, 不参与 Raft 共识通信.
+//! - 连接复用: channel 按 node_id 缓存, 避免 Docker DNS 解析的 50-100ms 开销;
+//!   `add_node` 时清除旧 channel 以拾取地址变更.
+//! - 超时 / Unavailable 归类为不确定错误 (RPCError), 不伪装成确定性结果.
 
 use dashmap::DashMap;
 use parking_lot::RwLock;

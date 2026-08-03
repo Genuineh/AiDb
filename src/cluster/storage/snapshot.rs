@@ -1,4 +1,29 @@
-//! Raft snapshot build / install.
+//! Raft snapshot 构建与安装 — 以 DB 目录文件级打包传输 (借鉴 Kvrocks/TiKV),
+//! 替代逐条 KV 拷贝, 避免 build 端全量 scan 与 install 端逐条 put 的开销.
+//!
+//! # 数据流
+//!
+//! ```text
+//! build (OpenRaftSnapshotBuilder / get_current_snapshot)
+//!   ├─ db.flush() -> 数据全部进 SST
+//!   ├─ checkpoint 协议 pin SST (SnapshotCheckpointGuard)
+//!   ├─ 收集文件 -> bincode(SnapshotBundle { relative_path, data })
+//!   └─ meta = SnapshotMeta { last_log_id, last_membership, snapshot_id }
+//!
+//! install (install_snapshot_atomic)
+//!   ├─ 先写临时文件 + fsync 父目录 (crash 安全)
+//!   ├─ 关闭旧 DB -> 清空目录 -> 写入接收文件 -> DB::open 重开
+//!   ├─ 写 snapshot_meta / last_applied
+//!   ├─ 重建 MetaStateMachine (旧实例持有已关闭 DB)
+//!   └─ 清空 overlay 与内存态 -> load_state 重载
+//! ```
+//!
+//! # Invariant
+//!
+//! - install 是"目录整体替换"式原子操作, 失败时清理临时文件.
+//! - snapshot 安装后所有 in-memory 缓存 (overlay / StorageState) 一律作废重载.
+//! - MetaRaft 也有快照: 目录打包天然包含 `\x00meta_raft/*`, 安装后重建
+//!   `MetaStateMachine` 恢复集群元数据.
 
 use std::io::Cursor;
 use std::sync::Arc;

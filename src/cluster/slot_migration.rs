@@ -1,4 +1,41 @@
-//! Online slot migration — executor (key-by-key) and manager (orchestration) (Phase 15).
+//! 在线 slot 迁移 — `SlotMigrationExecutor` (逐 key 拷贝) + `SlotMigrationManager`
+//! (编排收尾). 把 slot 所有权从 source group 原子切换到 target group, 全程经
+//! MetaRaft (`\x00meta_raft/migration_state`) 记录权威状态.
+//!
+//! # 迁移流程
+//!
+//! ```text
+//! start_migration(source, target, slots)
+//!   └─ MetaRaft BeginSlotMigration -> migration_id = cluster_meta.version (epoch)
+//!   └─ run_pending_migration -> SlotMigrationExecutor::execute
+//!        ├─ scan_keys(source) -> 按 slot 过滤 -> 排序
+//!        ├─ 分批: get_key_from_group(source) -> propose_group(target,
+//!        │        PutConditional{epoch})  <- apply 内查 Del tombstone
+//!        ├─ checkpoint (migration_{id}.ckpt) 断点续跑
+//!        ├─ 进度 UpdateMigrationProgress
+//!        └─ verify_migration (确定性抽样比对 source/target)
+//!   └─ finish_migration (收尾链)
+//!        ├─ freeze_for_commit      Migrating -> Frozen
+//!        ├─ quiesce_writes         target MigrationBarrier + quiesce_token
+//!        ├─ drain_oplog_tip_stable 两次读 tip (read_migration_tip) 相等
+//!        ├─ final_verify           run record + token 校验
+//!        ├─ mark_ready             Frozen -> ReadyToCommit
+//!        └─ commit_migration       ReadyToCommit -> Assigned(target) + GC mig oplog
+//! ```
+//!
+//! 读侧一致性 (FIX-0056-A1): 迁移期间对 slot 的读优先读 target 的
+//! `read_migration_tip` (tombstone/tip 在 target group 的 Raft apply 内单调分配),
+//! source 被 Del tombstone 标记的 key 不再返回, 未迁移的 key 回落到 source —
+//! 合并读 (`multi_raft_node.rs` 的 `get_key_from_group_remote`) 消除"先查后写"窗口.
+//!
+//! # Invariant
+//!
+//! - `commit_migration` 仅接受 `ReadyToCommit` 状态 (Meta validate + Manager 双保险).
+//! - Cancel 先 Meta 回滚 (读回 source), 再清理 target 残留 — 避免 Frozen 下
+//!   先清 target 造成读空洞.
+//! - `MigrationGc` 只删 `\x02mig/{gid}/{epoch}/*`, 不动用户 `sm_key`.
+//! - tip 只在 target group Raft apply 内单调分配; 读 tip 必须走 leader 语义,
+//!   不允许落后 follower 冒充最新.
 
 use std::collections::HashSet;
 use std::path::PathBuf;

@@ -1,4 +1,33 @@
-//! Cluster membership coordination — add/remove/replace nodes (Phase 15).
+//! 节点成员协调 — 节点 join / leave / replace 的运维编排. 操作统一先经 MetaRaft
+//! 更新元数据 (权威), 再执行数据 Group 的 Raft 成员变更.
+//!
+//! # 流程
+//!
+//! ```text
+//! add_node(ctx)
+//!   ├─ 幂等: 同 rpc_addr 已存在 -> 视为更新 client_addr (MEET 补全 MOVED 端口)
+//!   ├─ RegisterNode (MetaRaft)
+//!   ├─ add_node_address (network factory)
+//!   ├─ add_learner_nonblocking (MetaRaft learner)
+//!   └─ promote_learner_to_voter (屏障: learner 追平 + 确认复制)
+//!
+//! remove_node(ctx)
+//!   ├─ 状态置 Draining
+//!   ├─ force: 逐 group 移除成员 (拒绝留下零副本); 否则要求先迁走 group
+//!   └─ RemoveNode
+//! ```
+//!
+//! `change_group_membership` 先写 MetaRaft 元数据再改 Raft membership —
+//! 副本节点通过 LifecycleManager 从元数据发现新成员后补 learner (带重试);
+//! group 非本地时只更新元数据, Raft 变更交由该 group 所在节点的 drift 对账.
+//!
+//! # Invariant
+//!
+//! - 变更顺序: MetaRaft 元数据先行, Raft membership 随后 — 保证所有节点都能
+//!   通过元数据发现拓扑变化.
+//! - `add_node` 幂等: 以 `rpc_addr` 为身份键.
+//! - force remove 不得使任何 group 剩零副本.
+//! - 涉及活跃迁移的节点/group 禁止移除 (validate 拒绝).
 
 use std::sync::Arc;
 

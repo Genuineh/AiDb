@@ -1,4 +1,27 @@
-//! Group lifecycle management -- watches MetaRaft changes, creates/removes data groups.
+//! Group 生命周期管理 — 周期性 (默认 1s) 轮询 MetaRaft 元数据, 计算本节点应当
+//! 承载的 Group 拓扑, 并同步刷新 Router 缓存. 实际创建/销毁由 `MultiRaftNode`
+//! 根据 `TickResult` 执行.
+//!
+//! # tick 流程
+//!
+//! ```text
+//! tick()
+//!   ├─ get_cluster_meta + get_slot_table (MetaRaftProvider)
+//!   ├─ Router.refresh_from_data(slot_table, group_nodes, node_addrs, group_leaders)
+//!   │     └─ node_addrs 优先 client_addr, fallback rpc_addr (MOVED 用)
+//!   ├─ expected = Meta 中 replicas 含本节点 的 group
+//!   ├─ to_create / to_remove = expected △ local_groups
+//!   └─ TickResult { groups_to_create, groups_to_remove, expected_memberships }
+//! ```
+//!
+//! `expected_memberships` 供 `MultiRaftNode` 做 drift 对账 (期望成员来自 Meta
+//! `GroupMeta.replicas`, 实际成员来自 OpenRaft metrics).
+//!
+//! # Invariant
+//!
+//! - Router 缓存以 Meta 元数据为准刷新; leader 提取自 `replicas[].is_leader`.
+//! - 只计算本节点参与的 group 的期望成员集.
+//! - 地址选择: MOVED 用 `client_addr`, 缺失时 fallback `rpc_addr`.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;

@@ -1,5 +1,31 @@
-//! Multi-Raft node manager — combines Router, LifecycleManager,
-//! gRPC dispatcher, and per-group storage.
+//! Multi-Raft 数据面编排 — 组合 Router / LifecycleManager / gRPC dispatcher /
+//! 每 Group 独立 ShardedStorage, 管理全部数据 Group (gid≥1) 的创建、销毁、
+//! 自愈重启与成员对账. 与 `meta_raft_node.rs` 的控制面 (gid=0) 共同构成集群.
+//!
+//! # 架构
+//!
+//! ```text
+//! lifecycle task (tick, 默认 1s)
+//!   ├─ LifecycleManager::tick -> TickResult (期望拓扑 vs 本地 Group)
+//!   ├─ groups_to_create  -> create_group_inner(gid, is_leader, rpc_addr)
+//!   │     ├─ ShardedStorage::open -> OpenRaftNode::new (注入 network factory)
+//!   │     ├─ is_leader(来自 Meta replicas) -> initialize 单 voter bootstrap
+//!   │     └─ dispatcher.register_group + register_node
+//!   ├─ groups_to_remove  -> remove_group_inner (shutdown + close + unregister)
+//!   ├─ supervise_groups  -> 检测 Fatal -> 指数退避 (2s·2^n, ≤60s) 就地重开
+//!   └─ membership drift  -> add_learner_nonblocking + change_membership
+//! ```
+//!
+//! 读写入口: `propose_key` 经 `Router.route_key` 落到目标 group; group 非本地时
+//! 经 `remote_leader_client` 转发到该 group 的 leader 节点 (`rpc_addr`).
+//!
+//! # Invariant
+//!
+//! - Group ID 约定: `0` = MetaRaft (控制面), 数据 Group ≥ 1 (`DEFAULT_GROUP_ID = 1`).
+//! - 自愈重开不传 `init_as_voter`: 该 group 已是集群成员, 只是重载磁盘状态.
+//! - 每次 tick 最多处理 1 个 membership drift, 避免批量 joint-consensus 抖动.
+//! - Raft 对等通信 / learner 地址一律 `rpc_addr`, 绝不用 `client_addr`
+//!   (容器内不可达); MOVED 重定向才用 `client_addr`.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::net::SocketAddr;

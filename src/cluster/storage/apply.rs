@@ -1,4 +1,34 @@
-//! State machine apply path.
+//! Raft log apply 路径 — 把已提交 entry 落进状态机 (SM) 并推进 `last_applied`.
+//! 数据面 SM 写 `\x01sm/{gid}/{user_key}`; MetaRaft (gid=0) 走 `MetaStateMachine`.
+//!
+//! # 数据流
+//!
+//! ```text
+//! apply_entries_internal(entries)
+//!   ├─ 跳过 last_applied 已覆盖的 index
+//!   ├─ Normal data entry: 合并连续 Normal -> 单 WriteBatch
+//!   │     ├─ append_request_to_batch -> sm_key 写入 / PutConditional 去重 /
+//!   │     │     MigrationWrite (tombstone+tip) / MigrationGc
+//!   │     ├─ 追加 last_applied_key
+//!   │     └─ db.write_without_wal (批量) 或全跳过时仅 persist_last_applied_atomic
+//!   ├─ Meta entry: apply_meta_entry -> MetaStateMachine -> kv_pairs -> 单 WriteBatch
+//!   ├─ Membership entry: apply_membership_entry_atomic (独立原子批)
+//!   └─ Blank entry: persist_last_applied_atomic
+//! ```
+//!
+//! # Invariant
+//!
+//! - **Apply fail-fast (最重要)**: 遇到真实存储错误 (如 `PutConditional` dedup
+//!   读 I/O 失败) 必须直接 `?` 上抛, 交给 openraft 判定该 raft 实例 Fatal 并
+//!   停止服务; 绝不能吞成业务级 `Response::Error` 继续下一条, 否则
+//!   `last_applied` 会越过失败 entry 被持久化 -> 数据永久丢失且副本间可能分叉.
+//! - 连续的 Normal data entry 合并为单个 WriteBatch (SM + last_applied 原子);
+//!   Meta / Membership / Blank entry 各自独立原子写入.
+//! - `PutConditional` 在 apply 内 (同一 entry) 查 Del tombstone, 消除
+//!   "先查后写"窗口 (FIX-0056-A1).
+//! - `MigrationWrite` 的用户写与 tombstone/tip 必须同 entry 原子可见;
+//!   seq/tip 只在 apply 内单调分配.
+//! - `MigrationGc` 只删 `\x02mig/{gid}/{epoch}/*`, 不动用户 `sm_key`.
 
 use openraft::{EntryPayload, MessageSummary};
 

@@ -1,4 +1,32 @@
-//! MetaRaft node — control plane Raft group (group_id = 0).
+//! MetaRaft 控制面节点 — 强制 `group_id = 0` 的 OpenRaft 节点, 挂载
+//! `MetaStateMachine` 作为状态机, 负责集群元数据 (节点 / Group / SlotTable /
+//! 迁移状态) 的共识写入与查询.
+//!
+//! # 数据流
+//!
+//! ```text
+//! propose(MetaRequest)
+//!   ├─ 本地 validate_meta_request (仅优化, 失败仅 warn)
+//!   └─ OpenRaftNode::propose(Request::Meta) -> Raft 共识 -> MetaStateMachine apply
+//!        └─ 成功后读 get_cluster_meta / get_slot_table / get_migration_state
+//!
+//! initialize / initialize_with_client
+//!   ├─ 已初始化则 no-op (幂等)
+//!   ├─ inner.initialize (Raft membership)
+//!   └─ 逐节点 RegisterNode + ChangeNodeRole(Voter) — bootstrap 节点即 Voter
+//! ```
+//!
+//! 运维入口: `add_learner` / `promote_learner_to_voter` (经 `change_membership`
+//! 双屏障, 见 `node.rs`); `start_server_with_dispatcher` 把 MetaRaft 注册进共享
+//! dispatcher, 使 MetaRaft 端口也能路由数据 Group RPC.
+//!
+//! # Invariant
+//!
+//! - 强制 `group_id = METARAFT_GROUP_ID (0)`; 数据 Group ≥ 1.
+//! - 本地校验只是提前失败优化, leader 在 apply 时做权威校验 (非 leader 本地
+//!   状态可能滞后).
+//! - bootstrap 节点在 ClusterMeta 中标记为 Voter, 与 Raft 层 membership 一致.
+//! - 复用 OpenRaftNode: `use_wal = true` 同样强制.
 
 use std::sync::Arc;
 #[cfg(test)]

@@ -1,4 +1,27 @@
-//! OpenRaft storage — LSM backend for Raft logs and state machine.
+//! `OpenRaftStorage` — OpenRaft 在单 Group 上所需的全部存储能力, 用一份结构体
+//! 同时实现 `RaftLogStorage` / `RaftLogReader` / `RaftStateMachine` (openraft
+//! v0.10 合并接口), 底层为每 Group 独立的 LSM DB.
+//!
+//! # 组合
+//!
+//! ```text
+//! OpenRaftStorage (每 Group 一个实例, key 均带 gid 前缀)
+//!   ├─ RaftLogStorage / RaftLogReader   -> log.rs (vote/log 读写 + 启动恢复)
+//!   ├─ RaftStateMachine
+//!   │     ├─ apply.rs    apply_entries_internal (SM + last_applied 原子)
+//!   │     └─ snapshot.rs build / install (目录级文件打包)
+//!   ├─ meta_state: Option<MetaStateMachine> (仅 gid=0 时 Some)
+//!   └─ committer: Option<LogCommitterHandle> (异步批量 I/O, 可选)
+//! ```
+//!
+//! 内存态 `StorageState` (vote / last_log_id / last_applied / snapshot_meta) 在
+//! 构造时由 `load_state()` 从 DB 恢复; snapshot install 后整表重建并 reload.
+//!
+//! # Invariant
+//!
+//! - 单实例只服务一个 group; 不同 group 用独立 DB (目录 `data/group_{id}/`).
+//! - log 写可走 `LogCommitter` (先入 overlay 立即可读, 再异步 flush) 或同步路径.
+//! - 状态机 apply 的 fail-fast 语义见 `apply.rs` (存储错误必须上抛).
 
 mod apply;
 pub(crate) mod keys;

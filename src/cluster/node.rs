@@ -1,4 +1,36 @@
-//! OpenRaft node wrapper.
+//! 通用 OpenRaft 节点封装 — 把 `openraft::Raft` 与 `OpenRaftStorage` 组合成
+//! 单 Group 的读写入口. MetaRaft 控制面与数据 Group 都复用本类型
+//! (`meta_raft_node.rs` 是它的 gid=0 特化).
+//!
+//! # 数据流
+//!
+//! ```text
+//! propose(request)
+//!   ├─ check_entry_size (超限 InvalidConfig)
+//!   └─ raft.client_write (重试 ≤3)
+//!        ├─ Ok -> 返回 Response.data; track_proposed_bytes (F-008 size snapshot)
+//!        └─ ForwardToLeader -> 注册 leader 地址 -> gRPC remote_propose 转发到 leader
+//!             └─ 仍失败 -> ClusterError::NotLeader (is_ask=false)
+//!
+//! change_membership(members)
+//!   ├─ 屏障 1: wait_members_catch_up — 所有成员已连接且 matched 落后 ≤5 (30s 超时)
+//!   ├─ raft.change_membership (joint consensus)
+//!   └─ 屏障 2: confirm_replication — 至少一个其他 voter matched ≥ last_log,
+//!        再等 3×heartbeat 让 commit_index 传播
+//! ```
+//!
+//! 读路径 `get` / `get_migration_tip` / `get_migration_tombstone` 共用
+//! `ensure_leader_for_linear_read`: `linearizable_read=true` 时走 ReadIndex,
+//! 否则本地 leader check (FIX-0056-A1 合并读线性点依赖此语义).
+//!
+//! # Invariant
+//!
+//! - 成员变更双屏障: catch-up + replication confirm — 防 leader 在
+//!   change_membership 提交后、commit_index 传播前崩溃导致的新成员缺日志.
+//! - Raft 模式必须 `db.use_wal() == true`, 否则 `ClusterError::InvalidConfig`.
+//! - ForwardToLeader 的转发地址来自 wire 上的 leader addr, 必须注册进 network
+//!   factory 才能触达.
+//! - `initialize` 仅用于首节点单 voter bootstrap; 已有 Raft 状态时 openraft 拒绝.
 
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
