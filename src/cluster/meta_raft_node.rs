@@ -57,7 +57,8 @@ impl MetaRaftNode {
             METARAFT_GROUP_ID,
             Some(Arc::clone(&state_machine)),
         )?;
-        let inner = Arc::new(OpenRaftNode::new_with_storage(config, db, storage, network_factory).await?);
+        let inner =
+            Arc::new(OpenRaftNode::new_with_storage(config, db, storage, network_factory).await?);
 
         Ok(Self {
             inner,
