@@ -30,7 +30,7 @@ const REPLICATION_POLL: Duration = Duration::from_millis(50);
 const REPLICATION_HEARTBEAT_MULTIPLIER: u32 = 3;
 
 pub struct MetaRaftNode {
-    inner: OpenRaftNode,
+    inner: Arc<OpenRaftNode>,
     state_machine: Arc<MetaStateMachine>,
     heartbeat_interval_ms: u64,
 }
@@ -57,7 +57,7 @@ impl MetaRaftNode {
             METARAFT_GROUP_ID,
             Some(Arc::clone(&state_machine)),
         )?;
-        let inner = OpenRaftNode::new_with_storage(config, db, storage, network_factory).await?;
+        let inner = Arc::new(OpenRaftNode::new_with_storage(config, db, storage, network_factory).await?);
 
         Ok(Self {
             inner,
@@ -389,6 +389,11 @@ impl MetaRaftNode {
         max_message_size: u64,
         dispatcher: std::sync::Arc<crate::cluster::network::RaftServiceDispatcher>,
     ) -> Result<()> {
+        // 注册 MetaRaft 的 OpenRaftNode 句柄, 使 `remote_propose` 等 gRPC
+        // 服务端能路由到控制面 (group 0). 跨节点 propose (例如 failover 后
+        // 新 leader 向 MetaRaft leader 转发 is_leader 更新) 依赖此注册.
+        // 注意: 必须在 `serve` 之前注册, 因为 `serve_with_incoming` 是阻塞的.
+        dispatcher.register_node(METARAFT_GROUP_ID, self.inner.clone());
         self.inner
             .start_server_with_dispatcher(addr, max_message_size, dispatcher)
             .await

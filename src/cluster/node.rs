@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use openraft::error::{ForwardToLeader, RaftError};
 use openraft::type_config::async_runtime::WatchReceiver;
-use openraft::{Config, Raft, RaftMetrics, TryAsRef};
+use openraft::{Config, Raft, RaftMetrics, RaftNetworkFactory, TryAsRef};
 use tracing::instrument;
 
 use crate::cluster::log_committer::spawn_committer;
@@ -380,6 +380,34 @@ impl OpenRaftNode {
                                 .write()
                                 .add_node(leader_id, addr.clone());
                         }
+                        // 本地不是 leader 时, 通过 gRPC remote_propose 把请求真正
+                        // 转发到当前 leader 节点执行, 而不是只重试本地 client_write.
+                        // 这使 MetaRaft 的 leader_watcher / 集群命令能在任意节点上
+                        // 完成控制面更新, 数据面 follower 也获得同一兜底.
+                        if let (Some(leader_id), Some(addr)) = (ftl.leader_id, leader_addr.clone())
+                        {
+                            match self
+                                .forward_propose_to_leader(leader_id, &addr, &request)
+                                .await
+                            {
+                                Ok(resp) => return Ok(resp),
+                                Err(forward_err) => {
+                                    tracing::warn!(
+                                        group_id = self.group_id,
+                                        leader_id,
+                                        error = %forward_err,
+                                        attempt,
+                                        "forward propose to leader failed, will retry"
+                                    );
+                                    if attempt < 2 {
+                                        tokio::time::sleep(std::time::Duration::from_millis(200))
+                                            .await;
+                                        continue;
+                                    }
+                                    return Err(forward_err);
+                                }
+                            }
+                        }
                         if attempt < 2 {
                             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                             continue;
@@ -395,6 +423,28 @@ impl OpenRaftNode {
             }
         }
         unreachable!()
+    }
+
+    /// 将 propose 请求经 gRPC `remote_propose` 转发到目标 leader 节点执行.
+    ///
+    /// 服务端 `remote_propose` 把请求路由到对应 group 的 `OpenRaftNode` 后
+    /// 本地 propose; 若该节点也已不再是 leader, 它自己会继续转发/重试,
+    /// 最终收敛到当前 leader. 客户端复用 network factory 的连接池.
+    async fn forward_propose_to_leader(
+        &self,
+        leader_id: NodeId,
+        addr: &str,
+        request: &Request,
+    ) -> Result<Response> {
+        let mut factory = self
+            .network_factory
+            .read()
+            .clone()
+            .with_group_id(self.group_id);
+        let mut client = factory
+            .new_client(leader_id, &openraft::BasicNode { addr: addr.to_string() })
+            .await;
+        client.remote_propose(self.group_id, request).await
     }
 
     /// 累加 propose 成功的字节预估数, 超阈值时异步触发 snapshot (F-008).
