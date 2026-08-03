@@ -31,6 +31,22 @@ pub mod raft_rpc {
 
 use raft_rpc::raft_service_client::RaftServiceClient;
 
+/// 根据 RPC 中携带的 `committed` 标志构造 `Vote`.
+///
+/// 注意: 必须尊重对端传来的 committed 状态, 不能无条件 `new_committed`.
+/// candidate 发起选举时其 vote 是 uncommitted, 若误标为 committed 会让
+/// 其他节点进入 leader-lease 保护而拒绝投票, 导致选举死锁.
+fn vote_from_wire<LID>(term: LID::Term, node_id: LID::NodeId, committed: bool) -> openraft::Vote<LID>
+where
+    LID: openraft::vote::RaftLeaderId,
+{
+    if committed {
+        openraft::Vote::new_committed(term, node_id)
+    } else {
+        openraft::Vote::new(term, node_id)
+    }
+}
+
 pub struct RaftNetworkClient {
     target_addr: String,
     client: Option<RaftServiceClient<tonic::transport::Channel>>,
@@ -319,7 +335,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                 vote_node_id = resp.vote_node_id,
                 "received HigherVote from follower, leader must step down"
             );
-            let vote = openraft::Vote::new_committed(resp.vote_term, resp.vote_node_id);
+            let vote = vote_from_wire(resp.vote_term, resp.vote_node_id, resp.vote_committed);
             Ok(AppendEntriesResponse::HigherVote(vote))
         } else {
             Ok(AppendEntriesResponse::Conflict)
@@ -407,7 +423,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
 
         let resp = response.into_inner();
         Ok(SnapshotResponse {
-            vote: openraft::Vote::new_committed(resp.vote_term, resp.vote_node_id),
+            vote: vote_from_wire(resp.vote_term, resp.vote_node_id, resp.vote_committed),
         })
     }
 
@@ -455,7 +471,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
 
         let resp = response.into_inner();
         Ok(VoteResponse {
-            vote: openraft::Vote::new_committed(resp.vote_term, resp.vote_node_id),
+            vote: vote_from_wire(resp.vote_term, resp.vote_node_id, resp.vote_committed),
             vote_granted: resp.vote_granted,
             last_log_id: None,
         })
@@ -718,7 +734,7 @@ impl RaftService for RaftServiceImpl {
         };
 
         let vote_req = VoteRequest {
-            vote: openraft::Vote::new_committed(req.vote_term, req.vote_node_id),
+            vote: vote_from_wire(req.vote_term, req.vote_node_id, req.vote_committed),
             last_log_id,
             leadership_transfer: false,
         };
@@ -798,7 +814,7 @@ impl RaftService for RaftServiceImpl {
         };
 
         let append_req = AppendEntriesRequest {
-            vote: openraft::Vote::new_committed(req.vote_term, req.vote_node_id),
+            vote: vote_from_wire(req.vote_term, req.vote_node_id, req.vote_committed),
             prev_log_id,
             entries,
             leader_commit,
@@ -882,7 +898,7 @@ impl RaftService for RaftServiceImpl {
             snapshot_id: meta.snapshot_id,
         };
 
-        let vote = openraft::Vote::new_committed(req.vote_term, req.vote_node_id);
+        let vote = vote_from_wire(req.vote_term, req.vote_node_id, req.vote_committed);
         let snapshot = openraft::Snapshot {
             meta: snapshot_meta,
             snapshot: std::io::Cursor::new(req.snapshot_data),
