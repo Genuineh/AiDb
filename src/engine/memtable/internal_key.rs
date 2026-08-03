@@ -1,4 +1,19 @@
-//! InternalKey 编码与比较 (MemTable / SSTable / MergeIterator 共用).
+//! InternalKey 编码与比较 — MemTable / SSTable / MergeIterator 共用.
+//!
+//! # 8B 尾部布局
+//!
+//! ```text
+//! InternalKey = [user_key][~seq_hi:7B][value_type:1B]
+//!               sequence 56 位大端写入高 7 字节, 逐位取反
+//! ```
+//!
+//! 比较规则 `compare_internal_key`: (user_key asc, sequence desc, value_type asc) — 同 key 下
+//! 新版本 (seq 大) 排前, seek 到首个 `seq <= max_seq` 即最新可见版本.
+//!
+//! # Invariant
+//!
+//! - `sequence < 2^56`; 超界 → `Error::InvalidState` (`check_sequence`).
+//! - `K_TYPE_SEEK = 0` (TypePut) 为全类型最小值, 用作 seek 目标 key.
 
 use crate::error::{Error, Result};
 use std::cmp::Ordering;

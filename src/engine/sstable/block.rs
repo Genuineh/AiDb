@@ -1,4 +1,19 @@
-//! Data Block 格式: prefix compression + restart points.
+//! Data Block 存储格式: prefix compression + restart points (Data / Index Block 共用).
+//!
+//! # 布局
+//!
+//! ```text
+//! Block = [entry × N][restart_offset: 4B × K][num_restarts: 4B]
+//! entry = [shared:4][unshared:4][value_len:4][key_delta][value]
+//! ```
+//!
+//! `key_delta` = key 去掉与上一 key 公共前缀 (`shared`) 后的部分; 尾部 restart array 记录
+//! 每个 restart point 的 entry 偏移, 供二分定位后线性扫描.
+//!
+//! # Invariant
+//!
+//! - restart point 存完整 key (`shared=0`), 保证 key 链可从任意 restart point 重建.
+//! - `add` 要求 key 严格递增, 否则 `Error::InvalidArgument`.
 
 use bytes::{Bytes, BytesMut};
 use std::cmp::Ordering;

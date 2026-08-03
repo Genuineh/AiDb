@@ -1,4 +1,19 @@
-//! SSTable 读取: Footer → Index → Data Block.
+//! SSTableReader — 单个 SSTable 的只读访问: Footer → Index → Bloom → Data Block.
+//!
+//! # 点查流程
+//!
+//! ```text
+//! get(seek_key)
+//!   ├─ Bloom: may_contain(extract_user_key)      miss → 直接 None (免 I/O)
+//!   ├─ Index: find_block_handle 二分定位 Data Block
+//!   ├─ BlockCache hit → Block; miss → 文件读取 + CRC 校验
+//!   └─ Block 内扫描: user_key 匹配且 seq <= seek_seq → 返回 (value, ValueType)
+//! ```
+//!
+//! # Invariant
+//!
+//! - Bloom 仅索引 user_key; block 内仍按 `seq <= seek_seq` 过滤.
+//! - Bloom 缺失或解码失败 → warn 降级为无 filter, 不影响读正确性.
 
 use std::cmp::Ordering;
 use std::fs::File;

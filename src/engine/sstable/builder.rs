@@ -1,4 +1,18 @@
-//! SSTable 构建: 排序 K-V → 磁盘文件.
+//! SSTableBuilder — 将严格递增的 InternalKey 序列写为单个 `.sst` 文件.
+//!
+//! # 构建流程
+//!
+//! ```text
+//! add: 严格递增校验 → 写入 Data Block; 达到 block_size 即 flush (含 trailer + CRC)
+//! finish: 收尾 Data Block → Bloom / Properties (raw) → Meta Index → Index → Footer
+//!         → sync → rename .sst.tmp → .sst
+//! abandon: 丢弃未完成的 .sst.tmp
+//! ```
+//!
+//! # Invariant
+//!
+//! - 空 SST (0 entry) 的 `finish` 被拒绝 (`Error::InvalidArgument`).
+//! - Data Block 达到 `block_size` 才 flush; Index / Meta Index 固定 `CompressionType::None`.
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};

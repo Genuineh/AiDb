@@ -1,4 +1,12 @@
-//! SSTable 全文件顺序迭代.
+//! SSTableIterator — 单文件全量顺序迭代, 以 Data Block 为粒度 seek.
+//!
+//! # 迭代方式
+//!
+//! - 内部持有 Index entries (`(max_key, BlockHandle)`); 块内用 `BlockIterator` 扫描.
+//! - `seek_to_target`: 先在 Index 上二分定位目标 block, 再在 block 内 `seek`.
+//! - 跨块: 当前块耗尽后按序加载下一 block (经 `read_block_cached`), 支持 prev / seek_to_last.
+//!
+//! 仅做单文件遍历; 跨文件归并见 `db/iterator.rs` (读路径) 与 `compaction/merge.rs` (compaction).
 
 use std::cmp::Ordering;
 use std::fs::File;

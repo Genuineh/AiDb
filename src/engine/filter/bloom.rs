@@ -1,4 +1,19 @@
-//! Bloom Filter: FNV-1a 双哈希, 内嵌 CRC32.
+//! BloomFilter — SSTable 级布隆过滤器: FNV-1a 双哈希, 编码内嵌 CRC32.
+//!
+//! # 哈希方案
+//!
+//! ```text
+//! h1 = fnv1a_like(key, 0xbc9f1d34);  h2 = fnv1a_like(key, 0xd0e89c7b) (强制奇数)
+//! pos_i = (h1 + i × h2) % num_bits,  i ∈ [0, num_hashes)
+//! ```
+//!
+//! bits/hashes 按期望 key 数与目标 false positive rate 取最优; 磁盘编码
+//! `[num_hashes:4][num_bits:8][bits][crc32:4]`, `decode` 校验长度与 CRC.
+//!
+//! # Invariant
+//!
+//! - 仅索引 user_key (`add(extract_user_key(key))`), 不带 sequence.
+//! - miss 即"确定不存在" (免 I/O); 解码失败由调用方降级为无 filter, 不影响正确性.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

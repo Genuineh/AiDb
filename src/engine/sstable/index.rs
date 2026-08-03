@@ -1,4 +1,11 @@
-//! IndexBlock — Data Block 最大 key → BlockHandle.
+//! IndexBlock — Data Block 的最大 InternalKey → BlockHandle 的映射, 用于定位目标 block.
+//!
+//! # 组织方式
+//!
+//! - 构建复用 `BlockBuilder`, restart interval 固定为 1 (每条 entry 都存完整 key, 不依赖
+//!   block 内前缀链), value 为 `BlockHandle::encode()` 字节.
+//! - 查询: `find_block_handle` 在 entries 上二分, 返回最后一个 `key <= seek_key` 的
+//!   Data Block 的 handle.
 
 use std::cmp::Ordering;
 
