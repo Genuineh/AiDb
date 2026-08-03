@@ -1,7 +1,24 @@
-//! Compaction 执行: 归并 → 新 SSTable.
+//! Compaction 执行: 将多个输入 SST 归并去重后写出新 SSTable (`CompactionJob::run`).
+//! 支持 subcompaction 分裂: 大 compaction 按 key 区间拆成多个并行子任务,
+//! 使用 `std::thread::scope` 并行执行, 每个子任务负责 `[range_start, range_end)`.
 //!
-//! 支持 subcompaction 分裂: 将大 compaction 拆分为多个并行子任务,
-//! 每个子任务负责一个 key 区间, 使用 std::thread::scope 并行执行.
+//! # 数据流
+//!
+//! ```text
+//! inputs + expanded_inputs → MergeIterator (堆归并)
+//!   → 同一 user_key 分组: 最新版本无条件保留, 其余按 SnapshotDedupTracker 丢弃
+//!   → RangeTombstoneTracker 过滤被覆盖的点条目
+//!   → output_level > 0: 丢弃 TypeDelete tombstone
+//!   → SSTableBuilder → .sst → CompactionResult (entry_count == 0 时 abandon)
+//! ```
+//!
+//! # Invariant
+//!
+//! - 同一 user_key 保留最高 sequence 版本; 从新到旧扫描, 一旦遇到 `seq <= min_snapshot_sequence`
+//!   的 "边界穿越版本" 即保留之, 更老版本一律丢弃 (保证所有活跃 Snapshot 可见性).
+//! - 输出到 L1+ 时丢弃 `TypeDelete` tombstone: tombstone 作为某 user_key 的最新版本
+//!   (即无更新的存活点版本) 被跳过, 该 key 更老的重复版本也随之清除.
+//! - 0 entry 的子任务输出空 `CompactionResult` (file_number = 0), 上层跳过 AddFile.
 
 use super::helpers::user_key_from_internal;
 use super::merge::MergeIterator;

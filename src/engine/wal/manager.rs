@@ -1,6 +1,24 @@
-//! WALManager — WAL 生命周期管理.
+//! WALManager — WAL 生命周期管理: 文件创建 / append / 轮转 / 清理 / 恢复,
+//! 并通过 `LOCK` 文件独占锁保证同一数据目录单进程访问.
 //!
-//! 负责 WAL 文件的创建、轮转、清理和恢复.
+//! # 架构
+//!
+//! ```text
+//! open    → LOCK (fs2 独占) → 扫描既有 wal_{n}.log → 创建新 WAL + FileHeader
+//! append  → write_record → note_appended_sequence → 超 max_wal_size 时 maybe_auto_rotate
+//! recover → 按编号扫描全部 WAL → 顺序读 + 分片重组 (First/Middle/Last)
+//!         → BatchStart 不完整 batch 整批回滚 → max_sequence
+//! cleanup → 按 WAL GC 水位 (watermark) 删除已不再需要的旧 WAL
+//! ```
+//!
+//! 文件命名 `wal_{file_number}.log`; 每个文件以 `FileHeader` (key = `WAL`) 开头, 记录
+//! min_seq / max_seq / create_ts (open 时 max_seq 写 0, close 时通过 trailer 原子写入真实值).
+//!
+//! # Invariant
+//!
+//! - `LOCK` + `fs2::FileExt::try_lock_exclusive` 单进程独占, 多进程打开报 `Error::Busy`.
+//! - file_number 单调递增分配, recover 时取现存最大编号继续 (见 `docs/modules/01-engine.md`).
+//! - `sync_wal` 决定每条写后是否 fsync; false 时进程 crash 可能丢末批写.
 
 use super::reader::{ReadStatus, Reader};
 use super::record::{OpType, RecordType, WalEntry};

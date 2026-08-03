@@ -1,4 +1,14 @@
-//! Leveled compaction 文件选择.
+//! Leveled compaction 文件选择: 判断何时触发 compaction 并挑选参与文件 (`CompactionPicker`).
+//!
+//! L0 优先: 文件数 >= `level0_compaction_trigger` 时整层为输入, 并扩展 L1 overlap;
+//! 否则按 `size / target_size` 选 score 最高的 L1+ 层级 (target =
+//! `max_bytes_for_level_base × max_bytes_for_level_multiplier^(n-1)`, L0 target 无上限).
+//! 与目标层无 overlap 且输入为单文件时得到 trivial move (rename 提升, 不重写).
+//!
+//! # Invariant
+//!
+//! - L0 允许多文件 overlap, 作为整体参与 compaction; L1+ 同层目标不重叠.
+//! - overlap 判断基于 SST meta 中 smallest / largest 的 raw user_key range.
 
 use super::helpers::key_ranges_overlap_by_meta_raw;
 use crate::config::Options;

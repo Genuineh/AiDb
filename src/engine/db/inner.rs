@@ -1,4 +1,37 @@
-//! LSM DB 引擎总协调器 (Phase5 + Phase6 Compaction).
+//! LSM DB 引擎总协调器: 聚合 WAL / MemTable / SSTable / VersionSet / SnapshotList, 对外提供
+//! `open` / `put` / `get` / `delete` / `write` / `snapshot` / `iter` / `scan` / `flush` / `close`,
+//! 并驱动后台 flush 与 compaction 线程.
+//!
+//! # 架构
+//!
+//! ```text
+//! 写路径:
+//!   check_write_stall → write_lock → alloc_sequence → WAL append
+//!   → (sync_wal: wait_group_commit_sync) → MemTable put/delete
+//!   → maybe_freeze (超过 memtable_size) → ImmutableMemTable
+//!   → 后台 flush 线程 (flush_pending) → L0 SSTable
+//! 读路径 (get_at_sequence):
+//!   active MemTable → immutable MemTable (新→旧) → L0 SSTable (新→旧全扫)
+//!   → L1+ (find_sstable_for_key 按 user_key range 定位)
+//! 后台线程: flush 线程 (poll flush_poll_ms); compaction 线程 (compaction_signals 触发
+//!   run_compaction_once: pick → claim → trivial move / subcompaction → apply)
+//! ```
+//!
+//! freeze: `maybe_freeze` / `freeze_active_if_nonempty` 消费 active MemTable (`std::mem::take`),
+//! 生成 ImmutableMemTable, `flush_seq` 记为冻结时刻的 sequence; immutable 由
+//! `flush_immutable_memtables` 依序写出 L0 SST 并 `VersionEdit::AddFile`, 随后 rotate + cleanup WAL.
+//!
+//! # Invariant
+//!
+//! - 写顺序: WAL append 先于 MemTable 写入 (`put` / `delete` / `write` / `delete_range` 均如此),
+//!   crash 时已落 WAL 未进 MemTable 的数据可在 recover 阶段重放.
+//! - Sequence: 合法范围 `[1, 2^56)`; `alloc_sequence` 分配后检查溢出, 越界报 `Error::InvalidState`.
+//! - Batch 崩溃原子性: recover 时 `BatchStart` 标记的不完整 batch 整批丢弃 (单条写无 BatchStart).
+//! - Snapshot 创建: 在 `write_lock` 下读 sequence 并注册 `SnapshotList`, register 必须先于释放锁;
+//!   compaction 读 `min_snapshot_sequence()` 时同样短暂持有 `write_lock`, 二者形成 happens-before,
+//!   避免读到 "seq 已确定但尚未 register" 的中间态.
+//! - `iter` / `scan` 使用 `K_MAX_SEQUENCE` 见全部已写版本; `get` 使用 `sequence.load()` —
+//!   行为 intentionally 不同 (详见 `docs/modules/01-engine.md`).
 
 use super::iterator::DbIterGuard;
 use super::numbers::scan_next_wal_file_number;

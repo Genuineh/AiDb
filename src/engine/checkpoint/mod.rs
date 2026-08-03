@@ -1,4 +1,14 @@
-//! 目录级 checkpoint (Phase 11.6′ MVP) — BGSAVE 语义, 非 Redis RDB.
+//! 目录级 checkpoint: 将整个数据目录 (CURRENT + MANIFEST + WAL + SST) 复制为一致性快照
+//! (BGSAVE 语义, 非 Redis RDB), 产物可被 `DB::open` 直接打开.
+//!
+//! `Checkpoint::create(db, dest)`: flush → `enter_checkpoint` → `pin_sstables` → 收集文件路径
+//! → `link_or_copy` 到 tmp 目录 → fsync → 原子 rename 到 dest; `verify_openable` 做 smoke 校验.
+//!
+//! # Invariant
+//!
+//! - `checkpoint_in_progress` 使 `run_compaction_once` 直接返回 false, 阻止 compaction 并发改文件.
+//! - `pin_sstables` 持有 SST reader 引用, 防止 compaction 在复制期间 unlink 文件.
+//! - 跨设备 `hard_link` 失败时 fallback 为 `copy` (见 `docs/modules/02-engine-storage.md`).
 
 use crate::engine::db::DB;
 use crate::error::{Error, Result};

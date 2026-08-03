@@ -1,4 +1,22 @@
-//! DB 多路归并迭代器 (拥有层数据, 无自引用).
+//! DB 多路归并迭代器: 跨 active MemTable + immutable MemTable + 各级 SSTable 归并,
+//! 每个 user_key 只返回最新可见版本. 拥有各层数据 (无自引用), 供 `DB::iter` / `scan`
+//! 与 `Snapshot::iter` / `scan` 使用.
+//!
+//! # 数据流
+//!
+//! ```text
+//! 层列表: active MemTable → 各 immutable MemTable → L0 SSTable → L1+ 逐文件
+//! 归并:   load_next_valid 取各层当前最小 user_key, 在该 key 上按 sequence 取最新
+//!         → 最新版本为 TypeDelete / 被 range tombstone 覆盖 → 整组跳过
+//!         → 否则保留 TypePut 作为当前条目
+//! 逆序:   seek_to_last / prev / load_prev_valid (与正序对称的逻辑)
+//! ```
+//!
+//! # Invariant
+//!
+//! - `DB::iter` / `scan` 以 `K_MAX_SEQUENCE` 为序列边界 (不过滤到当前 sequence),
+//!   与 `get` 的 `sequence.load()` 行为不同; `Snapshot` 则以创建时刻的 sequence 为界.
+//! - 本迭代器面向读路径; compaction 归并使用 `compaction::MergeIterator`, 勿混用.
 
 use crate::engine::memtable::{
     encode_internal_key, extract_sequence, extract_user_key, extract_value_type, range_covers,

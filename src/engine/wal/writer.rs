@@ -1,11 +1,20 @@
-//! WAL Writer — 追加写入 Record.
+//! WAL Writer — 追加写入 Record: 分片、32KB block padding、CRC32 计算、磁盘预分配与 sync.
 //!
-//! 处理 Record 分片、block padding、CRC32 校验、sync。
-//! 每个 Record 的磁盘格式:
-//! ┌───────────────────────────────────────┐
-//! │ CRC32 (4B) │ Length (2B) │ Type (1B) │
-//! │ Data (length B)                       │
-//! └───────────────────────────────────────┘
+//! # 布局
+//!
+//! ```text
+//! Record = [CRC32:4][Length:2 LE][Type:1][Data]
+//! Block  = 32KB (BLOCK_SIZE), Record 不跨 block:
+//!          当前 block 剩余空间不足时以 0x00 填充 padding 后切到新 block
+//! 超大 data (> 65535 或超出 block 容量) 分片为 First / Middle / Last
+//! ```
+//!
+//! Linux 下通过 `fallocate` 预分配磁盘空间 (不改变文件大小), 避免写放大.
+//!
+//! # Invariant
+//!
+//! - 单片 Record (header + data) 必须 <= `BLOCK_SIZE`, 分片链由 Reader 重组.
+//! - CRC32 覆盖 `Length(2B) + Type(1B) + Data`.
 
 use super::record::{RecordType, HEADER_SIZE};
 use crate::error::Result;

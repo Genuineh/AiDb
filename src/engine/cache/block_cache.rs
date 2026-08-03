@@ -1,5 +1,24 @@
-//! Sharded LRU Block Cache with O(1) operations, hit/miss statistics,
-//! and Pinning reference protection for critical blocks (index/filter).
+//! Sharded LRU Data Block 缓存: O(1) 查找 / 插入 / 淘汰, 命中与未命中统计,
+//! 并对关键块 (index / filter) 提供 pin 引用保护 (`PinGuard`, 见 `sstable::block_io`).
+//!
+//! # 架构
+//!
+//! ```text
+//! 总容量均分 16 shard (NUM_SHARDS)
+//! shard = HashMap<CacheKey, (Bytes, counter)> + lru_queue (VecDeque)
+//!   ├─ get / insert 递增 next_counter, lru_queue 记录 (key, counter)
+//!   └─ evict_one 惰性跳过 stale counter / pinned entry
+//! lru_queue 长度 > 存活 key × 4 (且 >= 256) 时触发一次全量整理
+//! ```
+//!
+//! `CacheKey = (file_number, block_offset)`, 经 `FxHasher` 散列到 shard.
+//!
+//! # Invariant
+//!
+//! - 总容量均分到各 shard; hash 偏斜时单个 shard 先满自行淘汰, 不借用其它 shard 配额
+//!   (见 `docs/modules/02-engine-storage.md`).
+//! - pin 计数 > 0 的 entry 不参与淘汰; pin 是 key 级引用计数, 与 entry 值解耦
+//!   (insert 覆盖旧值时不清理 pin).
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};

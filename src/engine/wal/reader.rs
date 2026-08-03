@@ -1,7 +1,16 @@
-//! WAL Reader — 顺序读取 Record.
+//! WAL Reader — 顺序读取 Record (open 后从头到尾扫描).
+//! 负责 block padding 跳过、CRC32 校验与分片重组 (Full / First / Middle / Last → 完整 entry),
+//! 通过 `ReadStatus` 区分正常记录与各类异常, 供 recover 决定丢弃或报错.
 //!
-//! 处理 block padding 跳过、CRC32 校验、损坏容忍。
-//! 返回 ReadStatus 区分正常记录与各类异常。
+//! # 行为
+//!
+//! - 文件尾部不完整 (`TailPartial`) 视为 partial write, 静默丢弃.
+//! - 中间 CRC 不匹配: 默认 `CorruptionRecoverable` (记 warning 后继续);
+//!   严格模式 (`strict_wal_recovery`) 下为 `CorruptionFatal`.
+//!
+//! # Invariant
+//!
+//! - CRC 校验覆盖 `Length + Type + Data`, 与 Writer 一致, 不一致即视为损坏.
 
 use super::record::{RecordType, HEADER_SIZE};
 use super::writer::BLOCK_SIZE;
