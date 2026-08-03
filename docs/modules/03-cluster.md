@@ -2,17 +2,17 @@
 name: aidb-cluster
 depends_on:
   - aidb-engine
-description: AiDb distributed cluster — MetaRaft control plane, Multi-Raft data groups, CRC16 slot Router, OpenRaftStorage on LSM DB, gRPC, slot migration, membership. Use when changing src/cluster/*, debugging Raft/MetaRaft, group lifecycle, slot routing, or integrating aikv storage/cluster.
+description: AiDb 分布式集群 — MetaRaft 控制面、Multi-Raft 数据组、CRC16 slot Router、LSM 上的 OpenRaftStorage、gRPC、slot 迁移、成员变更. 改 src/cluster/*、排查 Raft/MetaRaft、组生命周期、slot 路由, 或与 aikv storage/cluster 对接时读本文.
 ---
 
-# AiDb Cluster (MetaRaft + Multi-Raft)
+# AiDb Cluster (集群: MetaRaft + Multi-Raft)
 
 ## 何时读本文
 
 - 改 `src/cluster/*` 或排查 MetaRaft / 数据 Group Raft / Router / slot 迁移 / gRPC
 - 集成 aikv `storage` / `cluster` 前, 理解 aidb 侧 pub API 与错误语义
-- **不覆盖**: 单节点 LSM 写读路径 → [engine.md](engine.md); SSTable/compaction → [engine-storage.md](engine-storage.md)
-- **不覆盖**: RESP MOVED/ASK / CLUSTER 子命令 → aikv [cluster.md](../../../aikv/docs/modules/cluster.md) (步 11)
+- **不覆盖**: 单节点 LSM 写读路径 → [engine.md](01-engine.md); SSTable/compaction → [engine-storage.md](02-engine-storage.md)
+- **不覆盖**: RESP MOVED/ASK / CLUSTER 子命令 → aikv [cluster.md](../../../aikv/docs/modules/06-cluster.md) (步 11)
 - **构建**: 需 `--features cluster` 与 `protoc`
 
 ## 架构一览
@@ -54,6 +54,7 @@ flowchart TB
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
+| `mod.rs` | 模块根; re-export | — |
 | `types.rs` | `TypeConfig`, `Request`/`Response`, `ThinWriteBatch`, `RaftNodeConfig` | `Request::Meta`, `RaftNodeConfig::validate` |
 | `meta_types.rs` | `ClusterMeta`, `SlotTable`, `MetaRequest`, `METARAFT_GROUP_ID=0` | `MetaRequest::*`, `SLOT_COUNT=16384` |
 | `meta_state_machine.rs` | Meta SM: validate + apply → 三 KV | `apply_meta_request`, `validate_meta_request` |
@@ -64,11 +65,15 @@ flowchart TB
 | `sharded_storage.rs` | 每 Group 独立 DB | `ShardedStorage::open` |
 | `storage/keys.rs` | Raft / SM / Meta key 编码 | `sm_key`, `log_key`, `meta_*_key` |
 | `storage/{mod,log,apply,snapshot}.rs` | `OpenRaftStorage` (OpenRaft trait) | `apply_entries_internal` |
+| `pending_log.rs` | 未 flush log entries 内存暂存 + generation 防护 | `PendingLogOverlay` |
+| `log_committer.rs` | 异步批量 I/O actor; 聚合 log 写入保序 flush | `LogCommitter` |
 | `network.rs` | gRPC client/server + dispatcher | `RaftNetworkClientFactory`, `RaftServiceDispatcher` |
+| `aidb.raft.rs` | prost 生成的 gRPC 消息 (勿手改) | — |
 | `lifecycle_manager.rs` | Group 创建/销毁 + Router 刷新 | `tick` → `TickResult` |
 | `leader_watcher.rs` | 本地 leader → Meta `is_leader` | `tick`, `spawn_background` |
 | `membership_coordinator.rs` | 节点 join/leave/replace | `add_node`, `remove_node`, `change_group_membership` |
 | `slot_migration.rs` | 在线 slot 迁移 | `SlotMigrationManager`, `SlotMigrationExecutor` |
+| `migration_oplog.rs` | 迁移 tombstone/tip 值编码 (FIX-0056-A1) | `MigOp`, `encode_tombstone`, `encode_tip` |
 | `replica_allocator.rs` | 副本/slot 分配算法 (纯计算) | `allocate_group`, `rebalance_replicas` |
 | `metrics.rs` | Raft RPC 计数 (feature `monitoring`) | `record_raft_rpc` |
 | `failpoint.rs` | 故障注入框架 (feature `cluster-test-util`) | `FailPoint`, `FailPointRegistry`, `fire()` |

@@ -133,7 +133,7 @@ db.close()?;
 └── wal_{n}.log
 ```
 
-磁盘格式与早期 `aidb-oldmain` **不兼容** — 勿跨版本直接打开旧目录. 布局细节见 [docs/modules/engine.md](docs/modules/engine.md)、[engine-storage.md](docs/modules/engine-storage.md).
+磁盘格式与早期 `aidb-oldmain` **不兼容** — 勿跨版本直接打开旧目录. 布局细节见 [docs/modules/engine.md](docs/modules/01-engine.md)、[engine-storage.md](docs/modules/02-engine-storage.md).
 
 ## 配置 (部署向摘要)
 
@@ -169,7 +169,7 @@ db.close()?;
 | `ClusterConfig::for_production()` | 256 | 3 | 生产 (slot 路由见 cluster module) |
 | `ClusterConfig::for_testing()` | 4 | 1 | 单测 |
 
-`RaftNodeConfig` 等运行时参数见 [docs/modules/cluster.md](docs/modules/cluster.md). **集群进程启动、端口、compose** 不在 aidb — 见 [AiKv 部署](../aikv/DEPLOYMENT.md).
+`RaftNodeConfig` 等运行时参数见 [docs/modules/cluster.md](docs/modules/03-cluster.md). **集群进程启动、端口、compose** 不在 aidb — 见 [AiKv 部署](../aikv/DEPLOYMENT.md).
 
 ## 示例
 
@@ -203,8 +203,8 @@ recovery.restore(id, "/var/data/aidb-restored")?;
 ```
 
 - 仅 **`LocalFileStorage`** 内置; S3 / 增量备份未实现 — 见 [ISSUES.md#ISSUE-012](ISSUES.md#issue-012-无-backup_id-碰撞重试与压缩增量s3).
-- AiKv `BGSAVE` 直调 `Checkpoint`, 不经 `BackupManager` — 见 aikv [commands-extended.md](../aikv/docs/modules/commands-extended.md).
-- 详情见 [docs/modules/backup.md](docs/modules/backup.md).
+- AiKv `BGSAVE` 直调 `Checkpoint`, 不经 `BackupManager` — 见 aikv [commands-extended.md](../aikv/docs/modules/05-commands-extended.md).
+- 详情见 [docs/modules/backup.md](docs/modules/04-backup.md).
 
 ## 可观测性
 
@@ -220,7 +220,7 @@ aidb::metrics::register_into(&registry)?;
 // 再由 HTTP handler encode gather()
 ```
 
-AiKv 在 `Metrics::new()` 内完成注册并暴露 `/metrics`. 指标列表与 PromQL 见 [docs/modules/observability.md](docs/modules/observability.md).
+AiKv 在 `Metrics::new()` 内完成注册并暴露 `/metrics`. 指标列表与 PromQL 见 [docs/modules/observability.md](docs/modules/05-observability.md).
 
 ## 集群 (库侧)
 
@@ -228,7 +228,7 @@ AiKv 在 `Metrics::new()` 内完成注册并暴露 `/metrics`. 指标列表与 P
 
 aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER 命令、节点部署** 由 AiKv 实现. 完整集群运维见 [AiKv 部署](../aikv/DEPLOYMENT.md) (aikv 文档整理步 21).
 
-库侧深入: [docs/modules/cluster.md](docs/modules/cluster.md).
+库侧深入: [docs/modules/cluster.md](docs/modules/03-cluster.md).
 
 ## 相关文档
 

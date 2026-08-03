@@ -2,7 +2,7 @@
 name: aidb-observability
 depends_on:
   - aidb-engine
-description: AiDb observability — OTel metrics (monitoring feature), tracing span index, metrics::init for embedders. Use when changing src/metrics.rs or cluster/metrics.rs, wiring aidb_* counters in aikv, or debugging OTLP/tracing for engine and Raft paths.
+description: AiDb 可观测性 — OTel 指标 (monitoring feature)、tracing span 索引、面向嵌入方的 metrics::init. 改 src/metrics.rs 或 cluster/metrics.rs、在 aikv 接 aidb_* 计数器, 或排查引擎与 Raft 路径的 OTLP/tracing 时读本文.
 ---
 
 # AiDb Observability (可观测性)
@@ -12,8 +12,8 @@ description: AiDb observability — OTel metrics (monitoring feature), tracing s
 - 改 `src/metrics.rs`、`src/cluster/metrics.rs` 或排查 `aidb_*` OTel 指标
 - 在 **嵌入方** (aikv) 初始化 global `MeterProvider` 后调用 `metrics::init()`
 - 查 tracing span / event 命名, 跨 module 定位埋点
-- **不覆盖**: 各 module 内 span 实现细节 → [engine.md](engine.md) / [engine-storage.md](engine-storage.md) / [cluster.md](cluster.md) / [backup.md](backup.md)
-- **不覆盖**: HTTP `/health`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)
+- **不覆盖**: 各 module 内 span 实现细节 → [engine.md](01-engine.md) / [engine-storage.md](02-engine-storage.md) / [cluster.md](03-cluster.md) / [backup.md](04-backup.md)
+- **不覆盖**: HTTP `/health`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/07-observability.md)
 - **监控栈部署**: AiFactory [`monitor/README.md`](../../../aifactory/monitor/README.md) (115 中心 + worker Alloy)
 - **构建**: `monitoring` feature 启用 `aidb::metrics`; 默认 **不** 启用
 
@@ -120,7 +120,7 @@ flowchart LR
 | DB | `db_open`, `db_put`, `db_get`, `db_scan`, `db_flush`, `db_close` | `db`: `db.put`, `db.get.result`, `db.flush.complete` |
 | Compaction | `cmp_pick`, `cmp_run`, `cmp_merge`, `cmp_apply` | — |
 | Checkpoint | `bgsave_checkpoint` | `db`: `checkpoint.create.complete` |
-| Backup | `backup_create`, `backup_restore`, … | 见 [backup.md](backup.md) |
+| Backup | `backup_create`, `backup_restore`, … | 见 [backup.md](04-backup.md) |
 | Raft 存储 | `raft_append_log`, `raft_apply_sm`, … | — |
 | Raft RPC | `raft_rpc_ae`, `raft_rpc_vote`, `raft_rpc_is` | — |
 | Meta | `meta_propose`, `meta_apply`, `meta_slot_query` | — |
