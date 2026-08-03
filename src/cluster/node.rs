@@ -442,7 +442,12 @@ impl OpenRaftNode {
             .clone()
             .with_group_id(self.group_id);
         let mut client = factory
-            .new_client(leader_id, &openraft::BasicNode { addr: addr.to_string() })
+            .new_client(
+                leader_id,
+                &openraft::BasicNode {
+                    addr: addr.to_string(),
+                },
+            )
             .await;
         client.remote_propose(self.group_id, request).await
     }

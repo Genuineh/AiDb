@@ -2,7 +2,7 @@
 name: aidb-backup
 depends_on:
   - aidb-engine-storage
-description: AiDb full backup and restore — BackupManager, RecoveryManager, BackupStorage, RetentionPolicy, manifest checksums. Use when changing src/backup/*, debugging backup/restore or retention policy, integrating BackupManager with DB, or understanding Checkpoint-based snapshot packaging.
+description: AiDb 全量备份与恢复 — BackupManager/RecoveryManager/BackupStorage/保留策略/manifest 校验. 改 src/backup/*、排查备份/恢复或保留策略、集成 BackupManager, 或理解基于 Checkpoint 的快照打包时读本文.
 ---
 
 # AiDb Backup (备份与恢复)
@@ -11,10 +11,10 @@ description: AiDb full backup and restore — BackupManager, RecoveryManager, Ba
 
 - 改 `src/backup/*` 或集成 `BackupManager` / `RecoveryManager`
 - 排查备份创建、manifest 校验、保留策略、restore 失败
-- **不覆盖**: `Checkpoint::create` 内部 (pin / link-copy / compaction 互斥) → [engine-storage.md](engine-storage.md)
-- **不覆盖**: slot 迁移文件 checkpoint → [cluster.md](cluster.md)
-- **不覆盖**: AiKv `BGSAVE` (直调 `Checkpoint`, 不用 `BackupManager`) → aikv [commands-extended.md](../../../aikv/docs/modules/commands-extended.md)
-- **不覆盖**: `aidb_backup_*` OTel 指标 → [observability.md](observability.md) (步 10)
+- **不覆盖**: `Checkpoint::create` 内部 (pin / link-copy / compaction 互斥) → [engine-storage.md](02-engine-storage.md)
+- **不覆盖**: slot 迁移文件 checkpoint → [cluster.md](03-cluster.md)
+- **不覆盖**: AiKv `BGSAVE` (直调 `Checkpoint`, 不用 `BackupManager`) → aikv [commands-extended.md](../../../aikv/docs/modules/05-commands-extended.md)
+- **不覆盖**: `aidb_backup_*` OTel 指标 → [observability.md](05-observability.md) (步 10)
 - **构建**: 默认启用 `backup` feature; 关则整个 `backup` mod 不存在
 
 ## 代码地图

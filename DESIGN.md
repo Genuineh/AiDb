@@ -6,17 +6,17 @@
 
 | 域 | 深入阅读 |
 |----|----------|
-| 写路径 / WAL / MemTable / MVCC | [engine.md](docs/modules/engine.md) |
-| SSTable / compaction / Bloom / cache / checkpoint | [engine-storage.md](docs/modules/engine-storage.md) |
-| MetaRaft / Multi-Raft / Router / 迁移 | [cluster.md](docs/modules/cluster.md) |
-| 全量备份 / 恢复 | [backup.md](docs/modules/backup.md) |
-| tracing / Prometheus | [observability.md](docs/modules/observability.md) |
+| 写路径 / WAL / MemTable / MVCC | [engine.md](docs/modules/01-engine.md) |
+| SSTable / compaction / Bloom / cache / checkpoint | [engine-storage.md](docs/modules/02-engine-storage.md) |
+| MetaRaft / Multi-Raft / Router / 迁移 | [cluster.md](docs/modules/03-cluster.md) |
+| 全量备份 / 恢复 | [backup.md](docs/modules/04-backup.md) |
+| tracing / Prometheus | [observability.md](docs/modules/05-observability.md) |
 
 ## 产品形态与横切取舍
 
 ### 为什么是嵌入式 lib, 而不是独立服务?
 
-AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs/modules/storage.md) 在其上实现 RESP、Cluster 重定向与 HTTP `/metrics`. 这样 LSM 与 Raft 基础设施可复用, 协议层独立演进.
+AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs/modules/03-storage.md) 在其上实现 RESP、Cluster 重定向与 HTTP `/metrics`. 这样 LSM 与 Raft 基础设施可复用, 协议层独立演进.
 
 ### 为什么 sync API + feature gate?
 
@@ -67,7 +67,7 @@ AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs
 
 ### WAL 格式: 为什么使用 Record 分片?
 
-物理 record 含 CRC32 + length + type + data. 超过 block size (~32KB) 时拆为 First/Middle/Last, 兼容大 value. RocksDB 同款, 工程验证充分. 逻辑层 `WalEntry` + `BatchStart` 保证 batch 崩溃原子性 (见 [engine.md](docs/modules/engine.md)).
+物理 record 含 CRC32 + length + type + data. 超过 block size (~32KB) 时拆为 First/Middle/Last, 兼容大 value. RocksDB 同款, 工程验证充分. 逻辑层 `WalEntry` + `BatchStart` 保证 batch 崩溃原子性 (见 [engine.md](docs/modules/01-engine.md)).
 
 ### MemTable: 为什么选择 Crossbeam SkipMap?
 
@@ -75,7 +75,7 @@ AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs
 
 ### SSTable Block: restart points 的作用
 
-默认每 16 个 key 一个 restart point (完整 key), 其余存前缀差量 — 省空间; restart 点上二分 + 块内线性扫描, cache locality 好. 细节见 [engine-storage.md](docs/modules/engine-storage.md).
+默认每 16 个 key 一个 restart point (完整 key), 其余存前缀差量 — 省空间; restart 点上二分 + 块内线性扫描, cache locality 好. 细节见 [engine-storage.md](docs/modules/02-engine-storage.md).
 
 ### Block Cache: 为什么 16-shard LRU?
 
@@ -185,7 +185,7 @@ LSM flush 后 SST 不可变; `Checkpoint::create` 在 flush + pin SST 后 link/c
 
 `monitoring` feature 启用 `aidb::metrics` 与 `register_into(registry)` — 嵌入方 (AiKv) 将 aidb 系列挂到同一 Prometheus registry 并在 HTTP 暴露. oldmain 的 `MetricsServer` 已移除; **职责分离**: 库只产出指标, 进程决定 scrape 端点.
 
-**放弃 / 精简**: 旧设计多项指标未实现 (`wal_sync_duration`, `cache_hit_rate` gauge 等); 无进程级 memory/disk — 见 [observability.md](docs/modules/observability.md).
+**放弃 / 精简**: 旧设计多项指标未实现 (`wal_sync_duration`, `cache_hit_rate` gauge 等); 无进程级 memory/disk — 见 [observability.md](docs/modules/05-observability.md).
 
 ---
 

@@ -2,7 +2,7 @@
 name: aidb-engine-storage
 depends_on:
   - aidb-engine
-description: AiDb LSM persistence layer — SSTable layout, leveled compaction, Bloom filter, block cache, directory checkpoint. Use when changing src/engine/{sstable,compaction,filter,cache,checkpoint}, debugging flush/compaction/read amplification, MANIFEST/VersionSet, or Checkpoint::create.
+description: AiDb 持久化层 — SSTable 布局、层级 compaction、布隆过滤器、块缓存、目录 checkpoint. 改 src/engine/{sstable,compaction,filter,cache,checkpoint}、排查 flush/compaction/读放大、MANIFEST/VersionSet 或 Checkpoint::create 时读本文.
 ---
 
 # AiDb Engine Storage (持久化层)
@@ -11,28 +11,35 @@ description: AiDb LSM persistence layer — SSTable layout, leveled compaction, 
 
 - 改 `engine/sstable`, `compaction`, `filter`, `cache`, `checkpoint`
 - 排查 flush→SST、compaction 不触发/卡住、get 读放大、Bloom/BlockCache、MANIFEST、目录 checkpoint
-- **不覆盖**: WAL / MemTable / 写路径 / `DB::put` → [engine.md](engine.md)
-- **衔接**: flush/compaction/checkpoint 编排见 `engine/db/inner.rs`; 全量备份见 [backup.md](backup.md)
+- **不覆盖**: WAL / MemTable / 写路径 / `DB::put` → [engine.md](01-engine.md)
+- **衔接**: flush/compaction/checkpoint 编排见 `engine/db/inner.rs`; 全量备份见 [backup.md](04-backup.md)
 
 ## 代码地图
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
+| `sstable/mod.rs` | SSTable 模块根; re-export | — |
 | `sstable/block.rs` | Data Block: prefix compression + restart points | `BlockBuilder::add`, `Block::iter` |
 | `sstable/block_io.rs` | Block trailer (压缩类型 + CRC); cache 读写 | `write_block`, `read_block_cached` |
 | `sstable/builder.rs` | InternalKey 有序写盘; `.sst.tmp` → rename | `SSTableBuilder::add`, `finish` |
 | `sstable/reader.rs` | Footer → Index → Bloom → Block 点查 | `SSTableReader::open`, `get` |
 | `sstable/iterator.rs` | 单文件顺序迭代 | `SSTableIterator` |
 | `sstable/index.rs` | Block 最大 InternalKey → `BlockHandle` | `find_block_handle` |
+| `sstable/handle.rs` | Block offset + size 编码 (Index/Meta Index 引用) | `BlockHandle::encode/decode` |
 | `sstable/footer.rs` | 48B Footer + MAGIC | `Footer::encode/decode` |
 | `sstable/filename.rs` | `{num:06}_L{level}.sst` | `sstable_path`, `parse_sstable_filename` |
 | `sstable/meta.rs` | Bloom meta 裸块 | `BLOOM_META_NAME`, `write_raw_block` |
+| `sstable/properties.rs` | SST 统计属性 (entries / raw key/value size, 24B) | `SstProperties::encode/decode` |
+| `compaction/mod.rs` | Compaction 模块根; re-export | — |
 | `compaction/version.rs` | `CURRENT` + `MANIFEST-*`; recover/bootstrap | `VersionSet::recover`, `apply_edit` |
 | `compaction/picker.rs` | L0/Ln 选取; trivial move | `CompactionPicker::pick_compaction` |
 | `compaction/job.rs` | 归并 dedup; subcompaction | `CompactionJob::run` |
 | `compaction/merge.rs` | 多 SST 堆归并 (compaction 专用) | `MergeIterator` |
 | `compaction/helpers.rs` | key range 重叠; user_key 提取 | `key_ranges_overlap_by_meta_raw`, `user_key_from_internal` |
+| `compaction/filter.rs` | `CompactionFilter` trait: 写输出 SST 前过滤 entry | `FilterDecision`, `CompactionFilter` |
+| `filter/mod.rs` | Filter 模块根; re-export | — |
 | `filter/bloom.rs` | SST 级 Bloom (user_key) | `BloomFilter`, `Filter` |
+| `cache/mod.rs` | Cache 模块根; re-export | — |
 | `cache/block_cache.rs` | 16 分片 LRU Data Block cache | `BlockCache::get/insert` |
 | `checkpoint/mod.rs` | 目录一致性快照 | `Checkpoint::create`, `verify_openable` |
 
@@ -167,7 +174,7 @@ sequenceDiagram
 
 - `Checkpoint::create(db, dest)`: flush → pin → link/copy 全目录
 - **非** Redis RDB; 完整数据目录副本, 可 `DB::open`
-- `BackupManager` 基于此后处理 → [backup.md](backup.md)
+- `BackupManager` 基于此后处理 → [backup.md](04-backup.md)
 
 ## 常见任务
 

@@ -31,7 +31,7 @@ AiDb **不实现** RESP / INFO / redis_exporter; Redis 协议语义在 **AiKv**.
 | **MultiRaft** | MetaRaft (控制面) + MultiRaft (数据面) + LifecycleManager; 在线 slot 迁移 | TiKV raftstore 的 Group 生命周期思路 | **slot 固定 16384**, 非 TiKV Region 分裂/merge; 拓扑走 MetaRaft, 非 Redis gossip 共识 |
 | **节点 RPC** | tonic + prost, `proto/raft.proto` (Vote / AppendEntries / InstallSnapshot) | gRPC 惯例; proto 与 OpenRaft 类型对齐 | 自定义 proto, 非 etcd gRPC 协议 |
 | **Slot 模型** | 16384 slot, CRC16 — 与 Redis Cluster 槽位计算一致 | [Redis Cluster spec](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/) (仅 slot 数与哈希) | MOVED/ASK、CLUSTER 子命令在 AiKv; 勿按 Redis 16379 bus 臆测本库行为 |
-| **引擎指标** | `aidb_*` 经 OTLP 出口 | [docs/modules/observability.md](docs/modules/observability.md) | **不进** Redis INFO / redis_exporter |
+| **引擎指标** | `aidb_*` 经 OTLP 出口 | [docs/modules/observability.md](docs/modules/05-observability.md) | **不进** Redis INFO / redis_exporter |
 
 Redis 数据结构编码、RESP、INFO — 见 [../aikv/AGENTS.md](../aikv/AGENTS.md).
 

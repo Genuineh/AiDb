@@ -1,6 +1,6 @@
 ---
 name: aidb-engine
-description: AiDb write path — WAL, MemTable, DB API, WriteBatch, MVCC snapshot, crash recovery. Use when changing src/engine/{wal,memtable,db}, debugging put/get/write path, WAL replay, MemTable freeze, or Snapshot reads.
+description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快照、崩溃恢复. 改 src/engine/{wal,memtable,db}、排查 put/get 写路径、WAL 回放、MemTable 冻结或 Snapshot 读时读本文.
 ---
 
 # AiDb Engine (写路径)
@@ -9,25 +9,35 @@ description: AiDb write path — WAL, MemTable, DB API, WriteBatch, MVCC snapsho
 
 - 改 `engine/wal`, `engine/memtable`, `engine/db` 或 `DB::*` 公共 API
 - 排查写路径、WAL 恢复、MemTable freeze、WriteBatch 原子性、Snapshot 读
-- **不覆盖**: SSTable 布局 / compaction / Bloom / BlockCache / checkpoint → [engine-storage.md](engine-storage.md)
+- **不覆盖**: SSTable 布局 / compaction / Bloom / BlockCache / checkpoint → [engine-storage.md](02-engine-storage.md)
 
 ## 代码地图
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
+| `engine/mod.rs` | 引擎模块根; 子模块声明 | — |
+| `engine/wal/mod.rs` | WAL 模块根; re-export | — |
 | `engine/wal/record.rs` | Record 物理格式; `WalEntry` 编解码; `OpType` | `WalEntry::encode`, `OpType` |
 | `engine/wal/writer.rs` | 追加 Record; 32KB block padding; sync | `Writer::write_record` |
 | `engine/wal/reader.rs` | 顺序读; 分片重组; strict/非 strict 损坏处理 | `Reader::read_record` |
 | `engine/wal/manager.rs` | open/recover/append/rotate/cleanup; `LOCK` | `WALManager::*` |
+| `engine/memtable/mod.rs` | MemTable 模块根; re-export | — |
+| `engine/memtable/rep.rs` | `MemTableRep` trait: 抽象 MemTable 底层存储 | `MemTableRep` |
+| `engine/memtable/skiplist_rep.rs` | crossbeam SkipMap 实现 (当前唯一 rep) | `SkipMapRep` |
+| `engine/memtable/key_bytes.rs` | SkipMap 排序键包装 | `InternalKeyBytes` |
 | `engine/memtable/internal_key.rs` | InternalKey 编码; `ValueType`; sequence 上界 | `encode_internal_key`, `check_sequence` |
 | `engine/memtable/table.rs` | `MemTable` / `ImmutableMemTable`; freeze | `MemTable::put`, `freeze` |
 | `engine/memtable/iterator.rs` | MemTable 迭代 | `MemTableIterator` |
+| `engine/memtable/range_tombstone.rs` | Range tombstone 辅助 (`[start,end)` 覆盖 / 最大 seq) | `max_covering_range_tombstone_seq` |
+| `engine/db/mod.rs` | DB 模块根; re-export | — |
 | `engine/db/inner.rs` | DB 总协调: open/写/读/flush/close/后台线程 | `DB::open`, `put`, `write`, `get` |
 | `engine/db/write_batch.rs` | 批写容器 | `WriteBatch`, `WriteOp` |
 | `engine/db/replay.rs` | WAL entry → MemTable | `replay_entries` |
 | `engine/db/snapshot.rs` | MVCC 快照; `SnapshotList` | `Snapshot::get`, `SnapshotList` |
 | `engine/db/iterator.rs` | 跨 MemTable + SSTable 归并迭代 | `DBIterator` |
 | `engine/db/numbers.rs` | WAL 文件编号扫描 | `scan_next_wal_file_number` |
+| `src/config.rs` | 引擎配置: `Options` / `ClusterConfig` / `MigrationConfig` / `CompressionType` | `Options::for_testing`, `Options::validate` |
+| `src/error.rs` | 类型化错误 (`thiserror`); `Cluster` 变体需 feature `cluster` | `Error`, `Result` |
 
 公共 re-export (`lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `Snapshot`, `DbIterGuard`.
 
@@ -70,7 +80,7 @@ flowchart TD
   G --> H[flush / compaction 后台线程]
 ```
 
-SSTable / VersionSet 细节见 [engine-storage.md](engine-storage.md).
+SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 
 ### 读取 (get / snapshot)
 
@@ -174,9 +184,9 @@ assert_eq!(snap.get(b"k")?, Some(b"old".to_vec()));
 | `memtable_wait_iters` / `memtable_wait_interval_ms` | 10000 / 1 | immutable 满时等待 flush |
 | `background_compaction` | true | false 时无写 stall (测试用) |
 
-SSTable / compaction / cache 字段见 [engine-storage.md](engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.
+SSTable / compaction / cache 字段见 [engine-storage.md](02-engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.
 
-Feature: `monitoring` 启用 WAL/MemTable/DB span 与 OTel 指标 → [observability.md](observability.md).
+Feature: `monitoring` 启用 WAL/MemTable/DB span 与 OTel 指标 → [observability.md](05-observability.md).
 
 ## 测试
 

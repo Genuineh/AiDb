@@ -36,7 +36,11 @@ use raft_rpc::raft_service_client::RaftServiceClient;
 /// 注意: 必须尊重对端传来的 committed 状态, 不能无条件 `new_committed`.
 /// candidate 发起选举时其 vote 是 uncommitted, 若误标为 committed 会让
 /// 其他节点进入 leader-lease 保护而拒绝投票, 导致选举死锁.
-fn vote_from_wire<LID>(term: LID::Term, node_id: LID::NodeId, committed: bool) -> openraft::Vote<LID>
+fn vote_from_wire<LID>(
+    term: LID::Term,
+    node_id: LID::NodeId,
+    committed: bool,
+) -> openraft::Vote<LID>
 where
     LID: openraft::vote::RaftLeaderId,
 {

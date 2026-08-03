@@ -1,6 +1,6 @@
 # AiDb 架构
 
-AiDb 是用 Rust 实现的 **嵌入式 LSM-Tree KV 存储库** (lib crate). 单机提供同步 `DB` API; 分布式、备份、Prometheus 通过 Cargo feature 按需启用. **AiDb 不是网络服务** — [AiKv](../aikv/docs/modules/storage.md) 在其上实现 Redis RESP 与 Cluster 协议.
+AiDb 是用 Rust 实现的 **嵌入式 LSM-Tree KV 存储库** (lib crate). 单机提供同步 `DB` API; 分布式、备份、Prometheus 通过 Cargo feature 按需启用. **AiDb 不是网络服务** — [AiKv](../aikv/docs/modules/03-storage.md) 在其上实现 Redis RESP 与 Cluster 协议.
 
 日常改代码优先读 [docs/modules/](docs/modules/) 域文档; 本文提供系统分层、模块关系与数据流总览.
 
@@ -73,11 +73,11 @@ aidb/src/
 
 | Module 文档 | 覆盖 `src/` | 何时深入 |
 |-------------|-------------|----------|
-| [engine.md](docs/modules/engine.md) | `engine/{wal,memtable,db}` | WAL, MemTable, 写路径, `DB::*`, MVCC |
-| [engine-storage.md](docs/modules/engine-storage.md) | `engine/{sstable,compaction,filter,cache,checkpoint}` | flush, compaction, Bloom, MANIFEST, Checkpoint |
-| [cluster.md](docs/modules/cluster.md) | `cluster/*` | MetaRaft, Multi-Raft, Router, slot 迁移, gRPC |
-| [backup.md](docs/modules/backup.md) | `backup/*` | 全量备份, manifest, restore |
-| [observability.md](docs/modules/observability.md) | `metrics.rs`, `cluster/metrics.rs` | `aidb_*` 指标, tracing, 嵌入方注册 |
+| [engine.md](docs/modules/01-engine.md) | `engine/{wal,memtable,db}` | WAL, MemTable, 写路径, `DB::*`, MVCC |
+| [engine-storage.md](docs/modules/02-engine-storage.md) | `engine/{sstable,compaction,filter,cache,checkpoint}` | flush, compaction, Bloom, MANIFEST, Checkpoint |
+| [cluster.md](docs/modules/03-cluster.md) | `cluster/*` | MetaRaft, Multi-Raft, Router, slot 迁移, gRPC |
+| [backup.md](docs/modules/04-backup.md) | `backup/*` | 全量备份, manifest, restore |
+| [observability.md](docs/modules/05-observability.md) | `metrics.rs`, `cluster/metrics.rs` | `aidb_*` 指标, tracing, 嵌入方注册 |
 
 横切类型: `config.rs`, `error.rs` 在各 module 或后续 `docs/development.md` 中说明.
 
@@ -121,7 +121,7 @@ flowchart LR
   BG --> CP[可选 compaction]
 ```
 
-细节: [engine.md](docs/modules/engine.md), flush/compaction: [engine-storage.md](docs/modules/engine-storage.md).
+细节: [engine.md](docs/modules/01-engine.md), flush/compaction: [engine-storage.md](docs/modules/02-engine-storage.md).
 
 ### 读取 (get)
 
@@ -161,7 +161,7 @@ flowchart TB
 - **写 key**: 本地 Group → `OpenRaftNode.propose` → apply 到 Group DB 内 `sm_key(gid, user_key)`.
 - **gRPC**: 统一端口, `RaftServiceDispatcher` 按 RPC 内 `group_id` 分发.
 
-Redis MOVED/ASK / CLUSTER 子命令在 [aikv cluster.md](../aikv/docs/modules/cluster.md). 数据面端口偏移由 AiKv `--cluster-data-port-offset` 配置 (默认 10000).
+Redis MOVED/ASK / CLUSTER 子命令在 [aikv cluster.md](../aikv/docs/modules/06-cluster.md). 数据面端口偏移由 AiKv `--cluster-data-port-offset` 配置 (默认 10000).
 
 ### 备份 (feature `backup`)
 
@@ -171,7 +171,7 @@ Redis MOVED/ASK / CLUSTER 子命令在 [aikv cluster.md](../aikv/docs/modules/cl
 
 - **Tracing**: 始终编译; 各路径 `#[instrument]` span.
 - **Prometheus**: `monitoring` feature; `DB::open` 时 `metrics::init()`.
-- **暴露**: AiDb **无内置 HTTP scrape**; 嵌入方调用 `register_into` 后统一暴露 (见 [observability.md](docs/modules/observability.md)).
+- **暴露**: AiDb **无内置 HTTP scrape**; 嵌入方调用 `register_into` 后统一暴露 (见 [observability.md](docs/modules/05-observability.md)).
 
 ## 与 AiKv 的嵌入关系
 

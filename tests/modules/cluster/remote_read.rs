@@ -397,6 +397,13 @@ impl raft_rpc::raft_service_server::RaftService for SlowGetKeyService {
         }))
     }
 
+    async fn remote_propose(
+        &self,
+        _request: tonic::Request<raft_rpc::RemoteProposeRequest>,
+    ) -> std::result::Result<tonic::Response<raft_rpc::RemoteProposeResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("not used in this test"))
+    }
+
     async fn get_migration_tip(
         &self,
         _request: tonic::Request<raft_rpc::GetMigrationTipRequest>,

@@ -74,11 +74,11 @@ cargo run --example basic
 | [CONTRIBUTING.md](CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |
-| [docs/modules/engine.md](docs/modules/engine.md) | WAL, MemTable, 写路径, `DB` API |
-| [docs/modules/engine-storage.md](docs/modules/engine-storage.md) | SSTable, compaction, Bloom, cache |
-| [docs/modules/cluster.md](docs/modules/cluster.md) | MetaRaft, Multi-Raft, slot 迁移 |
-| [docs/modules/backup.md](docs/modules/backup.md) | BackupManager, 恢复流程 |
-| [docs/modules/observability.md](docs/modules/observability.md) | 指标与 tracing |
+| [docs/modules/engine.md](docs/modules/01-engine.md) | WAL, MemTable, 写路径, `DB` API |
+| [docs/modules/engine-storage.md](docs/modules/02-engine-storage.md) | SSTable, compaction, Bloom, cache |
+| [docs/modules/cluster.md](docs/modules/03-cluster.md) | MetaRaft, Multi-Raft, slot 迁移 |
+| [docs/modules/backup.md](docs/modules/04-backup.md) | BackupManager, 恢复流程 |
+| [docs/modules/observability.md](docs/modules/05-observability.md) | 指标与 tracing |
 | [ISSUES.md](ISSUES.md) | 待核实项 |
 
 ## 待核实
