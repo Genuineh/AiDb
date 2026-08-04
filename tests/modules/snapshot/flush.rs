@@ -1,7 +1,9 @@
 //! Snapshot: flush 后旧版本仍可见 (数据进 SST)
+//! @component aidb-engine
 
 use super::common::temp_db;
 
+/// 验证 Flush 将数据转存入 SST 文件后 Snapshot 仍可读旧版本
 #[test]
 fn test_snapshot_after_flush() {
     let (_dir, db) = temp_db();

@@ -1,4 +1,4 @@
-//! @component aidb-engine
+//! @component aidb-cache
 //! Block Cache 模块验收测试
 //!
 //!   cargo test --test cache -- --test-threads=1

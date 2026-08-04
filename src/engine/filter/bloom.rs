@@ -191,6 +191,7 @@ impl Filter for BloomFilter {
 mod tests {
     use super::*;
 
+    /// 验证 BloomFilter 基础插入与查询功能
     #[test]
     fn test_bloom_filter_basic() {
         let mut f = BloomFilter::new(100, 0.01);
@@ -199,6 +200,7 @@ mod tests {
         assert!(!f.may_contain(b"missing"));
     }
 
+    /// 验证 BloomFilter 保证零假阴性 (No False Negatives)
     #[test]
     fn test_bloom_filter_no_false_negatives() {
         let mut f = BloomFilter::new(1000, 0.01);
@@ -215,6 +217,7 @@ mod tests {
         }
     }
 
+    /// 验证 BloomFilter 假阳性率符合预期参数
     #[test]
     fn test_bloom_filter_false_positive_rate() {
         let mut f = BloomFilter::new(10000, 0.01);
@@ -231,6 +234,7 @@ mod tests {
         assert!(rate < 0.02, "FPR {rate} >= 2%");
     }
 
+    /// 验证 BloomFilter 序列化与反序列化 Roundtrip
     #[test]
     fn test_bloom_filter_encode_decode() {
         let mut f = BloomFilter::new(50, 0.01);
@@ -243,12 +247,14 @@ mod tests {
         assert!(!decoded.may_contain(b"z"));
     }
 
+    /// 验证空 BloomFilter 的安全查询行为
     #[test]
     fn test_bloom_filter_empty() {
         let f = BloomFilter::new(0, 0.01);
         assert!(!f.may_contain(b"any"));
     }
 
+    /// 验证 BloomFilter 解码非法字节数据容错
     #[test]
     fn test_bloom_filter_decode_invalid() {
         assert!(BloomFilter::decode(&[]).is_err());
@@ -258,6 +264,7 @@ mod tests {
         assert!(BloomFilter::decode(&bad).is_err());
     }
 
+    /// 验证 BloomFilter 哈希溢出安全性
     #[test]
     fn test_bloom_filter_hash_overflow_safe() {
         let mut f = BloomFilter::new(5000, 0.01);
@@ -269,6 +276,7 @@ mod tests {
         }
     }
 
+    /// 验证 FNV-1a 种子哈希算法分散性
     #[test]
     fn test_fnv_hasher() {
         let a = fnv1a_like(b"key", 0xbc9f1d34);

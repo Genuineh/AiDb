@@ -1,4 +1,5 @@
 //! BlockCache 单元测试 (Phase7.3) — sharded LRU.
+//! @component aidb-cache
 
 use std::sync::Arc;
 use std::thread;
@@ -35,6 +36,7 @@ fn colliding_keys(count: usize, base: u64) -> Vec<CacheKey> {
     panic!("could not find {count} colliding keys starting at base={base}");
 }
 
+/// 验证 BlockCache 插入、读取及 Stats 基础操作
 #[test]
 fn test_cache_basic_operations() {
     let cache = BlockCache::new(1024);
@@ -55,6 +57,7 @@ fn test_cache_basic_operations() {
     assert_eq!(stats.misses, 1);
 }
 
+/// 验证 BlockCache LRU 淘汰策略
 #[test]
 fn test_cache_lru_eviction() {
     let cache = BlockCache::new(800); // per_shard = 50
@@ -68,6 +71,7 @@ fn test_cache_lru_eviction() {
     assert!(cache.get(ks[2].clone()).is_some());
 }
 
+/// 验证 读取 Touch 操作更新 LRU 顺序防淘汰
 #[test]
 fn test_cache_touch_updates_lru() {
     let cache = BlockCache::new(800); // per_shard = 50
@@ -85,6 +89,7 @@ fn test_cache_touch_updates_lru() {
     assert!(cache.get(ks[1].clone()).is_none());
 }
 
+/// 验证 覆盖写入已存在的 Key 及内存尺寸更新
 #[test]
 fn test_cache_update_existing_key() {
     let cache = BlockCache::new(256); // per_shard = 16
@@ -97,6 +102,7 @@ fn test_cache_update_existing_key() {
     assert_eq!(cache.len(), 1);
 }
 
+/// 验证 BlockCache 清空操作与状态重置
 #[test]
 fn test_cache_clear() {
     let cache = BlockCache::new(1024);
@@ -111,6 +117,7 @@ fn test_cache_clear() {
     assert_eq!(stats.hits, 1);
 }
 
+/// 验证 容纳上限为 0 时禁用 Cache
 #[test]
 fn test_cache_disabled_when_capacity_zero() {
     let cache = BlockCache::new(0);
@@ -119,6 +126,7 @@ fn test_cache_disabled_when_capacity_zero() {
     assert_eq!(cache.stats().insertions, 0);
 }
 
+/// 验证 超出单 Shard 容纳上限的超大 Block 不入缓存
 #[test]
 fn test_cache_large_value_not_cached() {
     let cache = BlockCache::new(100);
@@ -128,6 +136,7 @@ fn test_cache_large_value_not_cached() {
     assert_eq!(cache.stats().insertions, 0);
 }
 
+/// 验证 Value 尺寸刚好等于 Shard 容量时的写入
 #[test]
 fn test_cache_value_equals_capacity() {
     let cache = BlockCache::new(64); // per_shard = 4
@@ -136,6 +145,7 @@ fn test_cache_value_equals_capacity() {
     assert_eq!(cache.size(), 4);
 }
 
+/// 验证 BlockCache Hit Rate 命中率计算
 #[test]
 fn test_cache_stats_hit_rate() {
     let cache = BlockCache::new(1024);
@@ -149,12 +159,14 @@ fn test_cache_stats_hit_rate() {
     assert!((stats.hit_rate() - 2.0 / 3.0).abs() < f64::EPSILON);
 }
 
+/// 验证 无 Lookup 时 Hit Rate 防零除判定
 #[test]
 fn test_cache_hit_rate_zero_division() {
     let cache = BlockCache::new(1024);
     assert_eq!(cache.stats().hit_rate(), 0.0);
 }
 
+/// 验证 BlockCache 统计指标重置
 #[test]
 fn test_cache_reset_stats() {
     let cache = BlockCache::new(1024);
@@ -165,6 +177,7 @@ fn test_cache_reset_stats() {
     assert_eq!(stats, CacheStats::default());
 }
 
+/// 验证 批量写入触发大量 LRU Eviction 淘汰
 #[test]
 fn test_cache_bulk_eviction() {
     let cache = BlockCache::new(4096); // per_shard = 256
@@ -176,6 +189,7 @@ fn test_cache_bulk_eviction() {
     assert!(cache.stats().evictions > 0);
 }
 
+/// 验证 多线程并发读写 BlockCache 安全
 #[test]
 fn test_concurrent_access() {
     let cache = Arc::new(BlockCache::new(4096));
@@ -197,6 +211,7 @@ fn test_concurrent_access() {
     assert!(cache.size() <= 4096);
 }
 
+/// 验证 多线程并发 Touch 相同 Key 无死锁与竞态
 #[test]
 fn test_concurrent_touch_race() {
     let cache = Arc::new(BlockCache::new(512)); // per_shard = 32

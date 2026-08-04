@@ -1,8 +1,10 @@
 //! Snapshot: 基础 MVCC get
+//! @component aidb-engine
 
 use super::common::{open_db, temp_db};
 use tempfile::tempdir;
 
+/// 验证 Snapshot 基本读视图隔离 (新写入不改变快照读)
 #[test]
 fn test_snapshot_basic() {
     let (_dir, db) = temp_db();
@@ -14,6 +16,7 @@ fn test_snapshot_basic() {
     db.close().unwrap();
 }
 
+/// 验证 Snapshot 在删除操作发生后的历史数据可读性
 #[test]
 fn test_snapshot_after_delete() {
     let (_dir, db) = temp_db();
@@ -25,6 +28,7 @@ fn test_snapshot_after_delete() {
     db.close().unwrap();
 }
 
+/// 验证空 DB 下创建 Snapshot
 #[test]
 fn test_snapshot_empty_db() {
     let (_dir, db) = temp_db();
@@ -33,6 +37,7 @@ fn test_snapshot_empty_db() {
     db.close().unwrap();
 }
 
+/// 验证 Snapshot 读不存在的 Key
 #[test]
 fn test_snapshot_key_not_exists() {
     let (_dir, db) = temp_db();
@@ -42,6 +47,7 @@ fn test_snapshot_key_not_exists() {
     db.close().unwrap();
 }
 
+/// 验证多个不同 Sequence 节点的 Snapshot 独立多版本读
 #[test]
 fn test_snapshot_multiple() {
     let (_dir, db) = temp_db();
@@ -77,6 +83,7 @@ fn test_snapshot_sequence_boundary() {
     db.close().unwrap();
 }
 
+/// 验证基于 Snapshot 的迭代器遍历与 Range Scan
 #[test]
 fn test_snapshot_iter_and_scan() {
     let (_dir, db) = temp_db();

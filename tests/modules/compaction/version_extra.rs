@@ -1,13 +1,18 @@
+//! Compaction Version 工具方法扩展测试
+//! @component aidb-compaction
+
 use aidb::engine::compaction::{user_key_from_internal, VersionEdit, VersionSet};
 use aidb::error::Error;
 use tempfile::tempdir;
 
+/// 验证从损坏的 InternalKey 提 UserKey 时报错
 #[test]
 fn test_user_key_from_internal_short() {
     let err = user_key_from_internal(&[1, 2, 3]).unwrap_err();
     assert!(matches!(err, Error::Corruption(_)));
 }
 
+/// 验证 VersionSet 汇总计算各 Level 文件总尺寸
 #[test]
 fn test_version_total_size() {
     let dir = tempdir().unwrap();

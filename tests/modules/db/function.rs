@@ -1,4 +1,5 @@
 //! DB 引擎 API 测试
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{Error, WriteBatch, DB};
@@ -12,6 +13,7 @@ fn small_opts() -> Options {
     o
 }
 
+/// 验证 DB 引擎 Open 打开与重复 Close 安全性
 #[test]
 fn test_db_open_and_close() {
     let dir = tempdir().unwrap();
@@ -20,6 +22,7 @@ fn test_db_open_and_close() {
     db.close().unwrap();
 }
 
+/// 验证 DB 引擎写入 (Put) 与读取 (Get)
 #[test]
 fn test_db_put_and_get() {
     let dir = tempdir().unwrap();
@@ -30,6 +33,7 @@ fn test_db_put_and_get() {
     db.close().unwrap();
 }
 
+/// 验证 DB 引擎删除 (Delete) 操作
 #[test]
 fn test_db_delete() {
     let dir = tempdir().unwrap();
@@ -40,6 +44,7 @@ fn test_db_delete() {
     db.close().unwrap();
 }
 
+/// 验证 DB 引擎相同 Key 覆盖写入
 #[test]
 fn test_db_overwrite() {
     let dir = tempdir().unwrap();
@@ -50,6 +55,7 @@ fn test_db_overwrite() {
     db.close().unwrap();
 }
 
+/// 验证 Key 删除后重新写入 Resurrection 成功
 #[test]
 fn test_key_resurrection() {
     let dir = tempdir().unwrap();

@@ -165,6 +165,7 @@ pub fn extract_sequence(internal_key: &[u8]) -> Result<u64> {
 mod tests {
     use super::*;
 
+    /// 验证 InternalKey 编码与解码 Roundtrip
     #[test]
     fn test_internal_key_encode_decode() {
         let enc = encode_internal_key(b"foo", 100, ValueType::TypePut);
@@ -174,6 +175,7 @@ mod tests {
         assert_eq!(ty, ValueType::TypePut);
     }
 
+    /// 验证 InternalKey 相同 UserKey 下高 SequenceNumber (新版本) 排序在前
     #[test]
     fn test_internal_key_ordering() {
         let k1 = encode_internal_key(b"k", 1, ValueType::TypePut);
@@ -183,6 +185,7 @@ mod tests {
         assert_eq!(compare_internal_key(&k1, &k2), Ordering::Greater);
     }
 
+    /// 验证 InternalKey 按 UserKey 字典序升序排列
     #[test]
     fn test_compare_internal_key_user_key_order() {
         let a = encode_internal_key(b"a", 99, ValueType::TypePut);
@@ -190,6 +193,7 @@ mod tests {
         assert_eq!(compare_internal_key(&a, &b), Ordering::Less);
     }
 
+    /// 验证 RangeDelete/Delete/Put 在相同 Seq 下的操作类型优先级排序
     #[test]
     fn test_range_delete_ordering() {
         let put = encode_internal_key(b"k", 100, ValueType::TypePut);
@@ -200,6 +204,7 @@ mod tests {
         assert_eq!(compare_internal_key(&put, &rng), Ordering::Less);
     }
 
+    /// 验证 TypeRangeDelete 操作类型编解码解析
     #[test]
     fn test_range_delete_decode() {
         let enc = encode_internal_key(b"k", 100, ValueType::TypeRangeDelete);

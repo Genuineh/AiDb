@@ -1,4 +1,4 @@
-//! @component aidb-engine
+//! @component aidb-memtable
 //! MemTable 模块验收测试
 //!
 //! 含 tracing subscriber 的 dataflow 测试与其他用例并行会竞态, 请:

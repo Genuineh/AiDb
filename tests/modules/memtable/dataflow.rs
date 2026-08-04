@@ -1,10 +1,11 @@
 //! MemTable 模块级 dataflow — API → span / event
+//! @component aidb-memtable
 
 use crate::common::dataflow::capture_spans_under_lock;
 use crate::common::observability::{capture_events_under_lock, tracing_test_lock};
 use aidb::engine::memtable::MemTable;
 
-/// span + event 同一测试内串行, 且持锁覆盖 subscriber 生命周期, 避免并行抢默认 subscriber.
+/// 验证 MemTable API 的 Observability span 与 event 追踪日志顺序
 #[test]
 fn test_mem_observability() {
     let _lock = tracing_test_lock();

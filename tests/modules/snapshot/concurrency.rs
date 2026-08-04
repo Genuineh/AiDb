@@ -1,4 +1,5 @@
 //! Snapshot: 并发读写 / flush / compaction
+//! @component aidb-engine
 
 use std::sync::Arc;
 use std::thread;
@@ -6,6 +7,7 @@ use std::time::Duration;
 
 use super::common::{temp_db, temp_db_compaction};
 
+/// 验证并发高频写入下 Snapshot 读隔离与锁视图正常
 #[test]
 fn test_snapshot_concurrent_write() {
     let (_dir, db) = temp_db();
@@ -27,6 +29,7 @@ fn test_snapshot_concurrent_write() {
     db.close().unwrap();
 }
 
+/// 验证并发 Flush 刷盘过程中 Snapshot 读隔离正确
 #[test]
 fn test_snapshot_flush_concurrent() {
     let (_dir, db) = temp_db();
@@ -47,6 +50,7 @@ fn test_snapshot_flush_concurrent() {
     db.close().unwrap();
 }
 
+/// 验证并发 Compaction 压缩过程中 Snapshot 的隔离
 #[test]
 fn test_snapshot_compaction_concurrent() {
     let (_dir, db) = temp_db_compaction();
@@ -73,6 +77,7 @@ fn test_snapshot_compaction_concurrent() {
     db.close().unwrap();
 }
 
+/// 验证 Snapshot 支持 Send + Sync 跨线程传递
 #[test]
 fn test_snapshot_send_sync() {
     let (_dir, db) = temp_db();

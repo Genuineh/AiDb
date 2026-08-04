@@ -1,4 +1,5 @@
 //! SSTable BlockCache 集成测试 (Phase7.4)
+//! @component aidb-sstable
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -89,6 +90,7 @@ fn count_iter(reader: &SSTableReader) -> usize {
     count
 }
 
+/// 验证 BlockCache 命中 (Hit) 与未命中 (Miss) 的计数逻辑
 #[test]
 fn test_block_cache_hit_miss() {
     let dir = tempdir().unwrap();
@@ -112,6 +114,7 @@ fn test_block_cache_hit_miss() {
     assert_eq!(after_second.misses, 0);
 }
 
+/// 验证 BlockCache 统计指标 (lookups/insertions) 正常增加
 #[test]
 fn test_block_cache_stats() {
     let dir = tempdir().unwrap();
@@ -138,6 +141,7 @@ fn test_block_cache_stats() {
     assert!(stats.insertions >= 1);
 }
 
+/// 验证 BlockCache 清空后重读触发 Miss 及再次缓存
 #[test]
 fn test_block_cache_clear() {
     let dir = tempdir().unwrap();
@@ -159,6 +163,7 @@ fn test_block_cache_clear() {
     assert!(stats_after_hit.hits >= 1);
 }
 
+/// 验证 SSTable Iterator 顺序迭代可重用 BlockCache 缓存块
 #[test]
 fn test_sstable_iterator_with_cache() {
     let dir = tempdir().unwrap();
@@ -178,6 +183,7 @@ fn test_sstable_iterator_with_cache() {
     );
 }
 
+/// 验证 Bloom Filter 否定匹配时绕过 BlockCache 查找
 #[test]
 fn test_bloom_fast_path_skips_cache_lookups() {
     let dir = tempdir().unwrap();
@@ -199,6 +205,7 @@ fn test_bloom_fast_path_skips_cache_lookups() {
     assert_eq!(cache.stats().lookups, 0);
 }
 
+/// 验证数据块 CRC 校验损坏时禁止载入 BlockCache
 #[test]
 fn test_corrupt_block_not_inserted_into_cache() {
     let dir = tempdir().unwrap();

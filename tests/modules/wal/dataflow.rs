@@ -1,10 +1,12 @@
 //! WAL 模块级 dataflow — Writer event 时序
+//! @component aidb-wal
 
 use crate::common::observability::capture_events_under_lock;
 use aidb::engine::wal::record::RecordType;
 use aidb::engine::wal::writer::Writer;
 use tempfile::tempdir;
 
+/// 验证 WAL Writer 事件顺序与追踪记录正确性
 #[test]
 fn test_wal_event_order() {
     let d = tempdir().unwrap();

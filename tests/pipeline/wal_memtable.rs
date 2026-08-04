@@ -1,4 +1,5 @@
 //! WAL recover → MemTable replay
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::engine::db::replay::replay_entries;
@@ -32,6 +33,7 @@ fn delete(seq: u64, key: &[u8]) -> WalEntry {
     }
 }
 
+/// 验证 WAL 重放写回 MemTable 数据一致性
 #[test]
 fn test_wal_memtable_consistency() {
     let dir = tempdir().unwrap();
@@ -49,6 +51,7 @@ fn test_wal_memtable_consistency() {
     assert_eq!(recovery.max_sequence, 2);
 }
 
+/// 验证 WAL 删除记录 (TypeDelete) 重放到 MemTable 生效
 #[test]
 fn test_wal_memtable_delete_replay() {
     let dir = tempdir().unwrap();
@@ -64,6 +67,7 @@ fn test_wal_memtable_delete_replay() {
     assert_eq!(mem.get_latest(b"k").unwrap(), None);
 }
 
+/// 验证 异常 Crash 后 WAL 日志成功恢复到 MemTable
 #[test]
 fn test_wal_memtable_crash() {
     let dir = tempdir().unwrap();
@@ -78,6 +82,7 @@ fn test_wal_memtable_crash() {
     assert_eq!(mem.get_latest(b"crash").unwrap(), Some(b"ok".to_vec()));
 }
 
+/// 验证 跨多个 WAL 文件的日志链式重放到 MemTable
 #[test]
 fn test_wal_memtable_multi_file_replay() {
     let dir = tempdir().unwrap();
@@ -95,6 +100,7 @@ fn test_wal_memtable_multi_file_replay() {
     assert_eq!(mem.get_latest(b"b").unwrap(), Some(b"2".to_vec()));
 }
 
+/// 验证 不完整 Batch 截断在 MemTable 重放中回滚
 #[test]
 fn test_wal_memtable_batch_truncation_empty() {
     let dir = tempdir().unwrap();

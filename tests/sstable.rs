@@ -1,4 +1,4 @@
-//! @component aidb-engine
+//! @component aidb-sstable
 //! SSTable 模块验收测试
 //!
 //!   cargo test --test sstable -- --test-threads=1

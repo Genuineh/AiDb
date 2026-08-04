@@ -1,4 +1,5 @@
 //! SSTable 功能测试
+//! @component aidb-sstable
 
 use std::fs;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ fn ik(user: &[u8], seq: u64) -> Vec<u8> {
     encode_internal_key(user, seq, ValueType::TypePut)
 }
 
+/// 验证空 BlockBuilder 构造和生成空 Data Block
 #[test]
 fn test_block_builder_empty() {
     let b = BlockBuilder::new(16);
@@ -28,6 +30,7 @@ fn test_block_builder_empty() {
     assert_eq!(block.num_restarts(), 0);
 }
 
+/// 验证 Block 写入单条 Record 的读取与 Iterator 迭代
 #[test]
 fn test_block_single_entry() {
     let mut b = BlockBuilder::new(16);
@@ -42,6 +45,7 @@ fn test_block_single_entry() {
     assert!(!it.advance());
 }
 
+/// 验证 Block 内部前缀压缩 (Prefix Compression) 编码
 #[test]
 fn test_block_prefix_compression() {
     let mut b = BlockBuilder::new(16);
@@ -56,6 +60,7 @@ fn test_block_prefix_compression() {
     assert_eq!(it.key(), ik(b"prefix_b", 2).as_slice());
 }
 
+/// 验证 Block 乱序 Key 写入抛出错误
 #[test]
 fn test_block_unsorted_keys_rejected() {
     let mut b = BlockBuilder::new(16);
@@ -63,6 +68,7 @@ fn test_block_unsorted_keys_rejected() {
     assert!(b.add(&ik(b"a", 1), b"v").is_err());
 }
 
+/// 验证同前缀 UserKey 且不同 Sequence 的排列顺序
 #[test]
 fn test_block_prefix_user_key_order() {
     // user key "k:9" is a prefix of "k:99"; internal-key compare must allow flush order.
@@ -77,6 +83,7 @@ fn test_block_prefix_user_key_order() {
     assert_eq!(it.key(), ik(b"k:99", 11).as_slice());
 }
 
+/// 验证 Block 迭代器顺序遍历全量记录
 #[test]
 fn test_block_iterator() {
     let mut b = BlockBuilder::new(2);
@@ -96,6 +103,7 @@ fn test_block_iterator() {
     assert_eq!(n, 5);
 }
 
+/// 验证 SSTable Footer 结构的编解码
 #[test]
 fn test_footer_encode_decode() {
     let f = Footer::new(

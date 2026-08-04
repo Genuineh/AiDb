@@ -1,5 +1,5 @@
 //! WAL 模块验收测试
-//! @component aidb-engine
+//! @component aidb-wal
 //!
 //! 子模块:
 //!   function — 功能测试 (编解码/写入/读取/恢复/清理)

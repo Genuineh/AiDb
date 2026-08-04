@@ -1,4 +1,5 @@
 //! SSTable Bloom Filter 集成测试
+//! @component aidb-sstable
 
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -46,6 +47,7 @@ fn meta_index_has_bloom(path: &std::path::Path) -> bool {
     meta.entries().unwrap().iter().any(|e| e.key == b"bloom")
 }
 
+/// 验证带 Bloom Filter 的 SSTable 读取与存在判定
 #[test]
 fn test_sstable_with_bloom_filter() {
     let dir = tempdir().unwrap();
@@ -57,6 +59,7 @@ fn test_sstable_with_bloom_filter() {
     assert!(r.get(&seek).unwrap().is_some());
 }
 
+/// 验证无 Bloom Filter (rate=0) 时正常回退扫描读取
 #[test]
 fn test_sstable_without_bloom_filter() {
     let dir = tempdir().unwrap();
@@ -68,6 +71,7 @@ fn test_sstable_without_bloom_filter() {
     assert!(r.get(&seek).unwrap().is_some());
 }
 
+/// 验证 Bloom Filter 使用 UserKey 提取匹配
 #[test]
 fn test_sstable_bloom_user_key() {
     let dir = tempdir().unwrap();
@@ -84,6 +88,7 @@ fn test_sstable_bloom_user_key() {
     assert!(r.get(&seek_high).unwrap().is_some());
 }
 
+/// 验证 Bloom Filter 快速过滤不存在 Key 避免无谓 Block IO
 #[test]
 fn test_sstable_bloom_filter_skip() {
     let dir = tempdir().unwrap();
@@ -96,6 +101,7 @@ fn test_sstable_bloom_filter_skip() {
     assert_eq!(r2.get(&seek).unwrap(), None);
 }
 
+/// 验证 Bloom Filter 数据块损坏时安全降级为常规查找
 #[test]
 fn test_sstable_bloom_filter_decode_fallback() {
     let dir = tempdir().unwrap();
@@ -130,6 +136,7 @@ fn test_sstable_bloom_filter_decode_fallback() {
     assert_eq!(r.get(&seek_miss).unwrap(), None);
 }
 
+/// 验证 Bloom Filter 序列化编码与解码完整 Roundtrip
 #[test]
 fn test_sstable_bloom_filter_roundtrip() {
     let dir = tempdir().unwrap();
@@ -152,3 +159,4 @@ fn test_sstable_bloom_filter_roundtrip() {
         assert!(r.get(&seek).unwrap().is_some());
     }
 }
+
