@@ -176,6 +176,11 @@ fn setup_follower_node(leader_node_id: u64, leader_addr: &str) -> Arc<MultiRaftN
         group_leaders,
     );
 
+    // Follower 无 lifecycle, `remote_leader_client` 的 MetaRaft 元数据查找
+    // 必然落空; 需把 leader 地址注册进 network factory 缓存, 供其回退解析
+    // (否则 `new_client` 拿到空 addr → 空 URI, 见 A-003).
+    multi_raft.register_peer_addr(leader_node_id, leader_addr.to_string());
+
     multi_raft
 }
 

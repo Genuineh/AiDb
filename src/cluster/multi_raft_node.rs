@@ -172,6 +172,15 @@ impl MultiRaftNode {
         self.node_id
     }
 
+    /// 注册对端 Raft 节点地址到本节点 network factory 缓存.
+    ///
+    /// 该缓存是 `remote_leader_client` 在 MetaRaft 元数据缺失时的回退地址来源
+    /// (multi_raft_node.rs::remote_leader_client 注释 2). 真实集群由 raft 对等
+    /// 通信自动填充; 测试 harness (未接线 lifecycle 的轻量节点) 需显式注册.
+    pub fn register_peer_addr(&self, node_id: NodeId, addr: String) {
+        self.network_factory.write().add_node(node_id, addr);
+    }
+
     /// 启动统一 gRPC 服务 (绑定单一端口, 所有数据 Group 共享).
     ///
     /// 数据 Group 不启动自己的 gRPC server, 而是通过此统一端口接收 RPC.
