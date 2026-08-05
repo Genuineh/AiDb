@@ -157,7 +157,7 @@ db.close()?;
 | 方法 | 用途 | 说明 |
 |------|------|------|
 | `Options::for_testing()` | 单测 / 示例 | 小 memtable、无 bloom、关 background_compaction |
-| `Options::for_high_write_throughput()` | 写密集 | 大 memtable; `CompressionType::Snap` (需 `compression` feature) |
+| `Options::for_high_write_throughput()` | 写密集 | 大 memtable; 启用 `compression` feature 时 `CompressionType::Snap`, 否则 `None` |
 | `Options::for_high_read_throughput()` | 读密集 | 大 block cache、低 bloom FP、`CompressionType::None` |
 
 强持久场景可在 default 或 preset 基础上设 `sync_wal: true`, 并酌情调大 `memtable_size` / `block_cache_size`.

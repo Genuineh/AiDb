@@ -130,7 +130,13 @@ impl Default for Options {
             block_size: 4 * 1024,
             block_restart_interval: 16,
             block_cache_size: 64 * 1024 * 1024,
+            // 生产 (启用 compression feature) 默认 Snap 压缩; 无 feature 时默认
+            // None, 保证默认构建 (cargo test / 无 feature 部署) 可正常读写 SST.
+            // 避免 "默认 Options 声明 Snap 但 feature 未启用" 的不一致 (见 A-001).
+            #[cfg(feature = "compression")]
             compression: CompressionType::Snap,
+            #[cfg(not(feature = "compression"))]
+            compression: CompressionType::None,
             bloom_false_positive_rate: 0.01,
             use_wal: true,
             sync_wal: false,
@@ -207,13 +213,16 @@ impl Options {
         }
     }
 
-    /// 高写入吞吐: 大 MemTable + 大 Block + 启用压缩
+    /// 高写入吞吐: 大 MemTable + 大 Block + 启用压缩 (有 compression feature 时)
     pub fn for_high_write_throughput() -> Self {
         Self {
             memtable_size: 256 * 1024 * 1024,
             max_write_buffer_number: 4,
             block_size: 16 * 1024,
+            #[cfg(feature = "compression")]
             compression: CompressionType::Snap,
+            #[cfg(not(feature = "compression"))]
+            compression: CompressionType::None,
             ..Self::default()
         }
     }
@@ -377,7 +386,10 @@ mod tests {
         assert_eq!(opts.max_write_buffer_number, 2);
         assert_eq!(opts.min_write_buffer_number_to_merge, 1);
         assert_eq!(opts.block_restart_interval, 16);
+        #[cfg(feature = "compression")]
         assert_eq!(opts.compression, CompressionType::Snap);
+        #[cfg(not(feature = "compression"))]
+        assert_eq!(opts.compression, CompressionType::None);
         assert!((opts.bloom_false_positive_rate - 0.01).abs() < 1e-6);
         assert_eq!(opts.level0_compaction_trigger, 4);
         assert_eq!(opts.max_bytes_for_level_base, 256 * 1024 * 1024);
@@ -418,7 +430,10 @@ mod tests {
     fn for_high_write_throughput_has_large_memtable() {
         let opts = Options::for_high_write_throughput();
         assert_eq!(opts.memtable_size, 256 * 1024 * 1024);
+        #[cfg(feature = "compression")]
         assert_eq!(opts.compression, CompressionType::Snap);
+        #[cfg(not(feature = "compression"))]
+        assert_eq!(opts.compression, CompressionType::None);
         assert_eq!(opts.block_size, 16 * 1024);
         assert_eq!(opts.max_write_buffer_number, 4);
         // unchanged from default

@@ -229,7 +229,7 @@ Checkpoint::verify_openable(dest, Options::default())?;
 |----|-------------|------|
 | `block_size` | 4KB | Data Block 切分 |
 | `block_restart_interval` | 16 | restart 间隔 |
-| `compression` | `Snap` | `Options::default()`/`for_high_write_throughput()` 默认 Snap; `for_testing()`/`for_high_read_throughput()` 为 `None`. Snap/Lz4 需 crate feature `compression` |
+| `compression` | `Snap` (有 feature) / `None` (无 feature) | `Options::default()`/`for_high_write_throughput()` 在启用 `compression` feature 时默认 Snap, 否则 `None`; `for_testing()`/`for_high_read_throughput()` 恒为 `None`. Snap/Lz4 需 crate feature `compression` |
 | `bloom_false_positive_rate` | 0.01 | `0.0` = 不写 Bloom |
 | `block_cache_size` | 64MB | `0` = 禁用 |
 | `level0_compaction_trigger` | 4 | L0 compaction |
