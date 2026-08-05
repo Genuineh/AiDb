@@ -27,7 +27,7 @@ AiDb **不实现** RESP / INFO / redis_exporter; Redis 协议语义在 **AiKv**.
 | 层 | 本项目选型 | 权威对照 (拿不准时查) | 刻意差异 (勿照抄) |
 |----|------------|----------------------|-------------------|
 | **LSM-Tree** | 自研: WAL、SkipMap MemTable、SSTable、Leveled Compaction、Bloom、Block Cache | RocksDB leveled compaction 思路; 教学向 [mini-lsm](https://skyzh.github.io/mini-lsm/) | 非 RocksDB API/格式兼容; 不引入 LevelDB 代码 |
-| **Raft** | OpenRaft 0.9 (`cluster` feature) | [OpenRaft 文档与示例](https://docs.rs/openraft/latest/openraft/) | 不照搬 etcd/raft 的存储与 API 边界; TinyKV 仅作流程直觉 |
+| **Raft** | OpenRaft 0.10 (`cluster` feature) | [OpenRaft 文档与示例](https://docs.rs/openraft/latest/openraft/) | 不照搬 etcd/raft 的存储与 API 边界; TinyKV 仅作流程直觉 |
 | **MultiRaft** | MetaRaft (控制面) + MultiRaft (数据面) + LifecycleManager; 在线 slot 迁移 | TiKV raftstore 的 Group 生命周期思路 | **slot 固定 16384**, 非 TiKV Region 分裂/merge; 拓扑走 MetaRaft, 非 Redis gossip 共识 |
 | **节点 RPC** | tonic + prost, `proto/raft.proto` (Vote / AppendEntries / InstallSnapshot) | gRPC 惯例; proto 与 OpenRaft 类型对齐 | 自定义 proto, 非 etcd gRPC 协议 |
 | **Slot 模型** | 16384 slot, CRC16 — 与 Redis Cluster 槽位计算一致 | [Redis Cluster spec](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/) (仅 slot 数与哈希) | MOVED/ASK、CLUSTER 子命令在 AiKv; 勿按 Redis 16379 bus 臆测本库行为 |

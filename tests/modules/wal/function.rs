@@ -385,4 +385,3 @@ fn test_batch_truncated_rollback() {
     // 只有 FileHeader 有效, batch 内条目应被丢弃
     assert_eq!(r.entries.len(), 0, "truncated batch should rollback");
 }
-

@@ -159,4 +159,3 @@ fn test_sstable_bloom_filter_roundtrip() {
         assert!(r.get(&seek).unwrap().is_some());
     }
 }
-

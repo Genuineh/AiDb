@@ -227,4 +227,3 @@ fn test_memtable_sequence_overflow() {
     let mt = MemTable::new();
     assert!(mt.put(b"k", b"v", SEQUENCE_LIMIT).is_err());
 }
-
