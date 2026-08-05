@@ -75,6 +75,11 @@ pub struct DB {
     version_set: RwLock<VersionSet>,
     compaction_picker: Arc<CompactionPicker>,
     sequence: AtomicU64,
+    /// 已提交到 memtable 的最大 sequence (区别于 `sequence`: 后者是已分配的
+    /// 最大 sequence, `put`/`delete`/`delete_range` 在锁外写 memtable, 会存在
+    /// "已分配但未落 memtable" 的窗口). snapshot 边界必须取此值, 否则快照
+    /// 可能看到创建时刻尚未提交的写入 (见 A-005 竞态).
+    committed_sequence: AtomicU64,
     write_lock: Mutex<()>,
     flush_lock: Mutex<()>,
     flush_shutdown: Arc<AtomicBool>,
@@ -185,6 +190,7 @@ impl DB {
             version_set: RwLock::new(version_set),
             compaction_picker,
             sequence: AtomicU64::new(last_sequence),
+            committed_sequence: AtomicU64::new(last_sequence),
             write_lock: Mutex::new(()),
             flush_lock: Mutex::new(()),
             flush_shutdown: Arc::new(AtomicBool::new(false)),
@@ -560,6 +566,8 @@ impl DB {
             .read()
             .contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
         self.memtable.read().put(key, value, seq)?;
+        self.committed_sequence
+            .fetch_max(seq, AtomicOrdering::SeqCst);
 
         if !existed {
             self.total_key_count.fetch_add(1, AtomicOrdering::Relaxed);
@@ -790,6 +798,8 @@ impl DB {
 
         // Phase 3: MemTable (after WAL is durable)
         self.memtable.read().delete(key, seq)?;
+        self.committed_sequence
+            .fetch_max(seq, AtomicOrdering::SeqCst);
 
         if existed {
             self.total_key_count
@@ -867,6 +877,10 @@ impl DB {
                 }
             }
         }
+        self.committed_sequence.fetch_max(
+            base.saturating_add(n.saturating_sub(1)),
+            AtomicOrdering::SeqCst,
+        );
         // Release the write lock before maybe_freeze to prevent holding both
         // locks simultaneously if a freeze is triggered.
         drop(_guard);
@@ -949,6 +963,10 @@ impl DB {
                 }
             }
         }
+        self.committed_sequence.fetch_max(
+            base.saturating_add(n.saturating_sub(1)),
+            AtomicOrdering::SeqCst,
+        );
         drop(_guard);
 
         let lock_hold_us = lock_acquired.elapsed().as_micros();
@@ -1006,6 +1024,8 @@ impl DB {
         }
 
         self.memtable.read().put_range_delete(start, end, seq)?;
+        self.committed_sequence
+            .fetch_max(seq, AtomicOrdering::SeqCst);
         self.maybe_freeze()?;
         Ok(())
     }
@@ -1014,7 +1034,11 @@ impl DB {
     pub fn snapshot(self: &Arc<Self>) -> Result<Snapshot> {
         self.check_not_closed()?;
         let _guard = self.write_lock.lock();
-        let seq = self.sequence.load(AtomicOrdering::SeqCst);
+        // 边界取"已提交"sequence 而非已分配的 `sequence`: `put`/`delete`/
+        // `delete_range` 在锁外写 memtable (等 WAL durable), 若用已分配值,
+        // 快照会看到创建时刻尚未提交的写入 (A-005 竞态). committed_sequence
+        // 仅在 memtable 写入完成后推进, 锁内读取时所有 <= 该值的写入必已可见.
+        let seq = self.committed_sequence.load(AtomicOrdering::SeqCst);
         // register 必须在 write_lock 释放前完成: 否则在"读到 seq"和"注册
         // 保护"之间存在窗口, 一次新写入 (及其可能触发的 compaction) 可以
         // 插进来, 这时 min_snapshot_sequence() 还看不到这个即将返回的

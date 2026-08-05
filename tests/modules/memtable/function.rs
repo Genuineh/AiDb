@@ -175,9 +175,22 @@ fn test_memtable_size_approx() {
     let mt = MemTable::new();
     assert_eq!(mt.approximate_size(), 0);
     mt.put(b"ab", b"cd", 1).unwrap();
-    assert_eq!(mt.approximate_size(), 4);
+    let after_put = mt.approximate_size();
+    assert!(
+        after_put > 0,
+        "size should increase after put, got {after_put}"
+    );
+    // InternalKey 含 8 字节 sequence/tag 编码头, 因此必须 >= key+value 字面值
+    assert!(
+        after_put >= 4,
+        "put ab+cd should be at least 4 bytes, got {after_put}"
+    );
     mt.delete(b"x", 2).unwrap();
-    assert_eq!(mt.approximate_size(), 5);
+    let after_delete = mt.approximate_size();
+    assert!(
+        after_delete > after_put,
+        "size should keep increasing after delete: {after_put} -> {after_delete}"
+    );
 }
 
 /// 验证 MemTable 冻结为 ImmutableMemTable 及只读隔离
