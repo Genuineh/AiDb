@@ -26,7 +26,7 @@
 |--------|--------|
 | [engine.md](modules/01-engine.md) | 改 `engine/{wal,memtable,db}`; 写路径、WAL 恢复、MemTable flush、Snapshot |
 | [engine-storage.md](modules/02-engine-storage.md) | 改 SSTable / compaction / Bloom / cache / checkpoint; flush 或读放大 |
-| [cluster.md](modules/03-cluster.md) | 改 `cluster/*`; MetaRaft / Multi-Raft / slot 路由 / 迁移 (`cluster` feature) |
+| [cluster.md](modules/03-cluster.md) | 改 `cluster/*`; MetaRaft / MultiRaft / slot 路由 / 迁移 (`cluster` feature) |
 | [backup.md](modules/04-backup.md) | 改 `backup/*`; BackupManager、恢复、保留策略 |
 | [observability.md](modules/05-observability.md) | 改 `metrics.rs` / cluster metrics; 嵌入方注册 `aidb_*` (`monitoring` feature) |
 

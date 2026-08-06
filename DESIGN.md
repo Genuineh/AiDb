@@ -8,7 +8,7 @@
 |----|----------|
 | 写路径 / WAL / MemTable / MVCC | [engine.md](docs/modules/01-engine.md) |
 | SSTable / compaction / Bloom / cache / checkpoint | [engine-storage.md](docs/modules/02-engine-storage.md) |
-| MetaRaft / Multi-Raft / Router / 迁移 | [cluster.md](docs/modules/03-cluster.md) |
+| MetaRaft / MultiRaft / Router / 迁移 | [cluster.md](docs/modules/03-cluster.md) |
 | 全量备份 / 恢复 | [backup.md](docs/modules/04-backup.md) |
 | tracing / Prometheus | [observability.md](docs/modules/05-observability.md) |
 
@@ -98,12 +98,12 @@ AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs
 
 ## 集群
 
-### 为什么 Multi-Raft, 而非单 Raft / P2P / Paxos?
+### 为什么 MultiRaft, 而非单 Raft / P2P / Paxos?
 
 | 方案 | 一致性 | 扩展性 | 复杂度 | 结论 |
 |------|--------|--------|--------|------|
 | 单 Raft | 强一致 | 差 (单 Leader 瓶颈) | 低 | 不适合水平扩展 |
-| **Multi-Raft** | 强一致 | 好 (多 Group 并行 Leader) | 中 | **选用** |
+| **MultiRaft** | 强一致 | 好 (多 Group 并行 Leader) | 中 | **选用** |
 | 无共识 P2P | 最终一致 | 好 | 低 | 不满足强一致目标 |
 | Paxos | 强一致 | 中 | 高 | Rust 生态与工程成本偏高 |
 
@@ -113,10 +113,10 @@ OpenRaft 提供成熟 Raft + joint consensus + snapshot; 与 16384 slot 分片�
 
 Rust 生态最成熟的 Raft 实现之一; joint consensus 安全成员变更; 内置 snapshot; API 与社区活跃.
 
-### 为什么控制平面 (MetaRaft) 和数据平面 (Multi-Raft) 分离?
+### 为什么控制平面 (MetaRaft) 和数据平面 (MultiRaft) 分离?
 
 - MetaRaft (`group_id = 0`): 节点、Group、SlotTable、迁移状态 — 变更低频.
-- Multi-Raft (`group_id ≥ 1`): 每 Group 独立 `ShardedStorage` + `OpenRaftNode`, 目录 `data/group_{id}/` — 数据面高吞吐.
+- MultiRaft (`group_id ≥ 1`): 每 Group 独立 `ShardedStorage` + `OpenRaftNode`, 目录 `data/group_{id}/` — 数据面高吞吐.
 - 分离避免元数据写入与 KV propose 争用同一 Raft 队列.
 
 ### 为什么每个节点可参与多个 Group?
@@ -142,7 +142,7 @@ Redis Cluster 兼容槽模型 (`CLUSTER SLOTS` / hash tag `{...}`); 槽数远大
 | Slot 路由 / Raft propose | ✅ | 调用 aidb cluster API |
 | `SlotStatus` / `NotLeader` | ✅ | — |
 | MOVED / ASK / CLUSTER 子命令 | — | ✅ |
-| HTTP `/metrics` | `register_into` only | ✅ 暴露 |
+| 指标 | `aidb_*` OTel 系列 (`init`/`init_otel`) | OTLP 统一导出 |
 
 ### 已知限制 (摘要)
 
@@ -181,9 +181,9 @@ LSM flush 后 SST 不可变; `Checkpoint::create` 在 flush + pin SST 后 link/c
 - **Gauge**: 可增减 (memtable/SST 大小, WAL 字节).
 - **Histogram**: 延迟分布 (操作/compaction/备份耗时); bucket 需控制 cardinality.
 
-### 为什么库内注册、无内置 HTTP?
+### 为什么库内指标、无内置出口?
 
-`monitoring` feature 启用 `aidb::metrics` 与 `register_into(registry)` — 嵌入方 (AiKv) 将 aidb 系列挂到同一 Prometheus registry 并在 HTTP 暴露. oldmain 的 `MetricsServer` 已移除; **职责分离**: 库只产出指标, 进程决定 scrape 端点.
+`monitoring` feature 启用 `aidb::metrics` (`init` / `init_otel`)。嵌入方 (AiKv) 设 global `MeterProvider` 后调用 `aidb::metrics::init()`, `aidb_*` 与 `aikv_*` 共用 OTLP 管道 (Collector → Prom remote write), HTTP 仅 `/health`. oldmain 的 `MetricsServer` 已移除; **职责分离**: 库只产出指标, 进程决定导出出口.
 
 **放弃 / 精简**: 旧设计多项指标未实现 (`wal_sync_duration`, `cache_hit_rate` gauge 等); 无进程级 memory/disk — 见 [observability.md](docs/modules/05-observability.md).
 
@@ -202,7 +202,7 @@ LSM flush 后 SST 不可变; `Checkpoint::create` 在 flush + pin SST 后 link/c
 | L0 背压 | write stall | 控 L0 堆积 | 无界 L0 |
 | 大 compaction | subcompaction | 并行缩短耗时 | `min_size=0` 禁用 |
 | 共识 | OpenRaft | 成熟 Raft + snapshot | 自研 Paxos |
-| 集群拓扑 | MetaRaft + Multi-Raft | 控制/数据分离 | 单全局 Raft |
+| 集群拓扑 | MetaRaft + MultiRaft | 控制/数据分离 | 单全局 Raft |
 | RPC | gRPC (tonic) | 生态与工具 | 自建二进制 |
 | 分片 | 16384 slot | Redis 槽兼容 | 动态改槽数 |
 | SM 隔离 | `\x01sm/{gid}/` 前缀 | 命名空间 + 多 Group DB | 裸 user key 进 Raft DB |

@@ -2,10 +2,10 @@
 name: aidb-cluster
 depends_on:
   - aidb-engine
-description: AiDb 分布式集群 — MetaRaft 控制面、Multi-Raft 数据组、CRC16 slot Router、LSM 上的 OpenRaftStorage、gRPC、slot 迁移、成员变更. 改 src/cluster/*、排查 Raft/MetaRaft、组生命周期、slot 路由, 或与 aikv storage/cluster 对接时读本文.
+description: AiDb 分布式集群 — MetaRaft 控制面、MultiRaft 数据组、CRC16 slot Router、LSM 上的 OpenRaftStorage、gRPC、slot 迁移、成员变更. 改 src/cluster/*、排查 Raft/MetaRaft、组生命周期、slot 路由, 或与 aikv storage/cluster 对接时读本文.
 ---
 
-# AiDb Cluster (集群: MetaRaft + Multi-Raft)
+# AiDb Cluster (集群: MetaRaft + MultiRaft)
 
 ## 何时读本文
 
@@ -18,7 +18,7 @@ description: AiDb 分布式集群 — MetaRaft 控制面、Multi-Raft 数据组�
 ## 架构一览
 
 - **MetaRaft** (`group_id = 0`): 节点 / Group / SlotTable / 迁移状态; `MetaRequest` 经 Raft 共识
-- **Multi-Raft** (`group_id ≥ 1`): 每 Group 独立 `ShardedStorage` (目录 `data/group_{id}/`) + `OpenRaftNode`
+- **MultiRaft** (`group_id ≥ 1`): 每 Group 独立 `ShardedStorage` (目录 `data/group_{id}/`) + `OpenRaftNode`
 - **Router**: Redis 兼容 16384 slot (CRC16 + hash tag); 缓存由 `LifecycleManager::tick` 刷新
 - **统一 gRPC**: `RaftServiceDispatcher` 按 RPC 内 `group_id` 分发; Meta 与数据 Group 可共享端口
 
@@ -28,7 +28,7 @@ flowchart TB
     MR[MetaRaftNode]
     MSM[MetaStateMachine]
   end
-  subgraph data [Multi-Raft gid>=1]
+  subgraph data [MultiRaft gid>=1]
     MRN[MultiRaftNode]
     ORN[OpenRaftNode]
     SS[ShardedStorage]

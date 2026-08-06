@@ -103,7 +103,7 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 
 ### InternalKey
 
-`user_key + 7B (sequence<<8 高 56 位, 每位取反) + 1B ValueType`. `TypePut=0`, `TypeDelete=1`. MemTable 与 SSTable 共用编码.
+`user_key + 7B (sequence<<8 高 56 位, 每位取反) + 1B ValueType`. `TypePut=0`, `TypeDelete=1`, `TypeRangeDelete=2`. MemTable 与 SSTable 共用编码.
 
 ### DB 公共 API (摘录)
 
@@ -113,7 +113,7 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 | `put` / `delete` | 单条写; 连续 sequence |
 | `write(&WriteBatch)` | 原子 batch; BatchStart + 连续 seq; 一次 `sync_wal` |
 | `get` | 最新可见版本 |
-| `delete_range(start, end)` | `[start,end)` scan + WriteBatch (非 RangeTombstone) |
+| `delete_range(start, end)` | RangeTombstone O(1) 写入 (非 scan + WriteBatch); 记 WAL + memtable `put_range_delete` |
 | `snapshot()` | MVCC 点快照 |
 | `iter` / `scan` | 全表或范围迭代 (见 invariant) |
 | `flush` / `close` | 手动 flush; 优雅关闭 (停线程 → flush → WAL sync) |
@@ -186,7 +186,7 @@ assert_eq!(snap.get(b"k")?, Some(b"old".to_vec()));
 
 SSTable / compaction / cache 字段见 [engine-storage.md](02-engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.
 
-Feature: `monitoring` 启用 WAL/MemTable/DB span 与 OTel 指标 → [observability.md](05-observability.md).
+Feature: `monitoring` 启用 **OTel 指标**; span 始终编译 (`tracing` crate) 与 feature 无关 → [observability.md](05-observability.md).
 
 ## 测试
 

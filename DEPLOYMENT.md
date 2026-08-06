@@ -22,8 +22,8 @@ AiDb 是 **嵌入式 lib crate**, 无独立守护进程、无内置 HTTP listene
 |---------|------|----------|----------|
 | `backup` | ✅ | `src/backup/*`, ring/hex/serde_json | 全量备份与恢复 |
 | (engine only) | — | `src/engine/*` 始终编译 | 最小嵌入 |
-| `cluster` | ❌ | `src/cluster/*`, tonic/prost/tokio/openraft | Multi-Raft / MetaRaft |
-| `monitoring` | ❌ | `src/metrics.rs`, Prometheus 系列 | 嵌入方 scrape |
+| `cluster` | ❌ | `src/cluster/*`, tonic/prost/tokio/openraft | MultiRaft / MetaRaft |
+| `monitoring` | ❌ | `src/metrics.rs`, OTel 系列 | 嵌入方设置 global `MeterProvider`, OTLP 导出 |
 | `compression` | ❌ | snap/lz4 依赖 | SSTable Data Block Snap/Lz4 压缩 (`Options::default()` 默认 Snap); aikv 生产镜像 (aifactory Dockerfile) 已默认启用 |
 
 **常见组合**:
@@ -116,7 +116,7 @@ db.close()?;
 |------|------|------|
 | LSM 存储 | `DB::put/get/...` | `AiDbEngine` + `spawn_blocking` |
 | 集群 Raft / slot | `cluster` API | `ClusterDataAdapter`, MOVED/ASK |
-| HTTP `/metrics` | `register_into` 仅注册 | HTTP 暴露与 OTel |
+| 指标 | `aidb_*` OTel 系列 (`init`/`init_otel`) | OTLP 统一导出, HTTP `/health` |
 
 详见 [ARCHITECTURE.md §与 AiKv 的嵌入关系](ARCHITECTURE.md#与-aikv-的嵌入关系).
 
@@ -211,22 +211,23 @@ recovery.restore(id, "/var/data/aidb-restored")?;
 | 能力 | 编译 | 说明 |
 |------|------|------|
 | **Tracing** | 始终 | `tracing` crate; 嵌入方配置 `tracing-subscriber` |
-| **Prometheus** | `monitoring` feature | `DB::open` 时 `metrics::init()`; 热路径 `record_*` |
+| **OTel 指标** | `monitoring` feature | `DB::open` 时 `metrics::init()`; 经 global `MeterProvider` + OTLP 导出; 热路径 `record_*` |
 
-AiDb **无内置 HTTP `/metrics`、无 OTLP/JSON log 环境变量**. 嵌入方创建 `prometheus::Registry` 后:
+AiDb **无内置 HTTP `/metrics`、无 OTLP/JSON log 环境变量**. 嵌入方设置 global `MeterProvider` 后:
 
 ```rust
-aidb::metrics::register_into(&registry)?;
-// 再由 HTTP handler encode gather()
+// 嵌入方 (aikv otel.rs) 已完成; 自定义嵌入方示例:
+opentelemetry::global::set_meter_provider(provider);
+aidb::metrics::init(); // 或 init_otel(meter) 显式传入
 ```
 
-AiKv 在 `Metrics::new()` 内完成注册并暴露 `/metrics`. 指标列表与 PromQL 见 [docs/modules/observability.md](docs/modules/05-observability.md).
+AiKv 在 `otel.rs` 内设 global `MeterProvider` 并调用 `aidb::metrics::init()`, `aidb_*` 与 `aikv_*` 共用 OTLP 管道. 指标列表与 PromQL 见 [docs/modules/observability.md](docs/modules/05-observability.md).
 
 ## 集群 (库侧)
 
 构建: `cargo build --features cluster` (需 protoc, 见上).
 
-aidb 提供 MetaRaft / Multi-Raft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER 命令、节点部署** 由 AiKv 实现. 完整集群运维见 [AiKv 部署](../aikv/DEPLOYMENT.md) (aikv 文档整理步 21).
+aidb 提供 MetaRaft / MultiRaft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER 命令、节点部署** 由 AiKv 实现. 完整集群运维见 [AiKv 部署](../aikv/DEPLOYMENT.md) (aikv 文档整理步 21).
 
 库侧深入: [docs/modules/cluster.md](docs/modules/03-cluster.md).
 

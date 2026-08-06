@@ -16,15 +16,15 @@
 | 能力 | Feature | 说明 |
 |------|---------|------|
 | 全量备份与恢复 | `backup` (默认开启) | `BackupManager`, `RecoveryManager` |
-| 分布式存储 | `cluster` | MetaRaft 控制面 + Multi-Raft 数据面, 16384 slot (CRC16) |
-| Prometheus 指标 | `monitoring` | `aidb_*` 系列, `register_into` 供嵌入方 scrape |
-| 块压缩 | `compression` | SSTable Data Block Snap/Lz4 压缩; `Options::default()` 默认 Snap |
+| 分布式存储 | `cluster` | MetaRaft 控制面 + MultiRaft 数据面, 16384 slot (CRC16) |
+| 可观测指标 | `monitoring` | `aidb_*` 系列 OTel 指标; 嵌入方设 global `MeterProvider` 后经 OTLP 导出 |
+| 块压缩 | `compression` | SSTable Data Block Snap/Lz4 压缩; 启用时 `Options::default()` 默认 Snap (未启用则默认 None) |
 
 Feature 组合与构建命令见 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 与 AiKv
 
-[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 HTTP `/metrics`. AiDb 负责 LSM 存储与 Raft/slot 基础设施; monorepo 内 AiKv 通过 `path = "../aidb"` 依赖.
+[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 OTLP 指标导出 (生产指标唯一出口, HTTP 仅 `/health`). AiDb 负责 LSM 存储与 Raft/slot 基础设施; monorepo 内 AiKv 通过 `path = "../aidb"` 依赖.
 
 ## 快速开始
 
@@ -76,7 +76,7 @@ cargo run --example basic
 | [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |
 | [docs/modules/engine.md](docs/modules/01-engine.md) | WAL, MemTable, 写路径, `DB` API |
 | [docs/modules/engine-storage.md](docs/modules/02-engine-storage.md) | SSTable, compaction, Bloom, cache |
-| [docs/modules/cluster.md](docs/modules/03-cluster.md) | MetaRaft, Multi-Raft, slot 迁移 |
+| [docs/modules/cluster.md](docs/modules/03-cluster.md) | MetaRaft, MultiRaft, slot 迁移 |
 | [docs/modules/backup.md](docs/modules/04-backup.md) | BackupManager, 恢复流程 |
 | [docs/modules/observability.md](docs/modules/05-observability.md) | 指标与 tracing |
 | [ISSUES.md](ISSUES.md) | 待核实项 |

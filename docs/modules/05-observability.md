@@ -61,7 +61,7 @@ flowchart LR
 2. **运行时**: put/get/flush/compaction/backup 等路径调 `record_*` 或直接 gauge `record`
 3. **嵌入方启动**: aikv `create_otel_tracer` 设置 `MeterProvider` → `aidb::metrics::init()` → OTLP export
 
-`init()` 在 `monitoring` + `cluster` 时链式初始化 `cluster/metrics.rs` 计数器.
+`init()` 在 `monitoring` + `cluster` 时, 于同一次 `init_otel(meter)` 注册 `cluster/metrics.rs` 的 raft 计数器 (`cluster/metrics.rs` 为 re-export 模块, 无独立 init).
 
 ## Prometheus 指标名 (`metrics.rs`)
 
@@ -92,7 +92,7 @@ flowchart LR
 | `aidb_backup_size_bytes` | IntGauge | — | create |
 | `aidb_backup_duration_seconds` | Histogram | — | create |
 
-**`aidb_operations_total` / `operation_duration` 的 `aidb.operation.name`**: `put`, `get`, `delete`, `write_batch`, `snapshot`, `stall_stop`, `stall_slowdown`. PromQL label: `aidb_operation_name`. **`scan` / `close` 无 counter** (见 ISSUE-018).
+**`aidb_operations_total` / `operation_duration` 的 `aidb.operation.name`**: `put`, `get`, `delete`, `write_batch`, `write_batch_no_wal`, `snapshot`, `stall_stop`, `stall_slowdown`. PromQL label: `aidb_operation_name`. **`scan` / `close` 无 counter** (见 ISSUE-018).
 
 **命中率**: 无 `cache_hit_rate` gauge; 用 PromQL `rate(hits)/(rate(hits)+rate(misses))`.
 
@@ -121,11 +121,24 @@ flowchart LR
 | Compaction | `cmp_pick`, `cmp_run`, `cmp_merge`, `cmp_apply` | — |
 | Checkpoint | `bgsave_checkpoint` | `db`: `checkpoint.create.complete` |
 | Backup | `backup_create`, `backup_restore`, … | 见 [backup.md](04-backup.md) |
-| Raft 存储 | `raft_append_log`, `raft_apply_sm`, … | — |
-| Raft RPC | `raft_rpc_ae`, `raft_rpc_vote`, `raft_rpc_is` | — |
+| Raft 存储 | `raft_save_vote`, `raft_recv_snapshot`, `raft_install_snapshot`, `raft_snapshot` | `raft_append_log` (`target: "perf"`) |
+| Raft RPC | `raft_rpc_ae`, `raft_rpc_vote`, `raft_rpc_full_snapshot` | — |
 | Meta | `meta_propose`, `meta_apply`, `meta_slot_query` | — |
 
 **不在 aidb**: `kv_command` / RESP 命令 span → aikv.
+
+### 热路径 span 级别硬约束
+
+生产默认 `RUST_LOG=info` (aikv `main.rs`), 热路径 `#[tracing::instrument]` 若无显式 `level` 则默认 **Info** 并创建 span, 叠加 OTel `AlwaysOn` 采样会放大开销 (Phase 2 定位到的 30% 差距主因). 因此:
+
+- 热路径 span (put/get/write/WAL/MemTable/SSTable/block/Raft apply/propose) **必须**显式 `level = "debug"` (AGENTS.md 硬约束)
+- 契约测试 [`tests/span_contract.rs`](../../tests/span_contract.rs) 源码扫描强制该约束, 防止回退到默认 Info:
+
+```bash
+cargo test --test span_contract -- --test-threads=1
+```
+
+覆盖的集群热路径 span: `propose_group` / `propose_key` / `get_key` (`cluster/multi_raft_node.rs`)、`propose` (`cluster/node.rs`) 与 `raft_rpc_ae` / `raft_rpc_vote` (`cluster/network.rs`).
 
 ## 常见任务
 
@@ -180,7 +193,7 @@ let events = capture_events_under_lock(|| { /* 被测操作 */ });
 
 | 项 | 位置 | 说明 |
 |----|------|------|
-| `monitoring` | `Cargo.toml` | `opentelemetry*`, `tracing-opentelemetry`; 导出 `aidb::metrics` |
+| `monitoring` | `Cargo.toml` | `opentelemetry`, `opentelemetry_sdk`; 导出 `aidb::metrics` |
 | `cluster` | 与 `monitoring` 叠加 | `init()` 额外初始化 `aidb_raft_*` |
 | 无 `monitoring` | — | 无 `aidb::metrics` mod; `cluster::metrics::record_*` 为 no-op stub |
 
@@ -188,15 +201,16 @@ let events = capture_events_under_lock(|| { /* 被测操作 */ });
 
 ```bash
 cargo test --test metrics --features monitoring -- --test-threads=1
+cargo test --test span_contract -- --test-threads=1   # 热路径 span 级别契约 (源码扫描)
 # Raft: tests/modules/cluster/metrics.rs (cluster 测试套件内)
 ```
 
 | 测试 | 覆盖 |
 |------|------|
-| `test_block_cache_prometheus_counters_and_size` | hit/miss/size |
-| `test_bloom_false_positive_prometheus_counter` | 与内部 atomic 一致 |
+| `test_block_cache_otel_counters_and_size` | hit/miss/size |
+| `test_bloom_false_positive_otel_counter` | 与内部 atomic 一致 |
 | `test_db_operation_and_flush_duration_histograms` | put/get/flush 有样本 |
-| `test_raft_metrics_register_and_record` | InMemory exporter 后 counter 值 |
+| `test_raft_metrics_otel_record` | InMemory exporter 后 counter 值 |
 
 ## 已知限制
 

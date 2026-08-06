@@ -22,9 +22,11 @@
 
 **Tombstone**: 删除标记, 表示一个 key 已被删除; Compaction 时清理过期 tombstone.
 
+**RangeTombstone**: `delete_range` 写入的范围删除标记, O(1) 写入 (不扫描区间); 读取时覆盖区间内全部 key, Compaction 时清理.
+
 ## 共识层
 
-**Raft**: 通过 OpenRaft 0.9 实现的分布式共识协议.
+**Raft**: 通过 OpenRaft 0.10 实现的分布式共识协议.
 
 **MetaRaft**: 管理集群元数据的 Raft 组, 处理成员变更、slot 分配等控制面操作, 低频.
 

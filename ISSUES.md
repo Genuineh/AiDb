@@ -86,7 +86,7 @@
 - **oldmain 代码**: `aidb-oldmain/src/monitoring/metrics.rs` — 独立 requests/errors/cluster 指标
 - **现象**: 现码无 `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等
 - **影响**: 已知限制; Dashboard 用 PromQL 派生 (如 hit rate) 或链 aikv 指标
-- **下一步**: 已关闭 (doc-only)
+- **下一步**: 已关闭 (doc-only; OTel 迁移后, 未实现指标的已知限制见 `docs/modules/05-observability.md`)
 
 ### ISSUE-015: 旧 observability 指标表与 span 名大量过时
 
@@ -102,10 +102,10 @@
 
 - **状态**: doc-only
 - **发现于**: PROGRESS 步 2–3 / 章节 `docs/modules/observability.md`
-- **相关 src**: `src/metrics.rs` (`register_into`); `aikv/src/server/metrics.rs`
+- **相关 src**: `src/metrics.rs` (`init` / `init_otel`); `aikv/src/server/otel.rs`
 - **旧文档**: `backup/aidb/DEPLOYMENT.md` §可观测性 (`--metrics-port`, `AIDB_OTLP_ENDPOINT`); `backup/aidb/docs/observability.md` OTel 拓扑
 - **oldmain 代码**: `aidb-oldmain/src/monitoring/{server,metrics}.rs` — 内置 MetricsServer + Collector
-- **现象**: 现 aidb 无 HTTP 端点、无 OTel Layer 初始化、无 `AIDB_*` env; `monitoring` 依赖含 opentelemetry 但未接线; aikv 调 `aidb::metrics::register_into` 后自行暴露 `/metrics`
+- **现象**: 现 aidb 无 HTTP 端点、无 OTel Layer 初始化、无 `AIDB_*` env; `monitoring` 依赖含 opentelemetry 但接线在嵌入方; aikv `otel.rs` 设 global `MeterProvider` 后调 `aidb::metrics::init()`, 与 `aikv_*` 共用 OTLP 出口
 - **影响**: module 写库侧职责边界; HTTP/OTel 链 aikv observability (步 12)
 - **下一步**: 已关闭 (doc-only)
 

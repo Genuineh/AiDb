@@ -109,6 +109,7 @@ cargo test --test sstable -- --test-threads=1
 cargo test --test db -- --test-threads=1
 cargo test --test compaction -- --test-threads=1
 cargo test --test snapshot -- --test-threads=1
+cargo test --test span_contract -- --test-threads=1  # 热路径 span 级别契约 (源码扫描)
 ```
 
 可观测性 dataflow 子集示例:
@@ -145,8 +146,8 @@ cargo test --features cluster -- --test-threads=1
 ### CI 全量 (与 push 门禁一致)
 
 ```bash
-cargo test -- --test-threads=1                    # 默认 feature, ~375 项
-cargo test --features cluster -- --test-threads=1 # 含 cluster, ~551 项
+cargo test -- --test-threads=1                    # 默认 feature, ~377 项
+cargo test --features cluster -- --test-threads=1 # 含 cluster, ~621 项
 ```
 
 ### 基准测试 (可选)
@@ -176,6 +177,8 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 | `test_snapshot_long_hold_heavy_write` | slow | `snapshot` | `test-slow` |
 | `test_large_dataset_compaction_stress_10000` | stress | `engine` | `test-slow` |
 | `test_bloom_stress` | stress | `regression` | `test-slow` |
+| `test_concurrent_write_and_compaction` | stress | `engine` | `test-slow` |
+| `test_concurrent_write_with_filter` | stress | `engine` | `test-slow` |
 
 > **与 bench 区分**: `cargo bench` (criterion) 在 `bench` job; 上表为 integration test 的 `#[ignore]` 用例.
 
