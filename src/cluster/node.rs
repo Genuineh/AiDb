@@ -672,6 +672,12 @@ impl OpenRaftNode {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
+        // 先停 LogCommitter actor (确保其持有的 Arc<DB> 释放), 再停 raft.
+        // 自愈重开路径依赖此顺序: 不先退出 committer, 底层 WAL LOCK 不会被
+        // 释放, `create_group_inner` 重开会报 `Database already in use`.
+        if let Some(ref committer) = self.storage.committer {
+            committer.shutdown().await;
+        }
         self.raft
             .shutdown()
             .await

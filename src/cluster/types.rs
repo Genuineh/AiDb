@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_raft_config_default_values() {
         let cfg = RaftNodeConfig::default();
-        assert_eq!(cfg.max_payload_entries, 100);
+        assert_eq!(cfg.max_payload_entries, 512);
         assert_eq!(cfg.max_entry_size, 8 * 1024 * 1024);
         assert_eq!(cfg.rpc_timeout_ms, 200);
         assert_eq!(cfg.grpc_max_message_size, 64 * 1024 * 1024);
