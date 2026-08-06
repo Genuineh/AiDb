@@ -23,13 +23,13 @@ const ATTR_MEMTABLE_STATE: &str = "aidb.memtable.state";
 const ATTR_SSTABLE_LEVEL: &str = "aidb.sstable.level";
 #[cfg(feature = "monitoring")]
 const ATTR_BACKUP_OP: &str = "aidb.backup.operation";
-#[cfg(feature = "monitoring")]
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_RPC_TYPE: &str = "aidb.raft.rpc.type";
-#[cfg(feature = "monitoring")]
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_DIRECTION: &str = "aidb.raft.rpc.direction";
-#[cfg(feature = "monitoring")]
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_GROUP_ID: &str = "aidb.raft.group.id";
-#[cfg(feature = "monitoring")]
+#[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_RESTART_OUTCOME: &str = "aidb.raft.group.restart.outcome";
 #[cfg(feature = "monitoring")]
 const ATTR_DB_SYSTEM: &str = "db.system";

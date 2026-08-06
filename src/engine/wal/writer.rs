@@ -116,7 +116,7 @@ impl Writer {
     /// `data` 是已编码的 WalEntry 字节.
     /// 如果 data 长度超过 block 容量或 65535, 自动分片为 First/Middle/Last.
     /// 每片写入前检查 block 剩余空间, 不足时填充 0x00 padding 后切到新 block.
-    #[tracing::instrument(skip(self, data))]
+    #[tracing::instrument(level = "debug", skip(self, data))]
     pub fn write_record(&mut self, record_type: RecordType, data: &[u8]) -> Result<()> {
         let max_payload = BLOCK_SIZE - HEADER_SIZE;
         let total = data.len();
@@ -216,7 +216,7 @@ impl Writer {
     }
 
     /// Flush 文件缓冲区
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn flush(&mut self) -> Result<()> {
         tracing::debug!(target: "wal", "wal.flush.start");
         self.file.flush()?;
@@ -225,7 +225,7 @@ impl Writer {
     }
 
     /// fdatasync — 仅 data+size, 跳过 mtime 元数据同步 (F-013)
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn sync_data(&mut self) -> Result<()> {
         tracing::debug!(target: "wal", "wal.sync.start");
         self.file.sync_data()?;

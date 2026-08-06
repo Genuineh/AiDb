@@ -138,6 +138,7 @@ impl SSTableReader {
     }
 
     #[tracing::instrument(
+    level = "debug",
     name = "sst_seek",
     skip(self, seek_key),
     fields(file_number = self.file_number, level = self.level)

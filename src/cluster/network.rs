@@ -281,7 +281,7 @@ impl RaftNetworkClient {
 impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
     type SnapshotData = std::io::Cursor<Vec<u8>>;
 
-    #[instrument(name = "raft_rpc_ae", skip(self, rpc, _option))]
+    #[instrument(level = "debug", name = "raft_rpc_ae", skip(self, rpc, _option))]
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,
@@ -454,7 +454,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         })
     }
 
-    #[instrument(name = "raft_rpc_vote", skip(self, rpc, _option))]
+    #[instrument(level = "debug", name = "raft_rpc_vote", skip(self, rpc, _option))]
     async fn vote(
         &mut self,
         rpc: VoteRequest<TypeConfig>,

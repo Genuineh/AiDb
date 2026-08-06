@@ -706,7 +706,7 @@ impl MultiRaftNode {
     /// group 当前已知的 leader (`RemotePropose`, 与 Raft RPC 同一数据面
     /// gRPC 通道) —— 在线 slot 迁移的 `PutConditional` / `MigrationBarrier`
     /// 需要跨节点落到持有 target group 的节点. 超时/失败原样返回 Err.
-    #[instrument(skip(self, request))]
+    #[instrument(level = "debug", skip(self, request))]
     pub async fn propose_group(&self, group_id: u64, request: Request) -> Result<Response> {
         let group = self.groups.read().get(&group_id).cloned();
         match group {
@@ -723,7 +723,7 @@ impl MultiRaftNode {
     }
 
     /// 按 key 路由并提交提案 (单 key SET/DEL 入口).
-    #[instrument(skip(self))]
+    #[instrument(level = "debug", skip(self))]
     pub async fn propose_key(&self, key: Vec<u8>, value: Option<Vec<u8>>) -> Result<Response> {
         let (gid, _status) = self.router.route_key(&key)?;
         let request = match value {
@@ -734,7 +734,7 @@ impl MultiRaftNode {
     }
 
     /// 按 key 路由并本地读取 (单 key GET 入口).
-    #[instrument(skip(self))]
+    #[instrument(level = "debug", skip(self))]
     pub async fn get_key(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         let (gid, _status) = self.router.route_key(&key)?;
         let group = self.groups.read().get(&gid).cloned();

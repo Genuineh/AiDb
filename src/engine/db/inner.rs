@@ -771,7 +771,7 @@ impl DB {
         })
     }
 
-    #[tracing::instrument(name = "db_delete", skip(self, key))]
+    #[tracing::instrument(level = "debug", name = "db_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8]) -> Result<()> {
         #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
@@ -1068,7 +1068,7 @@ impl DB {
         ))
     }
 
-    #[tracing::instrument(name = "db_scan", skip(self, start, end))]
+    #[tracing::instrument(level = "debug", name = "db_scan", skip(self, start, end))]
     pub fn scan(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<DbIterGuard> {
         self.check_not_closed()?;
         let seq = crate::engine::memtable::K_MAX_SEQUENCE;

@@ -142,7 +142,7 @@ impl MemTable {
         Ok(())
     }
 
-    #[tracing::instrument(name = "mem_delete", skip(self, key))]
+    #[tracing::instrument(level = "debug", name = "mem_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
         let ik = InternalKeyBytes(encode_internal_key_arc(

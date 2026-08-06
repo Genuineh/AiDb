@@ -238,14 +238,14 @@ impl WALManager {
     }
 
     /// 刷新当前 WAL 缓冲区
-    #[tracing::instrument(name = "wal_flush", skip(self))]
+    #[tracing::instrument(level = "debug", name = "wal_flush", skip(self))]
     pub fn flush(&mut self) -> Result<()> {
         self.writer.flush()?;
         Ok(())
     }
 
     /// fsync 当前 WAL
-    #[tracing::instrument(name = "wal_sync", skip(self))]
+    #[tracing::instrument(level = "debug", name = "wal_sync", skip(self))]
     pub fn sync(&mut self) -> Result<()> {
         self.writer.sync_data()?;
         Ok(())

@@ -102,10 +102,11 @@ impl SSTableBuilder {
     }
 
     #[tracing::instrument(
-    name = "sst_build_add",
-    skip(self, key, value),
-    fields(key_len = key.len())
-  )]
+        level = "debug",
+        name = "sst_build_add",
+        skip(self, key, value),
+        fields(key_len = key.len())
+    )]
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if key.is_empty() {
             return Err(Error::InvalidArgument("empty SSTable key".into()));

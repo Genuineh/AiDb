@@ -204,6 +204,7 @@ impl BlockCache {
     }
 
     #[tracing::instrument(
+    level = "debug",
     name = "cache_get",
     skip(self),
     fields(file_number = key.file_number, offset = key.offset, hit)
@@ -261,6 +262,7 @@ impl BlockCache {
     }
 
     #[tracing::instrument(
+    level = "debug",
     name = "cache_insert",
     skip(self, value),
     fields(file_number = key.file_number, offset = key.offset, bytes = value.len())
