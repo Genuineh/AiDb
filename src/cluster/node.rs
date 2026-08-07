@@ -20,8 +20,10 @@
 //! ```
 //!
 //! 读路径 `get` / `get_migration_tip` / `get_migration_tombstone` 共用
-//! `ensure_leader_for_linear_read`: `linearizable_read=true` 时走 ReadIndex,
-//! 否则本地 leader check (FIX-0056-A1 合并读线性点依赖此语义).
+//! `ensure_leader_for_linear_read`: `linearizable_read=true` 时走 LeaseRead
+//! (lease 内本地读零 RTT, 失去多数派且无法续租时快速失败返回
+//! `ForwardToLeader::empty()` → `NotLeader`), 否则本地 leader check
+//! (FIX-0056-A1 合并读线性点依赖此语义).
 //!
 //! # Invariant
 //!
@@ -573,9 +575,10 @@ impl OpenRaftNode {
     /// 共用同一语义, 不允许落后 follower 冒充最新读.
     async fn ensure_leader_for_linear_read(&self) -> Result<()> {
         if self.linearizable_read {
-            // Linearizable read: quorum 确认当前仍是 leader + wait applied index
+            // Linearizable read: lease 有效期内本地读零 RTT, 过期 (失去多数派
+            // 且无法续租) 时快速失败返回 ForwardToLeader::empty() → NotLeader.
             self.raft
-                .ensure_linearizable(openraft::ReadPolicy::ReadIndex)
+                .ensure_linearizable(openraft::ReadPolicy::LeaseRead)
                 .await
                 .map_err(map_linearizable_error)?;
         } else {
@@ -722,7 +725,18 @@ fn map_linearizable_error(
                     is_ask: false,
                 });
             }
-            _ => {}
+            // Lease 过期且无已知 leader 可转发 (分区隔离的旧 leader): openraft
+            // 返回 ForwardToLeader::empty(). 映射为 NotLeader { leader: None },
+            // 与 Redis CLUSTERDOWN 语义对齐 (客户端不再收到滞后值/内部错误).
+            ForwardToLeader {
+                leader_id: None, ..
+            } => {
+                return Error::Cluster(ClusterError::NotLeader {
+                    leader: None,
+                    leader_addr: None,
+                    is_ask: false,
+                });
+            }
         }
     }
     Error::Cluster(ClusterError::Internal(format!(

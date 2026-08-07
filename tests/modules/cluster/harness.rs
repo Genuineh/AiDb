@@ -134,6 +134,20 @@ impl ClusterTestHarness {
         None
     }
 
+    /// Abort 指定节点的 server handle (gRPC listener), raft core 存活.
+    ///
+    /// 与网络黑洞组合构成真实双向分区: 黑洞断出站, abort 断入站. 单独 abort
+    /// 只断入站, 出站 RPC 仍可达, quorum 保持, lease 不会过期.
+    #[cfg_attr(not(feature = "cluster-test-util"), allow(dead_code))]
+    pub fn abort_server(&self, node_id: u64) {
+        if let Some(node) = self.nodes.iter().position(|n| n.node_id() == node_id) {
+            self.server_handles[node].abort();
+        } else {
+            let ids: Vec<u64> = self.nodes.iter().map(|n| n.node_id()).collect();
+            panic!("abort_server: node {node_id} not found in harness (nodes = {ids:?})");
+        }
+    }
+
     pub async fn leader(&self) -> Arc<OpenRaftNode> {
         for _ in 0..50 {
             for node in &self.nodes {

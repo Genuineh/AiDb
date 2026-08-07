@@ -22,6 +22,11 @@
 //! - 连接复用: channel 按 node_id 缓存, 避免 Docker DNS 解析的 50-100ms 开销;
 //!   `add_node` 时清除旧 channel 以拾取地址变更.
 //! - 超时 / Unavailable 归类为不确定错误 (RPCError), 不伪装成确定性结果.
+//! - channel 失效策略: 仅 `Unavailable` (连接级失败) 失效缓存重建连接, 绕开
+//!   tonic 指数退避; 超时与应用级错误 (Internal 等) 连接仍完好, 不失效, 避免
+//!   选主风暴下重连风暴放大为选举活锁. 详见 `invalidate_on_unavailable`.
+//! - 快速失败: 所有 RPC (含 lazy connect) 均受 `request_timeout` 约束, 静默黑洞
+//!   (丢包无 RST) 下 connect 不会依赖内核 SYN 重传长时间挂起.
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -75,29 +80,67 @@ where
 }
 
 pub struct RaftNetworkClient {
+    #[cfg_attr(not(feature = "cluster-test-util"), allow(dead_code))]
+    node_id: NodeId,
+    /// RPC 目标节点 ID — 连接池缓存的 key, 网络失败时据此失效重建.
+    target: NodeId,
     target_addr: String,
     client: Option<RaftServiceClient<tonic::transport::Channel>>,
+    /// 共享 gRPC 连接池 (与 `RaftNetworkClientFactory` 同一实例).
+    /// 网络失败时移除对应 entry, 使下个 RPC 重建 channel 并重新解析地址.
+    channels: Option<Arc<DashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>>>,
     request_timeout: Duration,
     group_id: u64,
     max_message_size: usize,
 }
 
 impl RaftNetworkClient {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        _node_id: NodeId,
-        _target: NodeId,
+        node_id: NodeId,
+        target: NodeId,
         target_addr: String,
         group_id: u64,
         rpc_timeout_ms: u64,
         max_message_size: u64,
         channel: Option<RaftServiceClient<tonic::transport::Channel>>,
+        channels: Option<Arc<DashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>>>,
     ) -> Self {
         Self {
+            node_id,
+            target,
             target_addr,
             client: channel,
+            channels,
             request_timeout: Duration::from_millis(rpc_timeout_ms),
             group_id,
             max_message_size: max_message_size as usize,
+        }
+    }
+
+    /// 对端网络不可达时失效连接池缓存, 迫使下个 RPC 重新解析地址并建连.
+    ///
+    /// tonic/gRPC channel 内置指数退避 (默认 1s→120s), 长分区结束后若不重建
+    /// channel, 节点恢复同步要等退避倒计时跑完 (实测 ~100s). 每次网络失败即
+    /// 失效缓存, 自愈收敛到下一个心跳周期 (~500ms).
+    fn invalidate_channel(&mut self) {
+        if let Some(map) = &self.channels {
+            map.remove(&self.target);
+        }
+        self.client = None;
+    }
+
+    /// 仅当连接级失败 (`tonic::Code::Unavailable`) 时失效连接池缓存.
+    ///
+    /// 分区断网后 tonic 会在连接关闭时返回 `Unavailable`, 失效缓存让下个 RPC
+    /// 重建 channel, 绕开指数退避快速自愈; 而**超时**与**应用级错误** (Internal /
+    /// FailedPrecondition 等) 通常表示连接完好、只是对端处理慢 (选主风暴 / DB
+    /// 阻塞), 失效缓存反而触发 DNS 解析 + TCP/HTTP2 握手的重连风暴, 让健康节点
+    /// 之间的 vote 心跳雪上加霜 (实测演化为 ~3min 选举活锁). 因此只有
+    /// `Unavailable` 视为连接损坏并失效缓存, 其余一律保留.
+    fn invalidate_on_unavailable(&mut self, status: &tonic::Status) {
+        if status.code() == tonic::Code::Unavailable {
+            self.invalidate_channel();
         }
     }
 
@@ -127,7 +170,10 @@ impl RaftNetworkClient {
         let response = match timeout(req_timeout, client.get_key(TonicRequest::new(request))).await
         {
             Ok(Ok(r)) => r,
-            Ok(Err(status)) => return Err(map_rpc_status_error("GetKey", status)),
+            Ok(Err(status)) => {
+                self.invalidate_on_unavailable(&status);
+                return Err(map_rpc_status_error("GetKey", status));
+            }
             Err(_) => {
                 return Err(Error::Cluster(ClusterError::Timeout(format!(
                     "GetKey timeout after {}ms",
@@ -157,7 +203,10 @@ impl RaftNetworkClient {
         .await
         {
             Ok(Ok(r)) => r,
-            Ok(Err(status)) => return Err(map_rpc_status_error("GetMigrationTip", status)),
+            Ok(Err(status)) => {
+                self.invalidate_on_unavailable(&status);
+                return Err(map_rpc_status_error("GetMigrationTip", status));
+            }
             Err(_) => {
                 return Err(Error::Cluster(ClusterError::Timeout(format!(
                     "GetMigrationTip timeout after {}ms",
@@ -195,7 +244,10 @@ impl RaftNetworkClient {
         .await
         {
             Ok(Ok(r)) => r,
-            Ok(Err(status)) => return Err(map_rpc_status_error("GetMigrationTombstone", status)),
+            Ok(Err(status)) => {
+                self.invalidate_on_unavailable(&status);
+                return Err(map_rpc_status_error("GetMigrationTombstone", status));
+            }
             Err(_) => {
                 return Err(Error::Cluster(ClusterError::Timeout(format!(
                     "GetMigrationTombstone timeout after {}ms",
@@ -234,7 +286,10 @@ impl RaftNetworkClient {
         .await
         {
             Ok(Ok(r)) => r,
-            Ok(Err(status)) => return Err(map_rpc_status_error("RemotePropose", status)),
+            Ok(Err(status)) => {
+                self.invalidate_on_unavailable(&status);
+                return Err(map_rpc_status_error("RemotePropose", status));
+            }
             Err(_) => {
                 return Err(Error::Cluster(ClusterError::Timeout(format!(
                     "RemotePropose timeout after {}ms",
@@ -255,23 +310,41 @@ impl RaftNetworkClient {
     > {
         if self.client.is_none() {
             // Fallback: lazy connect (backward compat, 缓存未命中时)
+            // connect 纳入 request_timeout 保护: 静默黑洞分区 (丢包无 RST) 下
+            // tonic connect 依赖内核 SYN 重传, 可能挂起远超 RPC 超时, 破坏
+            // 快速失败不变量. 超时后由调用方失效缓存, 下个 RPC 重试.
             tracing::debug!(
               target_addr = %self.target_addr,
               group_id = self.group_id,
               "gRPC: lazy connect (channel not cached)",
             );
-            let client = RaftServiceClient::connect(self.target_addr.clone())
-                .await
-                .map_err(|e| {
+            let req_timeout = self.request_timeout;
+            let target_addr = self.target_addr.clone();
+            let connect_fut = RaftServiceClient::connect(target_addr);
+            let client = match tokio::time::timeout(req_timeout, connect_fut).await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
                     tracing::warn!(
                       target_addr = %self.target_addr,
                       error = %e,
                       "gRPC client connect failed",
                     );
-                    NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e))
-                })?
-                .max_decoding_message_size(self.max_message_size)
-                .max_encoding_message_size(self.max_message_size);
+                    return Err(NetworkError::<TypeConfig>::new(
+                        &Unreachable::<TypeConfig>::new(&e),
+                    ));
+                }
+                Err(_) => {
+                    let io_err = std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("gRPC connect timeout after {}ms", req_timeout.as_millis()),
+                    );
+                    return Err(NetworkError::<TypeConfig>::new(
+                        &Unreachable::<TypeConfig>::new(&io_err),
+                    ));
+                }
+            }
+            .max_decoding_message_size(self.max_message_size)
+            .max_encoding_message_size(self.max_message_size);
             self.client = Some(client);
         }
         Ok(self.client.as_mut().unwrap())
@@ -287,11 +360,23 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         rpc: AppendEntriesRequest<TypeConfig>,
         _option: RPCOption,
     ) -> std::result::Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
+        #[cfg(feature = "cluster-test-util")]
+        if crate::cluster::failpoint::blackhole_active(self.node_id, &self.target_addr) {
+            return Err(RPCError::Network(NetworkError::<TypeConfig>::from_string(
+                "blackhole",
+            )));
+        }
         #[cfg(feature = "monitoring")]
         crate::cluster::metrics::record_raft_rpc("append_entries", "outgoing");
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
-        let client = self.get_client().await.map_err(RPCError::Network)?;
+        let client = match self.get_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                self.invalidate_channel();
+                return Err(RPCError::Network(e));
+            }
+        };
 
         let mut entries = Vec::new();
         for entry in rpc.entries {
@@ -328,12 +413,12 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         let t0 = std::time::Instant::now();
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
-            Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
+            Ok(Err(e)) => {
+                self.invalidate_on_unavailable(&e);
                 return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
                     &Unreachable::<TypeConfig>::new(&e),
                 )));
             }
-            Ok(Err(e)) => return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&e))),
             Err(_) => {
                 let io_err = std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
@@ -385,13 +470,24 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         SnapshotResponse<TypeConfig>,
         openraft::error::StreamingError<TypeConfig>,
     > {
+        #[cfg(feature = "cluster-test-util")]
+        if crate::cluster::failpoint::blackhole_active(self.node_id, &self.target_addr) {
+            return Err(openraft::error::StreamingError::Network(NetworkError::<
+                TypeConfig,
+            >::from_string(
+                "blackhole"
+            )));
+        }
         drop(cancel); // Not using cancellation in this implementation
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
-        let client = self
-            .get_client()
-            .await
-            .map_err(openraft::error::StreamingError::Network)?;
+        let client = match self.get_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                self.invalidate_channel();
+                return Err(openraft::error::StreamingError::Network(e));
+            }
+        };
 
         let meta = raft_rpc::SnapshotMeta {
             last_log_index: snapshot.meta.last_log_id.map(|id| id.index),
@@ -418,14 +514,15 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         let rpc_future = client.install_snapshot(TonicRequest::new(request));
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
-            Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
-                return Err(openraft::error::StreamingError::Unreachable(Unreachable::<
-                    TypeConfig,
-                >::new(
-                    &e
-                )));
-            }
             Ok(Err(e)) => {
+                self.invalidate_on_unavailable(&e);
+                if e.code() == tonic::Code::Unavailable {
+                    return Err(openraft::error::StreamingError::Unreachable(Unreachable::<
+                        TypeConfig,
+                    >::new(
+                        &e
+                    )));
+                }
                 return Err(openraft::error::StreamingError::Network(NetworkError::<
                     TypeConfig,
                 >::new(
@@ -460,11 +557,23 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         rpc: VoteRequest<TypeConfig>,
         _option: RPCOption,
     ) -> std::result::Result<VoteResponse<TypeConfig>, RPCError<TypeConfig>> {
+        #[cfg(feature = "cluster-test-util")]
+        if crate::cluster::failpoint::blackhole_active(self.node_id, &self.target_addr) {
+            return Err(RPCError::Network(NetworkError::<TypeConfig>::from_string(
+                "blackhole",
+            )));
+        }
         #[cfg(feature = "monitoring")]
         crate::cluster::metrics::record_raft_rpc("vote", "outgoing");
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
-        let client = self.get_client().await.map_err(RPCError::Network)?;
+        let client = match self.get_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                self.invalidate_channel();
+                return Err(RPCError::Network(e));
+            }
+        };
 
         let request = raft_rpc::VoteRequest {
             group_id,
@@ -479,12 +588,10 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
         let rpc_future = client.vote(TonicRequest::new(request));
         let response = match timeout(req_timeout, rpc_future).await {
             Ok(Ok(r)) => r,
-            Ok(Err(e)) if e.code() == tonic::Code::Unavailable => {
-                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(
-                    &Unreachable::<TypeConfig>::new(&e),
-                )));
+            Ok(Err(e)) => {
+                self.invalidate_on_unavailable(&e);
+                return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&e)));
             }
-            Ok(Err(e)) => return Err(RPCError::Network(NetworkError::<TypeConfig>::new(&e))),
             Err(_) => {
                 let io_err = std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
@@ -597,11 +704,27 @@ impl RaftNetworkClientFactory {
         // 后 insert 覆盖前 insert; tonic Channel 基于 Arc, 旧的 clone 不受影响)
         let normalized = normalize_grpc_addr(addr);
         tracing::debug!(%target, %normalized, "gRPC: establishing new channel for peer");
-        let client = RaftServiceClient::connect(normalized)
-            .await
-            .map_err(|e| NetworkError::<TypeConfig>::new(&Unreachable::<TypeConfig>::new(&e)))?
-            .max_decoding_message_size(max_message_size)
-            .max_encoding_message_size(max_message_size);
+        let req_timeout = Duration::from_millis(self.rpc_timeout_ms);
+        let connect_fut = RaftServiceClient::connect(normalized);
+        let client = match tokio::time::timeout(req_timeout, connect_fut).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                return Err(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&e),
+                ))
+            }
+            Err(_) => {
+                let io_err = std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("gRPC connect timeout after {}ms", req_timeout.as_millis()),
+                );
+                return Err(NetworkError::<TypeConfig>::new(
+                    &Unreachable::<TypeConfig>::new(&io_err),
+                ));
+            }
+        }
+        .max_decoding_message_size(max_message_size)
+        .max_encoding_message_size(max_message_size);
         self.channels.insert(target, client.clone());
         Ok(client)
     }
@@ -663,6 +786,7 @@ impl RaftNetworkFactory<TypeConfig> for RaftNetworkClientFactory {
             self.rpc_timeout_ms,
             self.max_message_size,
             channel,
+            Some(self.channels.clone()),
         )
     }
 }
@@ -1063,5 +1187,58 @@ mod tests {
             "expected empty addr for unknown node without cached address, but got: {}",
             client.target_addr(),
         );
+    }
+
+    /// 连接池失效策略: 仅 `Unavailable` (连接级失败) 失效缓存重建连接;
+    /// 超时与应用级错误 (Internal) 视为连接仍完好, 不失效, 避免选主风暴下
+    /// 重连风暴放大为选举活锁 (FIX-0065-A1 连接池策略).
+    ///
+    /// 通过 `channels` 池 + `client` 两个观察点验证:
+    /// - `Unavailable` → 池 entry 被移除, 本地 client 置 None
+    /// - `DeadlineExceeded` (超时) → 池 entry 保留, 本地 client 保留
+    /// - `Internal` (应用级) → 池 entry 保留, 本地 client 保留
+    #[tokio::test]
+    async fn invalidate_on_unavailable_only_for_connection_failures() {
+        let channels: Arc<DashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>> =
+            Arc::new(DashMap::new());
+        // 占位 channel (lazy, 不建立真实连接): 仅用于观察池 entry 生命周期,
+        // 验证失效判定逻辑, 不发起任何网络 I/O.
+        let placeholder = RaftServiceClient::new(
+            tonic::transport::Channel::from_static("http://127.0.0.1:1").connect_lazy(),
+        );
+        channels.insert(2, placeholder);
+
+        let mut client = RaftNetworkClient::new(
+            1,
+            2,
+            "http://127.0.0.1:1".to_string(),
+            0,
+            100,
+            1024,
+            None,
+            Some(Arc::clone(&channels)),
+        );
+
+        // 基线: 池与本地 client 状态
+        assert!(channels.contains_key(&2));
+
+        // Unavailable → 失效
+        client.invalidate_on_unavailable(&tonic::Status::unavailable("conn reset"));
+        assert!(!channels.contains_key(&2), "Unavailable 应移除连接池 entry");
+        assert!(client.client.is_none(), "Unavailable 应置本地 client None");
+
+        // DeadlineExceeded (超时) → 不失效
+        channels.insert(
+            2,
+            RaftServiceClient::new(
+                tonic::transport::Channel::from_static("http://127.0.0.1:1").connect_lazy(),
+            ),
+        );
+        client.invalidate_on_unavailable(&tonic::Status::deadline_exceeded("slow peer"));
+        assert!(channels.contains_key(&2), "超时不应移除连接池 entry");
+
+        // Internal (应用级) → 不失效
+        client.invalidate_on_unavailable(&tonic::Status::internal("internal error"));
+        assert!(channels.contains_key(&2), "应用级错误不应移除连接池 entry");
     }
 }

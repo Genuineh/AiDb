@@ -9,6 +9,8 @@ use parking_lot::RwLock;
 use tokio::sync::watch;
 use tracing::instrument;
 
+use openraft::rt::instant::Instant;
+
 use crate::cluster::meta_raft_node::MetaRaftNode;
 use crate::cluster::meta_types::MetaRequest;
 use crate::cluster::multi_raft_node::MultiRaftNode;
@@ -29,7 +31,12 @@ pub struct LeaderChangeWatcher {
     /// group_id → Option<leader_node_id>
     /// None means no known leader for this group.
     leader_cache: RwLock<HashMap<u64, Option<NodeId>>>,
+    /// group_id → 本节点 (作为该 group leader) 是否仍保有 quorum.
+    /// 仅在本节点是 leader 时存在; follower 上不判定 (entry 被移除).
+    quorum_status: RwLock<HashMap<u64, bool>>,
     tick_interval: Duration,
+    /// leader lease 时长 (= election_timeout_max), 用于判定 quorum 是否失效.
+    lease: Duration,
 }
 
 impl LeaderChangeWatcher {
@@ -37,19 +44,70 @@ impl LeaderChangeWatcher {
     ///
     /// `tick_interval` should be less than `election_timeout_min` to avoid
     /// missing leader transitions. Default: `election_timeout_min / 2`.
+    /// `lease` 为 leader lease 时长 (= election_timeout_max), 探活判定用.
     pub fn new(
         node_id: NodeId,
         multi_raft: Arc<MultiRaftNode>,
         meta_raft: Arc<MetaRaftNode>,
         tick_interval: Duration,
+        lease: Duration,
     ) -> Self {
         Self {
             node_id,
             multi_raft,
             meta_raft,
             leader_cache: RwLock::new(HashMap::new()),
+            quorum_status: RwLock::new(HashMap::new()),
             tick_interval,
+            lease,
         }
+    }
+
+    /// 判定本节点作为某 group leader 时是否仍保有 quorum (纯函数).
+    ///
+    /// `last_quorum_acked_elapsed` 为距最近一次 quorum ack 的流逝时长
+    /// (调用方经 `SerdeInstant::into_inner().elapsed()` 计算, 语义等价于
+    /// `now.saturating_duration_since(ack)`, 只依赖 openraft re-export 的
+    /// `Instant` 而非具体 runtime 类型).
+    ///
+    /// 规则:
+    /// - 本节点不是该 group leader → `None` (不判定; follower 无 quorum 信号,
+    ///   该 group 的 leader 有效性由 MetaRaft `is_leader` 正常维护).
+    /// - `Some(elapsed)` 且 `elapsed > lease` → `Some(false)` (已失去多数派).
+    /// - `Some(elapsed)` 且 `elapsed <= lease` → `Some(true)`.
+    /// - `None` → `Some(true)` (新 leader 首个 quorum ack 前不误判; 已知盲区:
+    ///   从未获 ack 即被分区时写仍挂起至 client 超时, 读侧 LeaseRead 快速失败).
+    pub fn judge_leader_quorum(
+        current_leader: Option<NodeId>,
+        self_id: NodeId,
+        last_quorum_acked_elapsed: Option<Duration>,
+        lease: Duration,
+    ) -> Option<bool> {
+        if current_leader != Some(self_id) {
+            return None;
+        }
+        match last_quorum_acked_elapsed {
+            Some(elapsed) => Some(elapsed <= lease),
+            None => Some(true),
+        }
+    }
+
+    /// 覆盖式更新 quorum 状态; 非 leader 的 group 从 map 移除.
+    fn update_quorum_status(&self, group_id: u64, quorum: Option<bool>) {
+        let mut status = self.quorum_status.write();
+        match quorum {
+            Some(ok) => {
+                status.insert(group_id, ok);
+            }
+            None => {
+                status.remove(&group_id);
+            }
+        }
+    }
+
+    /// 当前 quorum 状态快照: group_id → leader 是否保有 quorum.
+    pub fn leader_quorum_status(&self) -> HashMap<u64, bool> {
+        self.quorum_status.read().clone()
     }
 
     /// Execute one detection pass. Returns the set of group IDs whose
@@ -70,10 +128,21 @@ impl LeaderChangeWatcher {
         let mut changed = Vec::new();
 
         for (gid, node) in &group_snapshots {
-            let current_leader = node.get_leader().await;
+            let metrics = node.metrics().await;
+            let current_leader = metrics.current_leader;
+
             if let Some(changed_gid) = self.detect_leader_transition(*gid, current_leader).await {
                 changed.push(changed_gid);
             }
+
+            // 探活: 判定本节点为 leader 的 group 是否仍保有 quorum (lease 内).
+            let quorum = Self::judge_leader_quorum(
+                current_leader,
+                self.node_id,
+                metrics.last_quorum_acked.map(|s| s.into_inner().elapsed()),
+                self.lease,
+            );
+            self.update_quorum_status(*gid, quorum);
         }
 
         tracing::debug!(

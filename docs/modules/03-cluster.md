@@ -253,6 +253,29 @@ cargo test --features cluster --test cluster_replica_reconcile -- --test-threads
 | `tests/modules/multi_raft/*` | Router CRC16, lifecycle, MultiRaftNode |
 | `examples/cluster.rs` | `key_to_slot` / hash tag (无网络) |
 
+## 分区/脑裂防护 (探活 + LeaseRead)
+
+**场景**: 网络分区把旧 leader 隔离到少数派. Raft 安全性 (term + 多数派 commit)
+保证不丢已提交数据; 本机制解决**可用性/一致性信号**缺口 (旧 leader 挂起/滞后读/
+cluster_state 误报).
+
+- **LeaderChangeWatcher 探活** (`leader_watcher.rs`): `tick()` 读各 group
+  `RaftMetrics::last_quorum_acked` (最近一次 quorum ack 时间, 仅 leader 有值).
+  判定抽纯函数 `judge_leader_quorum(current_leader, self_id, elapsed, lease) ->
+  Option<bool>`: 非 leader → `None` (不判定); `Some(elapsed) > lease` → `Some(false)`
+  (失去多数派); `<= lease` → `Some(true)`; `None` (新 leader 首 ack 前) →
+  `Some(true)` (不误判). `lease` 参数 = `election_timeout_max`. 结果经 getter
+  暴露 (`leader_quorum_status`), 由 aikv 侧消费 (见 aikv cluster.md 分区/脑裂防护).
+- **LeaseRead 读侧防线** (`node.rs::ensure_leader_for_linear_read`):
+  `linearizable_read=true` 时用 `ReadPolicy::LeaseRead` (OpenRaft 内置 lease,
+  时长 = `leader_lease` = `election_timeout_max`): 正常期本地读零 RTT;
+  分区期 lease 过期 → `ForwardToLeader::empty()` → `map_linearizable_error`
+  映射为 `ClusterError::NotLeader { leader: None, ... }` (快速失败, 不挂起).
+  aikv 主 GET 不经过该路径, 其分区期保护由 aikv 侧 cluster_state:fail 门控覆盖.
+- **failpoint** (`failpoint.rs`, `cluster-test-util` feature): 网络黑洞
+  `blackhole(src, targets) -> BlackholeGuard` (Drop guard RAII, 按
+  (源节点, 目标 addr) 键控) — 用于分区测试. 测试见 `tests/modules/cluster/partition.rs`.
+
 ## 已知限制
 
 - **无 ThinReplication**: 全量 Raft log 复制
