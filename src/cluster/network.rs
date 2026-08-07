@@ -498,7 +498,11 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                     &Unreachable::<TypeConfig>::new(&e),
                 ))
             })?,
-            snapshot_id: snapshot.meta.snapshot_id.clone(),
+            snapshot_id: snapshot
+                .meta
+                .last_log_id
+                .map(|id| format!("snap-{}", id.index))
+                .unwrap_or_default(),
         };
 
         let data = snapshot.snapshot.into_inner();
@@ -1046,7 +1050,6 @@ impl RaftService for RaftServiceImpl {
         let snapshot_meta = openraft::SnapshotMeta {
             last_log_id,
             last_membership,
-            snapshot_id: meta.snapshot_id,
         };
 
         let vote = vote_from_wire(req.vote_term, req.vote_node_id, req.vote_committed);

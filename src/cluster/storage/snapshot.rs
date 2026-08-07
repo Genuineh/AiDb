@@ -8,7 +8,7 @@
 //!   ├─ db.flush() -> 数据全部进 SST
 //!   ├─ checkpoint 协议 pin SST (SnapshotCheckpointGuard)
 //!   ├─ 收集文件 -> bincode(SnapshotBundle { relative_path, data })
-//!   └─ meta = SnapshotMeta { last_log_id, last_membership, snapshot_id }
+//!   └─ meta = SnapshotMeta { last_log_id, last_membership }
 //!
 //! install (install_snapshot_atomic)
 //!   ├─ 先写临时文件 + fsync 父目录 (crash 安全)
@@ -214,11 +214,9 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
             .map_err(|e| std::io::Error::other(e.to_string()))?
             .and_then(|d| rmp_serde::from_slice(&d).ok());
 
-        let snapshot_id = format!("snap-{}", last_applied.map(|id| id.index).unwrap_or(0));
         let meta = SnapshotMeta {
             last_log_id: last_applied,
             last_membership: membership,
-            snapshot_id,
         };
 
         Ok(Snapshot {
@@ -260,7 +258,6 @@ mod tests {
         let meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
-            snapshot_id: "snap-5".into(),
         };
         storage
             .install_snapshot_atomic(&meta, &bundle_data)
@@ -305,7 +302,6 @@ mod tests {
             let meta = SnapshotMeta {
                 last_log_id: Some(log_id),
                 last_membership: StoredMembership::default(),
-                snapshot_id: "snap-5".into(),
             };
             storage.install_snapshot_atomic(&meta, &snap_data).unwrap();
 
@@ -377,7 +373,6 @@ mod tests {
         let snap_meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
-            snapshot_id: "meta-snap-3".into(),
         };
         storage2
             .install_snapshot_atomic(&snap_meta, &bundle_data)

@@ -32,6 +32,7 @@ const VALUE: &[u8] = b"partition-v1";
 /// - 本节点是 leader + 距 quorum ack 流逝 ≤ lease → Some(true)
 /// - 本节点是 leader + 距 quorum ack 流逝 > lease → Some(false)
 /// - 本节点是 leader + 从未有 ack (None) → Some(true) (新 leader 不误判)
+/// - 本节点是 leader + 单节点 group (self-quorum) → Some(true) (恒有效)
 /// - 本节点非 leader → None (不判定)
 #[test]
 fn judge_leader_quorum_rules() {
@@ -39,22 +40,52 @@ fn judge_leader_quorum_rules() {
 
     // leader + fresh ack → ok
     assert_eq!(
-        LeaderChangeWatcher::judge_leader_quorum(Some(1), 1, Some(Duration::from_millis(1)), lease),
+        LeaderChangeWatcher::judge_leader_quorum(
+            Some(1),
+            1,
+            Some(Duration::from_millis(1)),
+            lease,
+            false
+        ),
         Some(true)
     );
     // leader + stale ack → 失效
     assert_eq!(
-        LeaderChangeWatcher::judge_leader_quorum(Some(1), 1, Some(Duration::from_secs(2)), lease),
+        LeaderChangeWatcher::judge_leader_quorum(
+            Some(1),
+            1,
+            Some(Duration::from_secs(2)),
+            lease,
+            false
+        ),
         Some(false)
     );
     // leader + None (新 leader 首 ack 前) → 有效
     assert_eq!(
-        LeaderChangeWatcher::judge_leader_quorum(Some(1), 1, None, lease),
+        LeaderChangeWatcher::judge_leader_quorum(Some(1), 1, None, lease, false),
+        Some(true)
+    );
+    // leader + 单节点 group → 即使 ack 陈旧也有效 (openraft ≥alpha.32 单节点 leader
+    // 无 follower 回复, last_quorum_acked 会停滞, 不能按 elapsed 判定)
+    assert_eq!(
+        LeaderChangeWatcher::judge_leader_quorum(
+            Some(1),
+            1,
+            Some(Duration::from_secs(2)),
+            lease,
+            true
+        ),
         Some(true)
     );
     // 非 leader → 不判定
     assert_eq!(
-        LeaderChangeWatcher::judge_leader_quorum(Some(2), 1, Some(Duration::from_millis(1)), lease),
+        LeaderChangeWatcher::judge_leader_quorum(
+            Some(2),
+            1,
+            Some(Duration::from_millis(1)),
+            lease,
+            false
+        ),
         None
     );
 }

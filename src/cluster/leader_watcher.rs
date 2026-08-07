@@ -70,9 +70,17 @@ impl LeaderChangeWatcher {
     /// `now.saturating_duration_since(ack)`, 只依赖 openraft re-export 的
     /// `Instant` 而非具体 runtime 类型).
     ///
+    /// `is_self_quorum` 表示该 group 的 voters 只有本节点自己 (单节点 group).
+    /// openraft ≥alpha.32 中单节点 leader 的 `last_quorum_acked` 不再由 leader
+    /// 自身时钟刷新 (改为仅在收到 follower AppendEntries 回复时更新), 单节点
+    /// group 没有 follower 回复, 该时间戳会停滞并越过 lease, 若直接按 elapsed
+    /// 判定会把永远保有 quorum 的单节点 leader 误判为失联. 因此单节点 group
+    /// 直接判定有效 (openraft 内部 `is_lease_valid` 对 self-quorum 同样恒真).
+    ///
     /// 规则:
     /// - 本节点不是该 group leader → `None` (不判定; follower 无 quorum 信号,
     ///   该 group 的 leader 有效性由 MetaRaft `is_leader` 正常维护).
+    /// - 单节点 group 且本节点为 leader (`is_self_quorum`) → `Some(true)`.
     /// - `Some(elapsed)` 且 `elapsed > lease` → `Some(false)` (已失去多数派).
     /// - `Some(elapsed)` 且 `elapsed <= lease` → `Some(true)`.
     /// - `None` → `Some(true)` (新 leader 首个 quorum ack 前不误判; 已知盲区:
@@ -82,9 +90,13 @@ impl LeaderChangeWatcher {
         self_id: NodeId,
         last_quorum_acked_elapsed: Option<Duration>,
         lease: Duration,
+        is_self_quorum: bool,
     ) -> Option<bool> {
         if current_leader != Some(self_id) {
             return None;
+        }
+        if is_self_quorum {
+            return Some(true);
         }
         match last_quorum_acked_elapsed {
             Some(elapsed) => Some(elapsed <= lease),
@@ -136,11 +148,18 @@ impl LeaderChangeWatcher {
             }
 
             // 探活: 判定本节点为 leader 的 group 是否仍保有 quorum (lease 内).
+            // 单节点 group (voters 只有自己) 恒为 self-quorum, 不依赖 last_quorum_acked
+            // (openraft ≥alpha.32 单节点 leader 无 follower 回复, 该时间戳会停滞).
+            let is_self_quorum = {
+                let mut voters = metrics.membership_config.voter_ids();
+                voters.next() == Some(self.node_id) && voters.next().is_none()
+            };
             let quorum = Self::judge_leader_quorum(
                 current_leader,
                 self.node_id,
                 metrics.last_quorum_acked.map(|s| s.into_inner().elapsed()),
                 self.lease,
+                is_self_quorum,
             );
             self.update_quorum_status(*gid, quorum);
         }

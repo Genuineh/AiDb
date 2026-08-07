@@ -65,8 +65,8 @@ opentelemetry_sdk = { version = "0.32", optional = true, features = ["testing"] 
 tonic   = { version = "0.11", optional = true }
 prost   = { version = "0.12", optional = true }
 tokio   = { version = "1",    features = ["full"], optional = true }
-openraft = { version = "0.10.0-alpha.31", features = ["type-alias", "serde"], optional = true }
-openraft-rt-tokio = { version = "0.10.0-alpha.31", optional = true }
+openraft = { version = "0.10.0-alpha.33", features = ["type-alias", "serde"], optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
 rmp-serde = { version = "1", optional = true }
 async-trait = { version = "0.1", optional = true }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }

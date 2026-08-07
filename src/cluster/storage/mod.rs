@@ -371,18 +371,6 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
         snapshot::OpenRaftSnapshotBuilder::new(self.db.clone(), self.group_id)
     }
 
-    #[instrument(name = "raft_recv_snapshot", skip(self))]
-    async fn begin_receiving_snapshot(
-        &mut self,
-    ) -> std::result::Result<Self::SnapshotData, std::io::Error> {
-        let db_path = self.db.path().to_path_buf();
-        let temp_path = db_path.join(format!(".snapshot_temp_{}", self.group_id));
-        // Clean up any previous temp file from a crashed install
-        let _ = std::fs::remove_file(&temp_path);
-        *self.snapshot_temp_path.write() = Some(temp_path);
-        Ok(Cursor::new(Vec::new()))
-    }
-
     #[instrument(name = "raft_install_snapshot", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
@@ -390,6 +378,13 @@ impl RaftStateMachine<TypeConfig> for OpenRaftStorage {
         snapshot: Self::SnapshotData,
     ) -> std::result::Result<(), std::io::Error> {
         let data = snapshot.into_inner();
+
+        // 初始化临时文件路径 (openraft >= alpha.33 不再调用 begin_receiving_snapshot,
+        // 接收/安装流程统一在 install_snapshot 内完成临时文件初始化).
+        let db_path = self.db.path().to_path_buf();
+        let temp_path = db_path.join(format!(".snapshot_temp_{}", self.group_id));
+        let _ = std::fs::remove_file(&temp_path);
+        *self.snapshot_temp_path.write() = Some(temp_path);
 
         // Write to temp file first for crash safety
         if let Some(ref temp_path) = *self.snapshot_temp_path.read() {

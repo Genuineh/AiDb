@@ -261,11 +261,19 @@ cluster_state 误报).
 
 - **LeaderChangeWatcher 探活** (`leader_watcher.rs`): `tick()` 读各 group
   `RaftMetrics::last_quorum_acked` (最近一次 quorum ack 时间, 仅 leader 有值).
-  判定抽纯函数 `judge_leader_quorum(current_leader, self_id, elapsed, lease) ->
-  Option<bool>`: 非 leader → `None` (不判定); `Some(elapsed) > lease` → `Some(false)`
-  (失去多数派); `<= lease` → `Some(true)`; `None` (新 leader 首 ack 前) →
-  `Some(true)` (不误判). `lease` 参数 = `election_timeout_max`. 结果经 getter
-  暴露 (`leader_quorum_status`), 由 aikv 侧消费 (见 aikv cluster.md 分区/脑裂防护).
+  判定抽纯函数 `judge_leader_quorum(current_leader, self_id, elapsed, lease,
+  is_self_quorum) -> Option<bool>`: 非 leader → `None` (不判定); 单节点 group
+  (voters 仅自己) 且本节点 leader → `Some(true)` (self-quorum, 恒有效);
+  `Some(elapsed) > lease` → `Some(false)` (失去多数派); `<= lease` →
+  `Some(true)`; `None` (新 leader 首 ack 前) → `Some(true)` (不误判).
+  `lease` 参数 = `election_timeout_max`. 结果经 getter 暴露
+  (`leader_quorum_status`), 由 aikv 侧消费 (见 aikv cluster.md 分区/脑裂防护).
+
+  > **为何单节点 group 免检 elapsed**: OpenRaft ≥alpha.32 起 `last_quorum_acked`
+  > 仅在成为 leader 时注入一次时钟, 之后只随 follower `AppendEntries` 回复更新;
+  > 单节点 data group 无 follower, 该时间戳会停滞并最终超过 lease, 若不豁免会把
+  > 唯一 leader 误判为 quorum 丢失 (`cluster_state` 翻 fail). self-quorum 判定
+  > 通过 `metrics.membership_config.voter_ids()` 是否仅含自己来确定.
 - **LeaseRead 读侧防线** (`node.rs::ensure_leader_for_linear_read`):
   `linearizable_read=true` 时用 `ReadPolicy::LeaseRead` (OpenRaft 内置 lease,
   时长 = `leader_lease` = `election_timeout_max`): 正常期本地读零 RTT;

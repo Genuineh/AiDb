@@ -36,6 +36,11 @@
 
 ### Changed
 
+- **OpenRaft 升级 v0.10.0-alpha.31 → v0.10.0-alpha.33**: 
+  - 适配上游 breaking: `SnapshotMeta` 移除 `snapshot_id` 字段 (传输会话 ID 与快照内容解耦); 构造点删除该字段, 自定义 gRPC 传输层改为按 `last_log_id` 生成会话 ID. 文件: `src/cluster/network.rs`, `src/cluster/storage/snapshot.rs`.
+  - 适配 `RaftStateMachine` 移除 `begin_receiving_snapshot`: 临时文件路径初始化移入 `install_snapshot` 开头, 崩溃安全语义不变. 文件: `src/cluster/storage/mod.rs`.
+  - `ensure_linearizable` 返回类型 `Option<LogId>` → `ReadLogId` (错误类型不变, 调用点零改动); 上游同时修复了「拒绝与已提交 index 冲突的 snapshot」与「node-only membership 变更在未初始化节点不再 panic」, 并移除 lockfile-only `rkyv` 漏洞依赖.
+  - **LeaderChangeWatcher 单节点 group 探活修正 (随升级暴露的回归)**: ≥alpha.32 起上游 `last_quorum_acked` 只在成为 leader 时注入一次时钟、之后仅随 follower `AppendEntries` 回复更新; 单节点 data group (voters 仅自己) 没有 follower 回复, 该时间戳会停滞, 导致 `judge_leader_quorum` 在 lease 过期后把唯一 leader 误判为 quorum 丢失, `cluster_state` 翻 fail, 冒烟 `SET/GET` 报 `CLUSTERDOWN`. 现在 `tick()` 依据 `metrics.membership_config.voter_ids()` 判定单节点 group (self-quorum), 直接判定有效, 不再依赖 `last_quorum_acked`. 回归: `tests/modules/cluster/partition.rs::judge_leader_quorum_rules` 增补 self-quorum 用例. 文件: `src/cluster/leader_watcher.rs`.
 - **Raft log 读写性能**: `get_log_entries` 改为按 index 点查 (避免 log 累积后 O(总条数) prefix scan); `purge_logs_upto` 改为 `delete_range` 批量删除并记录 `raft_purge_logs` perf 日志.
 
 ### Added
