@@ -79,11 +79,10 @@ cargo run --example basic
 | [docs/modules/cluster.md](docs/modules/03-cluster.md) | MetaRaft, MultiRaft, slot 迁移 |
 | [docs/modules/backup.md](docs/modules/04-backup.md) | BackupManager, 恢复流程 |
 | [docs/modules/observability.md](docs/modules/05-observability.md) | 指标与 tracing |
-| [ISSUES.md](ISSUES.md) | 待核实项 |
 
 ## 待核实
 
-- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).
+- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内.
 
 ## 许可
 

@@ -44,7 +44,7 @@ AiDb 是 **lib crate**: 同步 `DB` API, 无网络 listener. [AiKv](../aikv/docs
 | Column Family / 多 CF | 单 keyspace; aikv 用 `{db_index}:` 前缀区分逻辑库 |
 | 复杂事务 | 仅 WriteBatch + Snapshot MVCC |
 | ThinReplication | oldmain 曾探索; **当前全量 Raft log 复制**; inventory 列为未来考量 |
-| 内置 HTTP `/metrics` | 见 [可观测性](#可观测性) 与 ISSUE-014 |
+| 内置 HTTP `/metrics` | 见 [可观测性](#可观测性) |
 | `aidb-admin` CLI | 用库 API 或 `examples/` |
 
 ### 磁盘格式
@@ -149,7 +149,7 @@ Redis Cluster 兼容槽模型 (`CLUSTER SLOTS` / hash tag `{...}`); 槽数远大
 - **无 ThinReplication**: 全量 Raft log 复制.
 - **无跨 Group `write_batch`**: 调用方 `Router::group_ops` 分组后逐 Group `propose`.
 - **Migrating 为 slot 级 ASK**, 非 per-key.
-- 数据 Group apply 逐 entry 更新 `last_applied` — 见 [ISSUES.md#ISSUE-005](ISSUES.md#issue-005--数据-group-apply-仍逐-entry-写-last_applied).
+- 数据 Group apply 逐 entry 更新 `last_applied`.
 
 ---
 
@@ -218,12 +218,11 @@ LSM flush 后 SST 不可变; `Checkpoint::create` 在 flush + pin SST 后 link/c
 - [AGENTS.md](AGENTS.md) — AI 助手入口与参考项目
 - [docs/modules/](docs/modules/) — 域级实现与常见任务
 - [DEPLOYMENT.md](DEPLOYMENT.md) — 构建、feature、运行 (步 15)
-- [ISSUES.md](ISSUES.md) — 待核实与跟踪
 
 ## 已知限制 (根文档摘要)
 
-- 数据 Group apply 逐 entry 写 `last_applied` — 见 [ISSUES.md#ISSUE-005](ISSUES.md#issue-005--数据-group-apply-仍逐-entry-写-last_applied).
+- 数据 Group apply 逐 entry 写 `last_applied`.
 
 ## 待核实
 
-- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014--httpoteljson-log-运行在嵌入方-aidb-仅库内指标).
+- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内.

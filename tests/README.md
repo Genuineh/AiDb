@@ -24,7 +24,7 @@ console 中文一级目录由**路径虚拟映射**生成 (见 aifactory `consol
 | `tests/` 下新建/改动的集成测文件 | 文件顶 `//! @component aidb-{domain}` + 中文摘要段 (第一段非空) |
 | L0 `src/**` 内新建 `#[test]` | 中文 `///`; 模块可用 `//!`; **不要求** `@component` |
 | 每个新增/改动的 `#[test]` | 正上方中文 `///`; **禁止**用 `//` 顶替 |
-| bug 回归 | `///` 含现象、期望、ISSUE (若有) |
+| bug 回归 | `///` 含现象、期望、Issue 编号 (若有) |
 
 - 命名: 描述性 `test_*`
 - `#[ignore]`: 必须 `slow:` / `stress:` 前缀; 禁止裸 `#[ignore]`

@@ -92,7 +92,7 @@ flowchart LR
 | `aidb_backup_size_bytes` | IntGauge | — | create |
 | `aidb_backup_duration_seconds` | Histogram | — | create |
 
-**`aidb_operations_total` / `operation_duration` 的 `aidb.operation.name`**: `put`, `get`, `delete`, `write_batch`, `write_batch_no_wal`, `snapshot`, `stall_stop`, `stall_slowdown`. PromQL label: `aidb_operation_name`. **`scan` / `close` 无 counter** (见 ISSUE-018).
+**`aidb_operations_total` / `operation_duration` 的 `aidb.operation.name`**: `put`, `get`, `delete`, `write_batch`, `write_batch_no_wal`, `snapshot`, `stall_stop`, `stall_slowdown`. PromQL label: `aidb_operation_name`. **`scan` / `close` 无 counter**.
 
 **命中率**: 无 `cache_hit_rate` gauge; 用 PromQL `rate(hits)/(rate(hits)+rate(misses))`.
 
@@ -214,17 +214,12 @@ cargo test --test span_contract -- --test-threads=1   # 热路径 span 级别契
 
 ## 已知限制
 
-- **无内置 HTTP / OTLP / JSON log 开关** — 嵌入方 (aikv) 负责 export 与 `/health` (ISSUE-014)
-- **旧 observability 稿大量指标名/span 名已过时** — 以 `metrics.rs` 为准 (ISSUE-015)
-- **未实现**: `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等 (ISSUE-016)
+- **无内置 HTTP / OTLP / JSON log 开关** — 嵌入方 (aikv) 负责 export 与 `/health`
+- **旧 observability 稿大量指标名/span 名已过时** — 以 `metrics.rs` 为准
+- **未实现**: `wal_sync_duration`, `cache_hit_rate` gauge, `snapshot_count`, `cluster_nodes`, `errors_total`, `restore_duration` 等
 - **compaction counter/histogram** — label `aidb.compaction.phase` (pick/run/apply); PromQL: `aidb_compaction_phase`
-- **`scan`/`close` 无 `operations_total`** (ISSUE-018)
+- **`scan`/`close` 无 `operations_total`**
 - **无进程级 memory/disk 指标** — oldmain `monitoring` 模块已移除
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#issue-014--httpoteljson-log-运行在嵌入方-aidb-仅库内指标) — HTTP/OTel 在嵌入方, aidb 仅库内指标
-- 见 [ISSUES.md](../../ISSUES.md#issue-015--旧-observability-指标表与-span-名大量过时) — 旧稿指标表与 span 名过时
-- 见 [ISSUES.md](../../ISSUES.md#issue-016--旧设计若干-prometheus-系列未实现) — 若干旧设计指标未实现
-- 见 [ISSUES.md](../../ISSUES.md#issue-017--compaction-指标-counterhistogram-label-名不一致) — compaction label 名不一致
-- 见 [ISSUES.md](../../ISSUES.md#issue-018--scanclose-未计入-aidb_operations_total) — scan/close 未计入 operations_total

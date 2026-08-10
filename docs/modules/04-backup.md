@@ -164,15 +164,11 @@ cargo run --example backup
 
 ## 已知限制
 
-- **双重复制 I/O**: checkpoint 已 link/copy 到 `.backup_tmp_*`, 再 `fs::copy` 到 `backup_{id}` (见 ISSUE-011)
-- **无增量 / 压缩 / 远程存储**: 仅全量; 无 S3 trait 实现 (见 ISSUE-012)
-- **无 backup_id 碰撞重试**: 单次 `timestamp_nanos()` (见 ISSUE-012)
-- **`list` vs `get`**: 损坏 manifest 在 list 中 warn 跳过, get 抛 `Corruption` (见 ISSUE-013)
+- **双重复制 I/O**: checkpoint 已 link/copy 到 `.backup_tmp_*`, 再 `fs::copy` 到 `backup_{id}`
+- **无增量 / 压缩 / 远程存储**: 仅全量; 无 S3 trait 实现
+- **无 backup_id 碰撞重试**: 单次 `timestamp_nanos()`
+- **`list` vs `get`**: 损坏 manifest 在 list 中 warn 跳过, get 抛 `Corruption`
 - **无 CLI**: 无 `aidb-admin`; 用库 API 或 `examples/backup.rs`
 - **单 DB 实例**: 集群多 group 协调备份不在本章; aikv 集群 checkpoint 见 `storage/cluster_adapter.rs`
 
 ## 待核实
-
-- 见 [ISSUES.md](../../ISSUES.md#issue-011--创建路径为-checkpoint-组合而非-inventory-直连-pin_sstables) — 创建路径为 Checkpoint 组合, 非 inventory 直连 pin_sstables
-- 见 [ISSUES.md](../../ISSUES.md#issue-012--无-backup_id-碰撞重试与压缩增量s3) — 无碰撞重试、压缩、增量、S3
-- 见 [ISSUES.md](../../ISSUES.md#issue-013--list_backups-与-get_backup_info-对损坏-manifest-行为不一致) — list 与 get 对损坏 manifest 行为不一致

@@ -198,8 +198,7 @@ AiKv 通过 `path = "../aidb"` 依赖本库:
 - [docs/modules/](docs/modules/) — 域级 Skill 文档
 - [DESIGN.md](DESIGN.md) — 设计决策 (汇总)
 - [DEPLOYMENT.md](DEPLOYMENT.md) — 构建、feature、运行 (汇总)
-- [ISSUES.md](ISSUES.md) — 待核实项
 
 ## 待核实
 
-- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).
+- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内.

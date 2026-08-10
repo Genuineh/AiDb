@@ -202,7 +202,7 @@ assert!(recovery.verify_backup(id)?);
 recovery.restore(id, "/var/data/aidb-restored")?;
 ```
 
-- 仅 **`LocalFileStorage`** 内置; S3 / 增量备份未实现 — 见 [ISSUES.md#ISSUE-012](ISSUES.md#issue-012-无-backup_id-碰撞重试与压缩增量s3).
+- 仅 **`LocalFileStorage`** 内置; S3 / 增量备份未实现.
 - AiKv `BGSAVE` 直调 `Checkpoint`, 不经 `BackupManager` — 见 aikv [commands-extended.md](../aikv/docs/modules/05-commands-extended.md).
 - 详情见 [docs/modules/backup.md](docs/modules/04-backup.md).
 
@@ -237,8 +237,7 @@ aidb 提供 MetaRaft / MultiRaft、slot 路由与 gRPC; **MOVED/ASK、CLUSTER �
 - [DESIGN.md](DESIGN.md) — 设计决策
 - [AGENTS.md](AGENTS.md) — AI 助手与 CI 速查
 - [docs/modules/](docs/modules/) — 域级实现文档
-- [ISSUES.md](ISSUES.md) — 待核实项
 
 ## 待核实
 
-- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-httpoteljson-log-运行在嵌入方-aidb-仅库内指标).
+- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内.

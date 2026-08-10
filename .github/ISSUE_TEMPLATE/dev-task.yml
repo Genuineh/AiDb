@@ -1,0 +1,26 @@
+name: 开发任务
+description: 描述一个开发任务 (bug / 功能 / 重构 / 文档 / 性能)
+title: "[类型] 简述"
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: 类型
+      options: [bug, feature, refactor, docs, perf]
+  - type: textarea
+    id: description
+    attributes:
+      label: 描述
+      placeholder: 这个任务要解决什么?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      placeholder: 完成的标准是什么?
+  - type: textarea
+    id: notes
+    attributes:
+      label: 备注 / 复现步骤
+      placeholder: 相关上下文、复现步骤 (bug 必填)

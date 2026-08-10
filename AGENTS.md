@@ -28,7 +28,7 @@
 - **Span**: 热路径 (`put/get/write/WAL/MemTable/SSTable/block/Raft apply/propose`) 的 `#[tracing::instrument]` 用 `level = "debug"`; 生产 `RUST_LOG=info` 不建热路径 span
 - **指标**: 引擎指标前缀 `aidb_*`, 经 OTLP, **不进** Redis INFO
 - **测试纪律**: 修 bug 必带回归测 ([CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)); 新测写法与落点 ([tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)); 验证 `RUSTFLAGS='-D warnings'` + 测试 `--test-threads=1`, `cluster` feature 需 protoc (完整命令见 [CONTRIBUTING.md](CONTRIBUTING.md))
-- **文档同步 (强制)**: 改公共 API / 行为 / 模块边界必须同步对应 `docs/modules/*.md` 与根文档; commit 消息修 bug 须带 `(ISSUE-NNN)`; 不满足不进 commit (见 [CONTRIBUTING.md §文档同步](CONTRIBUTING.md#文档同步-硬性))
+- **文档同步 (强制)**: 改公共 API / 行为 / 模块边界必须同步对应 `docs/modules/*.md` 与根文档; commit 消息修 bug 须带 GitHub Issue 引用 (`Fixes #NN`); 不满足不进 commit (见 [CONTRIBUTING.md §文档同步](CONTRIBUTING.md#文档同步-硬性))
 
 ## 进一步阅读
 
