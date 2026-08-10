@@ -4,7 +4,7 @@
 
 | 层级 | Cargo 入口 | 源码 | 说明 |
 |------|------------|------|------|
-| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试; test-ui 一级 **单元测试** (`src/**` 路径映射) |
+| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试; console 一级 **单元测试** (`src/**` 路径映射) |
 | **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`); 另有 `meta` / `multi_raft` / `metrics` / `cluster_ops` / `span_contract` 等入口, 以 `tests/*.rs` 与 `Cargo.toml` `[[test]]` 为准 |
 | **L2** | `tests/pipeline.rs`, `tests/engine.rs` | `tests/pipeline/`, `tests/engine/` | 跨模块 / 引擎黑盒 |
 | **L3** | `tests/proptest.rs` | `tests/proptest/` | 随机操作 + 引擎不变式 |
@@ -15,7 +15,7 @@ L5–L7 (协议兼容 / E2E / bench) 在 aikv 或 `benches/`.
 ## 测试写法与范围 (硬性)
 
 对新测 / 改测强制执行. 旧测不要求本次回填. 细粒度「每个 API 必测几条」不在本文范围.
-test-ui 中文一级目录由**路径虚拟映射**生成 (见 aifactory `test-ui/README`); 分类不靠 `@suite`.
+console 中文一级目录由**路径虚拟映射**生成 (见 aifactory `console/README`); 分类不靠 `@suite`.
 
 ### 写法
 

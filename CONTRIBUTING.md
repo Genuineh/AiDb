@@ -234,7 +234,7 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
 | 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
-| `@component` | entry 文件加 `//! @component aidb-{domain}` (与 test-ui B2-v1 一致) |
+| `@component` | entry 文件加 `//! @component aidb-{domain}` (与 console B2-v1 一致) |
 | 运行 | `cargo test --test regression -- --test-threads=1` |
 
 ### 放置决策
@@ -249,6 +249,18 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 示例 (B1.2): ISSUE-001/002 WAL WriteBatch → [`tests/modules/wal/write_batch_boundary.rs`](tests/modules/wal/write_batch_boundary.rs), [`tests/engine/wal_write_batch_boundary.rs`](tests/engine/wal_write_batch_boundary.rs).
 
 现有 L4 场景: `empty_value_compaction`, `bloom` (长期 FPR 统计).
+
+## 文档同步 (硬性)
+
+修改涉及公共 API / 行为 / 模块边界时, 必须同步更新相关文档, 否则视为 incomplete:
+
+1. 改动触及 `docs/modules/*.md` 描述的行为 → 同步更新对应 module
+2. 改动改变对外能力 / 使用方式 / 依赖 → 更新 `README.md` / `DEPLOYMENT.md`
+3. 改动改变设计取舍 → 更新 `DESIGN.md` / `ARCHITECTURE.md`
+4. PR 描述必须列出本次更新的文档文件; 未列视为 incomplete
+5. 修 bug 的 commit 消息须带 `(ISSUE-NNN)` 引用, 关闭条目时更新 `ISSUES.md` 状态
+
+> 文档同步在 code-review 通过后、commit 前执行; 文档无影响时在 PR 描述写明「文档无需变更」.
 
 ## 相关文档
 

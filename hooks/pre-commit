@@ -1,7 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== pre-commit: aidb ==="
+echo "=== pre-commit: $(basename "$PWD") ==="
+
+# 0. 分支保护 (硬性): 禁止在基础分支直接提交
+bash "$(dirname "$0")/check-branch.sh" || exit 1
+
+# 0.5 文档链接检查 (硬性): staged .md 相对链接存在性
+bash "$(dirname "$0")/check-docs-links.sh" || exit 1
 
 cargo fmt --check || {
   echo "ERROR: Format check failed. Run 'cargo fmt' to fix."

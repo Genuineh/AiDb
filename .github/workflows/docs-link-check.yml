@@ -1,0 +1,20 @@
+name: docs-link-check
+on:
+  pull_request:
+    branches: [main, new/main, new/wiqun]
+    paths:
+      - '**/*.md'
+  push:
+    branches: [main, new/main, new/wiqun]
+    paths:
+      - '**/*.md'
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lychee-link-check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --exclude '^file://' --exclude-all-private '**/*.md'
