@@ -60,7 +60,7 @@ src/
 
 Security ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.
 
-触发分支: `main`, `new/main`, `new/wiqun` (见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+触发分支: `main`, `new/main` (见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ### 推送前推荐命令
 

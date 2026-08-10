@@ -6,9 +6,9 @@ concurrency:
 
 on:
   push:
-    branches: [main, new/main, new/wiqun]
+    branches: [main, new/main]
   pull_request:
-    branches: [main, new/main, new/wiqun]
+    branches: [main, new/main]
 
 env:
   CARGO_TERM_COLOR: always

@@ -4,7 +4,7 @@ set -euo pipefail
 
 # 可被 pre-commit 调用, 或直接运行并传入分支名模拟测试
 branch="${1:-$(git rev-parse --abbrev-ref HEAD)}"
-protected="^(new/main|main|new/wiqun)$"
+protected="^(main|new/main)$"
 
 if echo "$branch" | grep -qE "$protected"; then
     echo "ERROR: 禁止在基础分支 '$branch' 上直接提交."

@@ -1,11 +1,11 @@
 name: docs-link-check
 on:
   pull_request:
-    branches: [main, new/main, new/wiqun]
+    branches: [main, new/main]
     paths:
       - '**/*.md'
   push:
-    branches: [main, new/main, new/wiqun]
+    branches: [main, new/main]
     paths:
       - '**/*.md'
 

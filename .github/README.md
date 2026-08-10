@@ -1,6 +1,6 @@
 # 开发与 CI
 
-push/PR 到 `main`、`new/main`、`new/wiqun` 时, 本地 pre-commit 与 GitHub Actions 一起构成质量门禁.
+push/PR 到 `main`、`new/main` 时, 本地 pre-commit 与 GitHub Actions 一起构成质量门禁.
 
 ## 总览
 
@@ -48,7 +48,7 @@ flowchart LR
 
 `pre-commit` 在 fmt / clippy 之前先跑两个硬性检查:
 
-- 分支保护: `hooks/check-branch.sh` 禁止在基础分支 (`new/main`, `main`, `new/wiqun`) 直接提交, 提示先开功能分支; 如需强行提交可用 `git commit --no-verify` 逃生.
+- 分支保护: `hooks/check-branch.sh` 禁止在基础分支 (`new/main`, `main`) 直接提交, 提示先开功能分支; 如需强行提交可用 `git commit --no-verify` 逃生.
 - 文档链接检查: `hooks/check-docs-links.sh` 校验 staged `.md` 的相对链接指向真实存在的本地文件; 越出仓库的 `../` 跨仓链接 (sibling 布局) 跳过.
 
 ## CI 流程
