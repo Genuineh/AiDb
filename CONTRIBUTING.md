@@ -202,7 +202,7 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 2. 分支命名: `{type}/{NN}-{slug}`, 如 `fix/42-key-expiry`.
 3. commit 消息带官方 keyword: `fix: ...\n\nFixes #42`.
 4. PR 描述首行 `Closes #42`, 合并进 default branch 时 GitHub 自动关闭 Issue.
-5. labels 初始化: `./scripts/setup-labels.sh <owner/repo>`; Milestone 按版本创建.
+5. labels 手动创建 (一次性): 类型 `bug` / `feature` / `refactor` / `docs` / `perf` + 状态 `ready` / `in-progress` / `blocked`; 删除默认冗余标签 (如 `enhancement` / `documentation`); Milestone 按版本创建.
 
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
