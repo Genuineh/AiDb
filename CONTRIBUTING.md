@@ -39,28 +39,43 @@ src/
 
 [`hooks/pre-commit`](hooks/pre-commit) 依次执行:
 
-1. `cargo fmt --check`
-2. `cargo clippy --all-targets --all-features` (`RUSTFLAGS='-D warnings'`)
+1. 分支保护 + 文档链接检查 (见下)
+2. `cargo fmt --check`
+3. `cargo clippy --all-targets --all-features` (`RUSTFLAGS='-D warnings'`)
+4. `cargo audit` + `cargo deny check` (见 [`hooks/check-security.sh`](hooks/check-security.sh))
 
 [`hooks/commit-msg`](hooks/commit-msg) 校验提交说明是否遵循 Conventional Commits 规范 (如 `feat:`, `fix:`, `chore:` 等).
 
 **注意**: hook **不跑** `cargo test`; 测试在 CI (或 push 前手动) 执行.
 
+### Security 检查与逃生门
+
+pre-commit 里的 `cargo audit` + `cargo deny check` 与 CI `security.yml` 对齐 (两者都基于 `Cargo.lock` 全量扫描, 天然覆盖所有 feature 依赖). 依赖漏洞修复前 (见 `TEMP-RECORD-BUG.md`), 可临时跳过:
+
+```bash
+SKIP_SECURITY=1 git commit ...   # 仅跳过 security, fmt/clippy 仍执行
+```
+
+`cargo-audit` / `cargo-deny` 未安装时对应检查跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
+
 ## 本地验证 vs CI
 
 | 层级 | 做什么 | 何时失败 |
 |------|--------|----------|
-| pre-commit | fmt + clippy (`--all-features`) | `git commit` |
+| pre-commit | fmt + clippy (`--all-features`) + audit + deny | `git commit` |
 | commit-msg | Conventional Commits 描述格式校验 | `git commit` |
-| CI `test-default` | fmt → clippy → test (默认 feature) | push / PR |
-| CI `test-cluster` | clippy + test (`--features cluster`, 装 protoc) | push / PR |
-| CI `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) | `test-default` 通过后 |
-| CI `bench` | `write_bench` / `read_bench` / `backup_bench` (criterion) | `test-default` 通过后 |
+| CI `lint` | fmt + clippy (默认 feature) | push / PR |
+| CI `test` | test (默认 feature) | `lint` 通过后 |
+| CI `test-cluster` | clippy + test (`--features cluster` 与 `cluster,monitoring`, 装 protoc) | push / PR |
+| CI `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) | push 到 `main` / `new/main`, `test` 通过后 |
+| CI `bench` | `write_bench` / `read_bench` / `backup_bench` (criterion) | `test` 通过后 |
 | Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |
 
 Security ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.
 
-触发分支: `main`, `new/main` (见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+触发分支: `main`, `new/main`. 仅非文档变更触发: `.md` 与 `docs/` 变更被 `paths-ignore` 排除 (文档链接检查由 `docs-link-check` workflow 负责). 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+CI 使用 rust 缓存 (`setup-rust-toolchain` 内置 `rust-cache`, `cache-save-if` 仅在 `main` / `new/main` 保存, PR 分支只读不写).
 
 ### 推送前推荐命令
 
@@ -123,8 +138,8 @@ cargo test --test engine dataflow -- --test-threads=1
 
 | Feature | 命令 | CI |
 |---------|------|-----|
-| `backup` (默认) | `cargo test --test backup -- --test-threads=1` | `test-default` 内含 |
-| `monitoring` | `cargo test --test metrics --features monitoring -- --test-threads=1` | **无独立 job** (本地) |
+| `backup` (默认) | `cargo test --test backup -- --test-threads=1` | `test` 内含 |
+| `monitoring` | `cargo test --test metrics --features monitoring -- --test-threads=1` | `test-cluster` 内含 (`--features cluster,monitoring`); 另有 raft metrics 测 |
 | `cluster` | 见下表 | `test-cluster` 全量 `--features cluster` |
 
 ### Cluster 入口 (`--features cluster`)
@@ -159,11 +174,11 @@ cargo bench --bench backup_bench
 # read_bench 预填充: AIDB_BENCH_PRELOAD=100000 cargo bench --bench read_bench
 ```
 
-CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构建与验证](DEPLOYMENT.md#构建与验证).
+CI 在 `test` 通过后运行上述 bench, 报告以 artifact 保存 (`criterion-bench-reports`, 见 [.github/README.md](.github/README.md)). 详见 [DEPLOYMENT.md §构建与验证](DEPLOYMENT.md#构建与验证).
 
 ### `#[ignore]` 慢测与压测
 
-默认 `cargo test` **跳过** 带 `#[ignore]` 的用例; CI `test-slow` job 通过 `--ignored` 运行全部. 新增慢/压测须使用统一 reason 前缀:
+默认 `cargo test` **跳过** 带 `#[ignore]` 的用例; CI `test-slow` 通过 `--ignored` 运行全部. 该 job **仅在 push 到 `main` / `new/main` 时运行**, PR 分支跳过以缩短反馈. 新增慢/压测须使用统一 reason 前缀:
 
 | 前缀 | 含义 | 示例 |
 |------|------|------|
@@ -198,11 +213,11 @@ CI 在 `test-default` 通过后运行上述 bench. 详见 [DEPLOYMENT.md §构�
 
 每个开发任务对应一个 GitHub Issue, 全链路可追踪:
 
-1. 先创建 GitHub Issue (通用模板含类型/描述/验收标准).
+1. 先创建 GitHub Issue (类型模板见 `.github/ISSUE_TEMPLATE/`: fix / feat / refactor / test / docs / chore / perf).
 2. 分支命名: `{type}/{NN}-{slug}`, 如 `fix/42-key-expiry`.
 3. commit 消息带官方 keyword: `fix: ...\n\nFixes #42`.
 4. PR 描述首行 `Closes #42`, 合并进 default branch 时 GitHub 自动关闭 Issue.
-5. labels 手动创建 (一次性): 类型 `bug` / `feature` / `refactor` / `docs` / `perf` + 状态 `ready` / `in-progress` / `blocked`; 删除默认冗余标签 (如 `enhancement` / `documentation`); Milestone 按版本创建.
+5. labels 手动创建 (一次性): 类型 `feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `perf` (与 commit 类型对齐) + 状态 `ready` / `in-progress` / `blocked`; 删除默认冗余标签 (如 `enhancement` / `documentation` / `bug`); Milestone 按版本创建.
 
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.

@@ -3,21 +3,26 @@ set -euo pipefail
 
 echo "=== pre-commit: $(basename "$PWD") ==="
 
-# 0. 分支保护 (硬性): 禁止在基础分支直接提交
+# Step 1. 分支保护 (硬性): 禁止在基础分支直接提交
 bash "$(dirname "$0")/check-branch.sh" || exit 1
 
-# 0.5 文档链接检查 (硬性): staged .md 相对链接存在性
+# Step 2. 文档链接检查 (硬性): staged .md 相对链接存在性
 bash "$(dirname "$0")/check-docs-links.sh" || exit 1
 
+# Step 3. 代码格式
 cargo fmt --check || {
   echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
   exit 1
 }
 
+# Step 4. 静态检查 (clippy, 全 feature)
 export RUSTFLAGS='-D warnings'
 cargo clippy --all-targets --all-features || {
   echo "ERROR: Clippy found issues under --all-features."
   exit 1
 }
+
+# Step 5. 安全检查 (audit + deny): 与 CI security.yml 对齐
+bash "$(dirname "$0")/check-security.sh" || exit 1
 
 echo "All pre-commit checks passed."

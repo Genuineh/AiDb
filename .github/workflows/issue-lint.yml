@@ -1,11 +1,15 @@
+# PR 规范性检查: 提醒关联 GitHub Issue (可追溯性)
+# 设计为"温柔提醒": 只发评论, 不阻塞合并
 name: issue-lint
 on:
+  # 仅创建与编辑 PR 时触发, 推新 commit 不触发
   pull_request:
     types: [opened, edited]
 
 jobs:
   check-issue-link:
     runs-on: ubuntu-latest
+    # 需要写评论权限
     permissions:
       pull-requests: write
     steps:
@@ -14,16 +18,19 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
+          # 检查 PR 描述里是否有 `closes/fixes/resolves/related #<number>` 形式的关联 Issue
           if echo "$PR_BODY" | grep -qiE '(closes|fixes|resolves|related)\s+#[0-9]+'; then
             echo "linked=true" >> "$GITHUB_OUTPUT"
           else
             echo "linked=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Comment reminder
+        # 仅当未关联 Issue 时发提醒
         if: steps.check.outputs.linked == 'false'
         uses: actions/github-script@v7
         with:
           script: |
+            // 避免重复提醒: 已有同类型文案评论则跳过
             const { data: existing } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -35,6 +42,6 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: `请关联一个 GitHub Issue 便于追溯。在 PR 描述中加入 \`Closes #<issue-number>\` 或 \`Related #<issue-number>\`。`,
+                body: `请至少关联一个 GitHub Issue 便于追溯. 在 PR 描述中加入 \`Closes #<issue-number>\` 或 \`Related #<issue-number>\`. `,
               });
             }

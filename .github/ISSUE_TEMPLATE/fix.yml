@@ -1,0 +1,52 @@
+name: Bug Fix
+description: "Report and fix unexpected behavior (commit type: fix)"
+labels: ["fix"]
+title: "[fix] Summary"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Describe what happened, not why you think it happened** — a guess about the
+        cause often misleads triage. A minimal reproducer is the single most useful thing.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: aidb version or commit SHA
+      placeholder: "0.14.10 or commit abcdef0"
+    validations:
+      required: true
+  - type: textarea
+    id: what_did
+    attributes:
+      label: What you did
+      description: The operation or code that triggered the issue
+      placeholder: Steps to reproduce / minimal code snippet
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The result you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: The error, wrong result, or panic — quote the exact message
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: A minimal example demonstrating the issue; a failing test or standalone snippet works
+      render: rust
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Environment details (OS / Rust version), related issues, etc.
