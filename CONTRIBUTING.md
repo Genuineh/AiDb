@@ -67,6 +67,7 @@ SKIP_SECURITY=1 git commit ...   # 仅跳过 security, fmt/clippy 仍执行
 | CI `lint` | fmt + clippy (默认 feature) | push / PR |
 | CI `test` | test (默认 feature) | `lint` 通过后 |
 | CI `test-cluster` | clippy + test (`--features cluster` 与 `cluster,monitoring`, 装 protoc) | push / PR |
+| CI `test-compression` | test (`--features compression`, Snap/LZ4 sstable 多 block roundtrip) | push / PR |
 | CI `test-slow` | `cargo test -- --ignored` (slow + stress 集成测) | push 到 `main` / `new/main`, `test` 通过后 |
 | CI `bench` | `write_bench` / `read_bench` / `backup_bench` (criterion) | `test` 通过后 |
 | Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |
@@ -86,6 +87,7 @@ cargo clippy --all-targets
 cargo clippy --all-targets --features cluster   # 需 protoc
 cargo test -- --test-threads=1
 cargo test --features cluster -- --test-threads=1
+cargo test --features compression --test sstable -- multi_block_read_with -- --test-threads=1  # Snap/LZ4
 ```
 
 慢测与压测 (与 CI `test-slow` 一致):
@@ -140,6 +142,7 @@ cargo test --test engine dataflow -- --test-threads=1
 |---------|------|-----|
 | `backup` (默认) | `cargo test --test backup -- --test-threads=1` | `test` 内含 |
 | `monitoring` | `cargo test --test metrics --features monitoring -- --test-threads=1` | `test-cluster` 内含 (`--features cluster,monitoring`); 另有 raft metrics 测 |
+| `compression` | `cargo test --features compression --test sstable -- multi_block_read_with -- --test-threads=1` | `test-compression` (Snap/LZ4 多 block roundtrip) |
 | `cluster` | 见下表 | `test-cluster` 全量 `--features cluster` |
 
 ### Cluster 入口 (`--features cluster`)
@@ -156,6 +159,12 @@ CI 等价于:
 
 ```bash
 cargo test --features cluster -- --test-threads=1
+```
+
+partition/failover (脑裂) 测试依赖故障注入框架, 需 `cluster-test-util`; 仅 3 个测试函数名精确命中, 避免重复跑 raft 全量 (~621 个):
+
+```bash
+cargo test --features cluster,cluster-test-util --test raft -- judge_leader_quorum_rules network_blackhole_drops_rpc lease_read_fails_after_leader_isolated -- --test-threads=1
 ```
 
 ### CI 全量 (与 push 门禁一致)
@@ -231,6 +240,7 @@ CI 在 `test` 通过后运行上述 bench, 报告以 artifact 保存 (`criterion
 - [ ] clippy 默认 + cluster 无警告 (`RUSTFLAGS='-D warnings'`)
 - [ ] `cargo test -- --test-threads=1` 通过
 - [ ] 若改 cluster: `cargo test --features cluster -- --test-threads=1` 通过
+- [ ] 若改 compression: `cargo test --features compression --test sstable -- multi_block_read_with -- --test-threads=1` 通过
 - [ ] 若修 bug: 回归测已添加且 `cargo test --test regression -- --test-threads=1` 含新用例 (或见下节放置决策)
 - [ ] 若新增/改动测试: 落点符合 [tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)
 - [ ] 若改动 `tests/`: 文件有 `//! @component` + 中文摘要; 每个新增/改动的 `#[test]` 有中文 `///`
