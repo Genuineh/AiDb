@@ -24,7 +24,9 @@ Feature 组合与构建命令见 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 与 AiKv
 
-[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 OTLP 指标导出 (生产指标唯一出口, HTTP 仅 `/health`). AiDb 负责 LSM 存储与 Raft/slot 基础设施; monorepo 内 AiKv 通过 `path = "../aidb"` 依赖.
+[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 OTLP 指标导出 (生产指标唯一出口, HTTP 仅 `/health`). 
+AiDb 负责 LSM 存储与 Raft/slot 基础设施; AiKv 通过 `Cargo.toml` **git 依赖**引用本库 (`branch = "new/main"`), 
+本地开发可用 `~/.cargo/config.toml` `[patch]` 覆盖为 sibling path (见 [aikv README §与 AiDb](../aikv/README.md#与-aidb)).
 
 ## 快速开始
 
