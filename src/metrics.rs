@@ -3,7 +3,9 @@
 //! aidb 无独立 OTLP 出口; 嵌入方 (aikv) 初始化 global `MeterProvider` 后调用 `init()`.
 
 #[cfg(feature = "monitoring")]
-use std::sync::{Arc, OnceLock};
+use parking_lot::RwLock;
+#[cfg(feature = "monitoring")]
+use std::sync::Arc;
 
 #[cfg(feature = "monitoring")]
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
@@ -11,7 +13,7 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::KeyValue;
 
 #[cfg(feature = "monitoring")]
-static METRICS: OnceLock<Arc<OtelMetrics>> = OnceLock::new();
+static METRICS: RwLock<Option<Arc<OtelMetrics>>> = RwLock::new(None);
 
 #[cfg(feature = "monitoring")]
 const ATTR_OP: &str = "aidb.operation.name";
@@ -222,8 +224,8 @@ impl OtelMetrics {
 }
 
 #[cfg(feature = "monitoring")]
-fn metrics() -> Option<&'static Arc<OtelMetrics>> {
-    METRICS.get()
+fn metrics() -> Option<Arc<OtelMetrics>> {
+    METRICS.read().clone()
 }
 
 #[cfg(feature = "monitoring")]
@@ -247,14 +249,14 @@ fn kv(label: &str, value: impl Into<String>) -> KeyValue {
 /// 绑定 OTel Meter (幂等). 通常由 `init()` 在 global provider 就绪后调用.
 #[cfg(feature = "monitoring")]
 pub fn init_otel(meter: Meter) {
-    let _ = METRICS.set(Arc::new(OtelMetrics::new(meter)));
+    *METRICS.write() = Some(Arc::new(OtelMetrics::new(meter)));
 }
 
 /// 初始化 OTel 指标 (幂等). 需要 global `MeterProvider` 已由嵌入方设置.
 pub fn init() {
     #[cfg(feature = "monitoring")]
     {
-        if METRICS.get().is_none() {
+        if METRICS.read().is_none() {
             let meter = opentelemetry::global::meter("aidb");
             init_otel(meter);
         }
@@ -476,6 +478,7 @@ pub mod testutil {
     use std::sync::{Arc, OnceLock};
 
     use opentelemetry::global;
+    use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 
@@ -485,7 +488,10 @@ pub mod testutil {
     /// 测试用: 安装 InMemory exporter 并 init aidb metrics.
     pub fn init_in_memory() -> InMemoryMetricExporter {
         if let Some(exporter) = TEST_EXPORTER.get() {
-            super::init();
+            if let Some(provider) = TEST_PROVIDER.get() {
+                let meter = provider.meter("aidb");
+                super::init_otel(meter);
+            }
             return exporter.clone();
         }
         let exporter = InMemoryMetricExporter::default();
@@ -496,7 +502,8 @@ pub mod testutil {
         let provider = Arc::new(provider);
         let _ = TEST_PROVIDER.set(Arc::clone(&provider));
         let _ = TEST_EXPORTER.set(exporter.clone());
-        super::init();
+        let meter = provider.meter("aidb");
+        super::init_otel(meter);
         exporter
     }
 

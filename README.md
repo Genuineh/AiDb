@@ -1,91 +1,156 @@
 # AiDb
 
-基于 LSM-Tree 的嵌入式 KV 存储引擎 (Rust lib crate, 当前 **0.14.x**). 核心 `engine` 始终编译; 备份、集群、指标通过 Cargo feature 按需启用. **AiDb 不是网络服务** — 无内置 HTTP listener.
+[![Rust 2021](https://img.shields.io/badge/Rust-2021-blue.svg)](https://www.rust-lang.org)
+[![Version](https://img.shields.io/badge/version-0.14.10-orange.svg)](Cargo.toml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![CI Status](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
-## 特性
+> **AiDb** 是一个纯 Rust 实现的高性能、轻量级**嵌入式 LSM-Tree 键值存储引擎库** (lib crate).  
+> 既可作为单机应用内嵌的零依赖 KV 存储, 也可通过 Cargo Feature 开启基于 Raft 的分布式集群能力.
 
-**单机引擎** (默认):
+## 为什么开发 AiDb (Why AiDb?)
 
-- WAL 持久化, SkipMap MemTable, SSTable 分层存储
-- Leveled Compaction, Bloom Filter, Block Cache
-- `put` / `get` / `delete` / `scan`, WriteBatch 原子写, MVCC Snapshot
-- Checkpoint 目录快照 (备份底层)
+- **摆脱传统 C/C++ 引擎的包袱与 FFI 痛点**: RocksDB, LevelDB 等为兼容各方历史需求愈发庞大厚重; 引入 C++ FFI 亦带来跨平台编译负担与内存安全盲区.
+- **弥补纯 Rust 生产级与分布式存储空白**: 现有纯 Rust 方案多偏向教学原型或局限于单机, 缺乏完善的 Compaction 机制、MVCC 快照与向分布式共识平滑扩展的能力.
+- **发挥 Rust 现代语言优势**: 结合内存安全与无畏并发, 打造轻量纯粹、零 C/C++ 依赖、兼具单机极简内嵌与 Raft 集群扩展的现代化 LSM 存储底座.
 
-**可选能力** (feature):
+## 核心亮点 (Key Highlights)
 
-| 能力 | Feature | 说明 |
-|------|---------|------|
-| 全量备份与恢复 | `backup` (默认开启) | `BackupManager`, `RecoveryManager` |
-| 分布式存储 | `cluster` | MetaRaft 控制面 + MultiRaft 数据面, 16384 slot (CRC16) |
-| 可观测指标 | `monitoring` | `aidb_*` 系列 OTel 指标; 嵌入方设 global `MeterProvider` 后经 OTLP 导出 |
-| 块压缩 | `compression` | SSTable Data Block Snap/Lz4 压缩; 启用时 `Options::default()` 默认 Snap (未启用则默认 None) |
+- **Pure Rust 实现**: 内存安全、性能高效、跨平台开箱即用.
+- **LSM 存储引擎**: WAL + SkipMap + Leveled Compaction 分层存储, 结合 Bloom Filter 与 LRU Block Cache 降低读写放大.
+- **存储原语支持事务**: 支持原子批量写 (`WriteBatch`)、MVCC 快照读 (`Snapshot`) 及目录级 Checkpoint.
+- **原生分布式共识**: 基于 OpenRaft 实现 MetaRaft + MultiRaft, 内置 16384 槽路由与在线迁移.
+- **高度模块化设计**: 核心引擎零外部可选依赖; 集群、备份、压缩与监控等能力均通过 Cargo Feature 解耦.
+- **云原生可观测性**: 支持基于 OpenTelemetry 的指标导出 (`aidb_*`) 与全链路 tracing span 跟踪.
 
-Feature 组合与构建命令见 [DEPLOYMENT.md](DEPLOYMENT.md).
+## 架构概览 (Architecture at a Glance)
 
-## 与 AiKv
+```mermaid
+flowchart TB
+    subgraph App [接入层 / Application]
+        Consumer[业务调用方 / 协议层 如 AiKv]
+    end
 
-[AiKv](../aikv/) 在本库之上实现 Redis RESP、Cluster 重定向 (MOVED/ASK) 与 OTLP 指标导出 (生产指标唯一出口, HTTP 仅 `/health`). 
-AiDb 负责 LSM 存储与 Raft/slot 基础设施; AiKv 通过 `Cargo.toml` **git 依赖**引用本库 (`branch = "new/main"`), 
-本地开发可用 `~/.cargo/config.toml` `[patch]` 覆盖为 sibling path (见 [aikv README §与 AiDb](../aikv/README.md#与-aidb)).
+    subgraph API [公共接口 aidb::*]
+        DB[DB 同步 API]
+        Batch[WriteBatch]
+        Snap[Snapshot MVCC]
+        Opts[Options]
+    end
+
+    subgraph Engine [核心 LSM 存储引擎 始终编译]
+        WAL[WAL 预写日志]
+        MT[MemTable SkipMap]
+        SST[SSTable 分层存储]
+        Comp[Leveled Compaction]
+        Filter[Bloom Filter]
+        Cache[LRU BlockCache]
+    end
+
+    subgraph Extensions [可选功能模块 Cargo Features]
+        Cluster[cluster: MetaRaft + MultiRaft 16384 Slot, gRPC]
+        Backup[backup: BackupManager & RecoveryManager]
+        Compress[compression: Snap / LZ4 块压缩]
+        Monitor[monitoring: OpenTelemetry 指标 aidb_*]
+    end
+
+    Consumer --> API
+    API --> Engine
+    WAL --> MT --> SST
+    Comp --> SST
+    Filter --> SST
+    Cache --> SST
+    Extensions -.-> Engine
+```
 
 ## 快速开始
 
+### 添加依赖
+
+在 `Cargo.toml` 中引入:
+
 ```toml
 [dependencies]
-aidb = "0.14"
+aidb = "0.14.10"
 ```
+
+### 基础读写示例
 
 ```rust
 use aidb::{DB, config::Options};
 
-let db = DB::open("/tmp/aidb-data", Options::default())?;
-db.put(b"hello", b"world")?;
-assert_eq!(db.get(b"hello")?, Some(b"world".to_vec()));
-db.close()?;
+fn main() -> aidb::Result<()> {
+    // 1. 打开或创建数据库
+    let db = DB::open("/tmp/aidb-demo", Options::default())?;
+
+    // 2. 基础写入与点查 (CRUD)
+    db.put(b"hello", b"world")?;
+    assert_eq!(db.get(b"hello")?, Some(b"world".to_vec()));
+
+    // 3. 删除与关闭
+    db.delete(b"hello")?;
+    db.close()?;
+    Ok(())
+}
 ```
 
-仓库内运行完整示例:
+## 示例 (Examples)
+
+更多完整用例可直接在仓库内运行:
+
+| 示例场景 | 源码入口 | 包含能力 | 运行命令 |
+| --- | --- | --- | --- |
+| **基础与进阶操作** | [`examples/basic.rs`](examples/basic.rs) | CRUD、`WriteBatch` 批量写、`scan` 范围扫描、MVCC `Snapshot` 快照 | `cargo run --example basic` |
+| **备份与恢复** | [`examples/backup.rs`](examples/backup.rs) | 目录快照创建、校验和验证与数据恢复 | `cargo run --example backup` |
+| **分布式集群路由** | [`examples/cluster.rs`](examples/cluster.rs) | 16384 Slot 槽位计算与 Hash Tag 路由演示 | `cargo run --features cluster --example cluster` |
+
+详细说明见 [examples/README.md](examples/README.md).
+
+## 功能特性 (Feature Matrix)
+
+| Feature | 默认状态 | 核心能力 | 依赖与说明 |
+| --- | --- | --- | --- |
+| `default` | 包含 `backup` | LSM 核心存储引擎 (WAL、MemTable、SSTable、Compaction、MVCC 快照) | 零额外外部环境依赖 |
+| `backup` | 默认启用 | 全量数据备份、校验和生成与数据恢复 (`BackupManager` / `RecoveryManager`) | 基于 `ring` / `hex` / `serde_json` |
+| `compression` | 按需开启 | SSTable Data Block 块级压缩 (支持 Snap 与 LZ4) | 启用时 `Options` 默认使用 Snap 压缩 |
+| `cluster` | 按需开启 | MetaRaft 控制面 + MultiRaft 数据面 (16384 Slot 路由、在线迁移、gRPC 分发) | 基于 `openraft` / `tonic`, 构建需 `protoc` |
+| `monitoring` | 按需开启 | OpenTelemetry 指标埋点 (`aidb_*`) 与 Tracing 链路上下文注入 | 宿主应用设置 global `MeterProvider` 后经 OTLP 导出 |
+
+构建与 Feature 详细配置见 [docs/deployment.md](docs/deployment.md).
+
+## 基准测试 (Benchmarks)
+
+基准测试基于 [criterion](https://github.com/bheisler/criterion.rs):
 
 ```bash
-cargo run --example basic
+# 运行全部基准测试
+cargo bench
+
+# 运行单项基准测试
+cargo bench --bench write_bench
+cargo bench --bench read_bench
+cargo bench --bench backup_bench
 ```
 
-## 示例
+性能指标与压测详情请参考 [docs/deployment.md §构建与验证](docs/deployment.md#构建与验证).
 
-| 示例 | 说明 | 运行 |
-|------|------|------|
-| `basic` | CRUD、批量写、扫描、快照 | `cargo run --example basic` |
-| `backup` | 备份创建与恢复 | `cargo run --example backup` |
-| `cluster` | CRC16 槽位 / hash tag 演示 | `cargo run --features cluster --example cluster` |
+## 生态系统 (Ecosystem)
 
-详见 [examples/README.md](examples/README.md).
+- **[wiqun/AiKv](https://github.com/wiqun/AiKv)**: 基于 AiDb 构建的高性能 Redis RESP2/RESP3 兼容键值服务.
 
-## 基准测试
+## 文档导航
 
-使用 [criterion](https://github.com/bheisler/criterion.rs): `cargo bench`. 主要 bench: `write_bench`, `read_bench`, `backup_bench`; `read_bench` 可用环境变量 `AIDB_BENCH_PRELOAD` 调整预填充规模. 详见 [DEPLOYMENT.md §构建与验证](DEPLOYMENT.md#构建与验证).
+开发文档总览请查阅 [docs/README.md](docs/README.md).
 
-## 文档
+| 文档分类 | 入口文件 | 适用场景与内容 |
+| --- | --- | --- |
+| **系统架构** | [ARCHITECTURE.md](ARCHITECTURE.md) | LSM 读写分层、Leveled Compaction 机制、MultiRaft 拓扑与数据流 |
+| **设计决策** | [docs/design.md](docs/design.md) | 关键技术选型与跨模块架构权衡 (Trade-offs) |
+| **开发与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) | Git Hooks、CI 门禁、完整测试矩阵、回归测试规范与 PR 流程 |
+| **部署与运维** | [docs/deployment.md](docs/deployment.md) | Feature 组合构建、嵌入指南、数据目录规范与参数调优 |
+| **模块详解** | [docs/modules/](docs/modules/) | 各子模块深入实现 (WAL, MemTable, SSTable, Cluster, Backup, Metrics) |
+| **版本记录** | [CHANGELOG.md](CHANGELOG.md) | 历史版本与发布变更记录 |
 
-开发文档 hub: [docs/README.md](docs/README.md) (汇总文档 + modules WHEN 路由).
+## 许可证
 
-| 文档 | 内容 |
-|------|------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、与 AiKv 边界 |
-| [DESIGN.md](DESIGN.md) | 跨模块设计决策 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | 构建、feature、嵌入、目录与运维 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |
-| [docs/modules/engine.md](docs/modules/01-engine.md) | WAL, MemTable, 写路径, `DB` API |
-| [docs/modules/engine-storage.md](docs/modules/02-engine-storage.md) | SSTable, compaction, Bloom, cache |
-| [docs/modules/cluster.md](docs/modules/03-cluster.md) | MetaRaft, MultiRaft, slot 迁移 |
-| [docs/modules/backup.md](docs/modules/04-backup.md) | BackupManager, 恢复流程 |
-| [docs/modules/observability.md](docs/modules/05-observability.md) | 指标与 tracing |
-
-## 待核实
-
-- HTTP `/metrics` 与 OTel 运行在嵌入方 (AiKv), 非 aidb 库内.
-
-## 许可
-
-[MIT OR Apache-2.0](LICENSE) (见 [Cargo.toml](Cargo.toml)).
+本项目采用 [MIT OR Apache-2.0](LICENSE) 双重开源许可证 (见 [Cargo.toml](Cargo.toml)).

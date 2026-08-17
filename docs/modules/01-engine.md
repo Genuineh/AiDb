@@ -10,12 +10,13 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 - 改 `engine/wal`, `engine/memtable`, `engine/db` 或 `DB::*` 公共 API
 - 排查写路径、WAL 恢复、MemTable freeze、WriteBatch 原子性、Snapshot 读
 - **不覆盖**: SSTable 布局 / compaction / Bloom / BlockCache / checkpoint → [engine-storage.md](02-engine-storage.md)
+- **不覆盖**: 分布式共识与 Raft 日志适配 → [cluster.md](03-cluster.md)
 
 ## 代码地图
 
 | 路径 | 职责 | 入口 |
-|------|------|------|
-| `engine/mod.rs` | 引擎模块根; 子模块声明 | — |
+| --- | --- | --- |
+| `engine/mod.rs` | 引擎模块根; 子模块声明与组织 | — |
 | `engine/wal/mod.rs` | WAL 模块根; re-export | — |
 | `engine/wal/record.rs` | Record 物理格式; `WalEntry` 编解码; `OpType` | `WalEntry::encode`, `OpType` |
 | `engine/wal/writer.rs` | 追加 Record; 32KB block padding; sync | `Writer::write_record` |
@@ -32,14 +33,14 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 | `engine/db/mod.rs` | DB 模块根; re-export | — |
 | `engine/db/inner.rs` | DB 总协调: open/写/读/flush/close/后台线程 | `DB::open`, `put`, `write`, `get` |
 | `engine/db/write_batch.rs` | 批写容器 | `WriteBatch`, `WriteOp` |
-| `engine/db/replay.rs` | WAL entry → MemTable | `replay_entries` |
+| `engine/db/replay.rs` | WAL entry → MemTable 回放 | `replay_entries` |
 | `engine/db/snapshot.rs` | MVCC 快照; `SnapshotList` | `Snapshot::get`, `SnapshotList` |
 | `engine/db/iterator.rs` | 跨 MemTable + SSTable 归并迭代 | `DBIterator` |
 | `engine/db/numbers.rs` | WAL 文件编号扫描 | `scan_next_wal_file_number` |
 | `src/config.rs` | 引擎配置: `Options` / `ClusterConfig` / `MigrationConfig` / `CompressionType` | `Options::for_testing`, `Options::validate` |
 | `src/error.rs` | 类型化错误 (`thiserror`); `Cluster` 变体需 feature `cluster` | `Error`, `Result` |
 
-公共 re-export (`lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `Snapshot`, `DbIterGuard`.
+公共 re-export (`src/lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `Snapshot`, `DbIterGuard`.
 
 ## 关键 invariant (勿破坏)
 
@@ -51,6 +52,7 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 - **MemTable freeze**: `freeze(self)` 消费可变表; `flush_seq` = 冻结时刻 sequence.
 - **Snapshot 创建**: 在 `write_lock` 下读 sequence 并注册 `SnapshotList` (register 必须发生在释放锁之前); Drop 时 unregister. Compaction 读取 `min_snapshot_sequence()` 时同样短暂持有 `write_lock`, 与 snapshot 创建之间形成 happens-before, 避免读到"seq 已确定但尚未 register"的中间态.
 - **iter/scan vs get**: `iter`/`scan` 使用 `K_MAX_SEQUENCE`; `get` 使用 `sequence.load()` — 行为 intentionally 不同.
+- **delete_range**: O(1) 写入 MemTable RangeTombstone 与 WAL `TypeRangeDelete`, 非扫 key 逐条删除.
 
 ## 数据流
 
@@ -58,33 +60,33 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 
 ```mermaid
 flowchart LR
-  W[check_write_stall] --> L[write_lock]
-  L --> S[alloc_sequence]
-  S --> WAL[WAL append]
-  WAL --> MT[MemTable put/delete]
-  MT --> F{memtable_size?}
-  F -->|yes| FR[freeze → immutable]
-  FR --> BG[后台 flush 线程]
+    W[check_write_stall] --> L[write_lock]
+    L --> S[alloc_sequence]
+    S --> WAL[WAL append]
+    WAL --> MT[MemTable put/delete]
+    MT --> F{memtable_size?}
+    F -->|yes| FR[freeze → immutable]
+    FR --> BG[后台 flush 线程]
 ```
 
 ### 打开 (open + recover)
 
 ```mermaid
 flowchart TD
-  A[Options::validate] --> B[WALManager::recover]
-  B --> C[replay_entries → MemTable]
-  C --> D[VersionSet recover / bootstrap]
-  D --> E[load SSTables]
-  E --> F["sequence = max(WAL, MemTable, SST) + 1"]
-  F --> G[WALManager::open + LOCK]
-  G --> H[flush / compaction 后台线程]
+    A[Options::validate] --> B[WALManager::recover]
+    B --> C[replay_entries → MemTable]
+    C --> D[VersionSet recover / bootstrap]
+    D --> E[load SSTables]
+    E --> F["sequence = max(WAL, MemTable, SST) + 1"]
+    F --> G[WALManager::open + LOCK]
+    G --> H[flush / compaction 后台线程]
 ```
 
 SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 
 ### 读取 (get / snapshot)
 
-`get_at_sequence(key, max_seq)`: 构造 `seek_key = encode_internal_key(key, max_seq, TypePut)` → active MemTable → immutable (新→旧) → SSTable 层 (L0 新→旧, L1+ 二分).
+`get_at_sequence(key, max_seq)`: 构造 `seek_key = encode_internal_key(key, max_seq, TypePut)` → active MemTable → immutable (新→旧) → SSTable 层 (L0 新→旧, L1+ 二分定位).
 
 ## 关键类型与 API
 
@@ -93,9 +95,10 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 逻辑 WAL 记录 (非 InternalKey):
 
 | OpType | 含义 | has_value |
-|--------|------|-----------|
+| --- | --- | --- |
 | `TypePut` | put | true |
 | `TypeDelete` | delete | false |
+| `TypeRangeDelete` | delete_range 墓碑 | true (end_key) |
 | `BatchStart` | WriteBatch 边界; value = op count (u32 LE) | true |
 | `FileHeader` | 文件元数据; key=`WAL` | true |
 
@@ -108,20 +111,20 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 ### DB 公共 API (摘录)
 
 | API | 说明 |
-|-----|------|
-| `DB::open(path, Options)` | 恢复 + 启动后台 flush/compaction |
-| `put` / `delete` | 单条写; 连续 sequence |
-| `write(&WriteBatch)` | 原子 batch; BatchStart + 连续 seq; 一次 `sync_wal` |
-| `get` | 最新可见版本 |
-| `delete_range(start, end)` | RangeTombstone O(1) 写入 (非 scan + WriteBatch); 记 WAL + memtable `put_range_delete` |
-| `snapshot()` | MVCC 点快照 |
-| `iter` / `scan` | 全表或范围迭代 (见 invariant) |
-| `flush` / `close` | 手动 flush; 优雅关闭 (停线程 → flush → WAL sync) |
+| --- | --- |
+| `DB::open(path, Options)` | 恢复 + 启动后台 flush/compaction 线程 |
+| `put(key, value)` / `delete(key)` | 单条写; 分配连续 sequence |
+| `write(&WriteBatch)` | 原子批量写; BatchStart + 连续 seq; 一次 `sync_wal` |
+| `get(key)` | 读取最新可见版本 |
+| `delete_range(start, end)` | RangeTombstone O(1) 写入; 记 WAL + memtable `put_range_delete` |
+| `snapshot()` | 创建 MVCC 点快照 |
+| `iter()` / `scan(range)` | 全表或范围迭代 (见 invariant) |
+| `flush()` / `close()` | 手动 flush; 优雅关闭 (停线程 → flush → WAL sync) |
 
 ### Snapshot
 
 - `Snapshot::get/iter/scan` 固定 `sequence` 边界, 仅见 `seq <= snapshot_seq`.
-- `SnapshotList::min_snapshot_sequence()` 供 compaction 保留旧版本 (见 engine-storage).
+- `SnapshotList::min_snapshot_sequence()` 供 compaction 保留旧版本 (见 [engine-storage.md](02-engine-storage.md)).
 
 ## 常见任务
 
@@ -162,26 +165,24 @@ db.put(b"k", b"new")?;
 assert_eq!(snap.get(b"k")?, Some(b"old".to_vec()));
 ```
 
-### 跑 engine 相关测试
-
-见下方「测试」节.
-
 ## 配置与 feature flags
 
-引擎写路径相关 `Options` 字段 (`config.rs`):
+引擎写路径相关 `Options` 字段 (`src/config.rs`):
 
 | 项 | 默认 (生产) | 说明 |
-|----|-------------|------|
+| --- | --- | --- |
 | `memtable_size` | 64 MiB | freeze 阈值 |
-| `max_write_buffer_number` | 2 | immutable 上限; 超出背压 |
+| `max_write_buffer_number` | 2 | immutable 上限; 超出触发写背压 |
 | `min_write_buffer_number_to_merge` | 1 | flush 合并控制 |
 | `use_wal` | true | 禁用则 crash 不保证持久 |
 | `sync_wal` | false | true = 每条写后 fsync |
 | `strict_wal_recovery` | false | true = CRC 损坏报 `Corruption` |
 | `max_wal_size` | 64 MiB | WAL 自动轮转 (0=禁用) |
-| `flush_poll_ms` | 500 | 后台 flush 轮询 |
-| `write_stall_poll_ms` | 10 | L0 过多时写 stall |
-| `memtable_wait_iters` / `memtable_wait_interval_ms` | 10000 / 1 | immutable 满时等待 flush |
+| `group_commit_batch_us` | 0 | 组提交等待窗口 (微秒, 0=无额外等待) |
+| `flush_poll_ms` | 500 | 后台 flush 轮询 (毫秒) |
+| `write_stall_poll_ms` | 10 | L0 过多时写 stall 轮询间隔 (毫秒) |
+| `write_stall_slowdown_max_ms` | 100 | Slowdown 最大 sleep 时间 (毫秒) |
+| `memtable_wait_iters` / `memtable_wait_interval_ms` | 10000 / 1 | immutable 满时等待 flush (最大轮询次数 / 间隔毫秒) |
 | `background_compaction` | true | false 时无写 stall (测试用) |
 
 SSTable / compaction / cache 字段见 [engine-storage.md](02-engine-storage.md). `Options::for_testing()` 缩小 memtable/WAL 便于单测.
@@ -196,13 +197,13 @@ cargo test --test engine --test snapshot -- --test-threads=1
 ```
 
 | 测试集 | 覆盖 |
-|--------|------|
-| `tests/wal` | Record 格式, recover, BatchStart rollback, LOCK, cleanup, **WriteBatch/WAL rotate 边界** |
-| `tests/memtable` | InternalKey, put/delete/get, freeze |
-| `tests/pipeline/wal_memtable` | recover → replay 管线 |
-| `tests/db` | DB 模块 (wal_corruption, bootstrap 等) |
-| `tests/engine` | 黑盒场景 + crash_recovery |
-| `tests/snapshot` | MVCC + compaction 并发保版本 |
+| --- | --- |
+| `tests/wal.rs` | Record 格式, recover, BatchStart rollback, LOCK, cleanup, WriteBatch/WAL rotate 边界 |
+| `tests/memtable.rs` | InternalKey 编码, put/delete/get, freeze |
+| `tests/pipeline/wal_memtable.rs` | recover → replay 管线 |
+| `tests/db.rs` | DB 模块 (wal_corruption, bootstrap, prod_options, scan_boundary 等) |
+| `tests/engine.rs` | 黑盒场景 + crash_recovery |
+| `tests/snapshot.rs` | MVCC + compaction 并发保版本 |
 
 ## 已知限制
 
@@ -210,7 +211,3 @@ cargo test --test engine --test snapshot -- --test-threads=1
 - `iter`/`scan` 不过滤到当前 sequence, 使用 `K_MAX_SEQUENCE` 见全部已写入版本.
 - `total_key_count` 在 `write_lock` 内通过 active MemTable 快速检查 key 存在性, 仅作近似统计 / metrics (AtomicUsize Relaxed 序, 不持久化).
 - 数据目录格式与旧版 `aidb-oldmain` **不兼容** (文本 WAL → 二进制 WalEntry).
-
-## 待核实
-
-- 无.

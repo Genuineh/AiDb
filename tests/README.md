@@ -104,7 +104,7 @@ cargo test --features cluster raft_3nodes -- --test-threads=1
 
 ## 回归测 (L4, 必带)
 
-bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-必带).
+bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-bugfix-必带).
 
 | 场景 | 落点 |
 |------|------|
@@ -114,7 +114,7 @@ bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBU
 
 ## 慢测与压测 (`#[ignore]`)
 
-前缀: `slow:` / `stress:`. 详见 [CONTRIBUTING.md](../CONTRIBUTING.md#ignore-慢测与压测).
+前缀: `slow:` / `stress:`. 详见 [CONTRIBUTING.md §慢测与压测](../CONTRIBUTING.md#慢测与压测-ignore).
 
 | 测试 | 标签 | test target | CI job |
 |------|------|-------------|--------|
