@@ -31,6 +31,7 @@ const HOT_PATH_SPANS: &[(&str, &str)] = &[
     ("src/engine/db/inner.rs", "name = \"db_delete\""),
     ("src/engine/db/inner.rs", "name = \"db_scan\""),
     ("src/engine/db/inner.rs", "name = \"db_write_batch\""),
+    ("src/engine/db/inner.rs", "name = \"db_write_batch_no_wal\""),
     ("src/engine/db/inner.rs", "name = \"db_delete_range\""),
     ("src/engine/memtable/table.rs", "name = \"mem_put\""),
     ("src/engine/memtable/table.rs", "name = \"mem_get\""),

@@ -201,7 +201,7 @@ impl SSTableBuilder {
             let num_bits = filter.num_bits();
             let num_hashes = filter.num_hashes();
             let _bloom_span =
-                tracing::info_span!("bloom_build", key_count, num_bits, num_hashes).entered();
+                tracing::debug_span!("bloom_build", key_count, num_bits, num_hashes).entered();
             let encoded = filter.encode();
             tracing::debug!(
               target: "sst",
@@ -263,7 +263,7 @@ impl SSTableBuilder {
         fs::rename(&self.tmp_path, &self.final_path)?;
         let file_size = fs::metadata(&self.final_path)?.len();
 
-        tracing::info!(
+        tracing::debug!(
           target: "sst",
           block_count = self.block_count,
           file_size,
