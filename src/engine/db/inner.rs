@@ -908,7 +908,7 @@ impl DB {
         }
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
-        tracing::info!(
+        tracing::debug!(
             target: "perf",
             op_count = batch.len(),
             total_us,
@@ -987,7 +987,7 @@ impl DB {
         }
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
-        tracing::info!(
+        tracing::debug!(
             target: "perf",
             op_count = batch.len(),
             total_us,
@@ -1004,7 +1004,7 @@ impl DB {
     }
 
     /// 删除 `[start, end)` 半开区间内的全部 user key (RangeTombstone, O(1) 写入).
-    #[tracing::instrument(name = "db_delete_range", skip(self, start, end))]
+    #[tracing::instrument(level = "debug", name = "db_delete_range", skip(self, start, end))]
     pub fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {
         self.check_not_closed()?;
         if start >= end {

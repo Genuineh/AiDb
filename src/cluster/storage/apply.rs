@@ -201,7 +201,7 @@ impl OpenRaftStorage {
                         self.state.write().last_applied = Some(last_log_id);
 
                         let count = batched_responses.len();
-                        tracing::info!(
+                        tracing::debug!(
                             target: "perf",
                             group_id = self.group_id,
                             batch_size = count,

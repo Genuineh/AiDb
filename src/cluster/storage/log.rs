@@ -120,7 +120,7 @@ impl OpenRaftStorage {
         if let Some(last) = entries.last() {
             state.last_log_id = Some(last.log_id);
         }
-        tracing::info!(
+        tracing::debug!(
             target: "perf",
             group_id = self.group_id,
             entry_count = entries.len(),

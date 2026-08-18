@@ -429,7 +429,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                 )));
             }
         };
-        tracing::info!(
+        tracing::debug!(
             target: "perf",
             group_id,
             grpc_us = t0.elapsed().as_micros(),
@@ -455,6 +455,7 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
     }
 
     #[instrument(
+        level = "debug",
         name = "raft_rpc_full_snapshot",
         skip(self, vote, snapshot, cancel, _option)
     )]

@@ -176,7 +176,7 @@ impl SSTableBuilder {
     }
 
     pub fn finish(mut self) -> Result<u64> {
-        let _span = tracing::info_span!(
+        let _span = tracing::debug_span!(
           "sst_build_finish",
           file = %self.final_path.display()
         )

@@ -393,7 +393,7 @@ impl OpenRaftNode {
             match self.raft.client_write(request.clone()).await {
                 Ok(response) => {
                     let elapsed = t0.elapsed();
-                    tracing::info!(
+                    tracing::debug!(
                         target: "perf",
                         group_id = self.group_id,
                         total_us = elapsed.as_micros(),
