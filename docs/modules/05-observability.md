@@ -9,7 +9,7 @@ description: AiDb 可观测性 — OTel 指标 (monitoring feature)、tracing sp
 
 - 改 `src/metrics.rs`、`src/cluster/metrics.rs` 或排查 `aidb_*` OTel 监控指标
 - 在 **嵌入方** (如 AiKv) 初始化全局 `MeterProvider` 并调用 `metrics::init()`
-- 查阅 tracing span / event 命名与索引，跨模块定位埋点
+- 查阅 tracing span / event 命名与索引, 跨模块定位埋点
 - **不覆盖**: 各模块内部 span 局部逻辑 → [engine.md](01-engine.md) / [engine-storage.md](02-engine-storage.md) / [cluster.md](03-cluster.md) / [backup.md](04-backup.md)
 - **不覆盖**: HTTP `/health` 健康检查端点、OTel Collector 收集器配置 → AiKv 可观测性模块
 - **构建**: 需开启 `--features monitoring` 编译 `aidb::metrics`; 默认不启用
@@ -25,7 +25,7 @@ description: AiDb 可观测性 — OTel 指标 (monitoring feature)、tracing sp
 | `tests/metrics.rs` | cache / bloom / DB histogram 指标导出测试 (InMemory exporter) | `--test metrics` |
 | `tests/span_contract.rs` | 热路径 span `level = "debug"` 静态源码扫描契约测试 | `--test span_contract` |
 
-**嵌入集成机制**: 下游应用 (AiKv) 设置全局 `MeterProvider` 后调用 `aidb::metrics::init()`; 与上层业务指标共用 OTLP 导出管道，由 Collector 转发至 Prometheus / Grafana.
+**嵌入集成机制**: 下游应用 (AiKv) 设置全局 `MeterProvider` 后调用 `aidb::metrics::init()`; 与上层业务指标共用 OTLP 导出管道, 由 Collector 转发至 Prometheus / Grafana.
 
 ## 架构模型: OTel + 宿主嵌入
 
@@ -49,7 +49,7 @@ flowchart LR
 要点说明:
 - **Tracing**: 始终编译 (`tracing` crate); 与 `monitoring` feature 无关.
 - **OTel Metrics**: 仅在 `monitoring` feature 下编译; 引擎热路径自动调用 `record_*`.
-- **零网络端口**: AiDb 作为库不自建 HTTP / Prometheus listener，指标统一依托宿主进程导出.
+- **零网络端口**: AiDb 作为库不自建 HTTP / Prometheus listener, 指标统一依托宿主进程导出.
 
 ## 生命周期
 
@@ -111,8 +111,8 @@ flowchart LR
 
 ### 热路径 Span 级别硬约束
 
-- **约束原则**: 生产环境默认 `RUST_LOG=info`。为防止高频热路径（put/get/scan/wal/block/raft RPC 等）产生海量无用 Span 拖慢性能，热路径 `#[tracing::instrument]` **必须显式声明 `level = "debug"`**.
-- **契约测试保障**: 通过 `tests/span_contract.rs` 源码静态 AST 扫描强制执行该约束，违反规则将直接导致 CI 报错：
+- **约束原则**: 生产环境默认 `RUST_LOG=info`. 为防止高频热路径 (put/get/scan/wal/block/raft RPC 等) 产生海量无用 Span 拖慢性能, 热路径 `#[tracing::instrument]` **必须显式声明 `level = "debug"`**.
+- **契约测试保障**: 通过 `tests/span_contract.rs` 源码静态 AST 扫描强制执行该约束, 违反规则将直接导致 CI 报错:
 
 ```bash
 cargo test --test span_contract -- --test-threads=1

@@ -244,7 +244,7 @@ stateDiagram-v2
     CleanTarget --> [*]
 ```
 
-1. **迁移启动与全量拷贝**: `SlotMigrationManager` 发起迁移并在 MetaRaft 注册 `BeginSlotMigration`, 进入 `Migrating` 状态. `SlotMigrationExecutor` 顺序扫描源 Group 中对应 Slot 的所有 Key, 并通过 `PutConditional`（附带 `migration_epoch`）幂等复制到目标 Group.
+1. **迁移启动与全量拷贝**: `SlotMigrationManager` 发起迁移并在 MetaRaft 注册 `BeginSlotMigration`, 进入 `Migrating` 状态. `SlotMigrationExecutor` 顺序扫描源 Group 中对应 Slot 的所有 Key, 并通过 `PutConditional` (附带 `migration_epoch`) 幂等复制到目标 Group.
 2. **增量写入防护 (`F-056-A1`)**: 迁移期间客户端对源 Group 的并发写操作通过 `Request::MigrationWrite` 执行, 并在写数据时同步记录 `MigrationOpLog` (包括 tombstone 与 tip), 确保全量拷贝不会意外覆盖最新的增量写入.
 3. **两阶段收尾 (`finish_migration`)**: 全量拷贝完成后进入 `Frozen` (写冻结) 阶段, 依次执行静默写、排空并追平 `MigrationOpLog`、最终数据一致性校验 (`final_verify`), 随后转为 `ReadyToCommit` 状态.
 4. **原子提交与回滚保障**: MetaRaft 接收 `CommitSlotMigration` 请求将 Slot 路由原子指向目标 Group; 若中途发生异常或主动取消, 必须**先回滚 Meta 路由至源 Group**, 再异步清理目标端残留数据, 彻底杜绝读空洞与数据丢失.

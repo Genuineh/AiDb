@@ -36,7 +36,7 @@ description: AiDb 全量备份与恢复 — BackupManager、RecoveryManager、Ba
     └── wal/ ...
 ```
 
-**与 Checkpoint 的分工**: `BackupManager` 调用 `Checkpoint::create` 获取 DB 目录级快照，再将文件流复制到 `backup_{id}` 并计算 SHA256 写入 manifest; 不重复实现底层的 SST pin 与 compaction 互斥.
+**与 Checkpoint 的分工**: `BackupManager` 调用 `Checkpoint::create` 获取 DB 目录级快照, 再将文件流复制到 `backup_{id}` 并计算 SHA256 写入 manifest; 不重复实现底层的 SST pin 与 compaction 互斥.
 
 ## 关键 invariant (勿破坏)
 

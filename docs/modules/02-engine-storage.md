@@ -150,7 +150,7 @@ sequenceDiagram
 
 ### VersionSet / MANIFEST
 
-- `CURRENT` 纯文本指针文件，记录当前活跃的 `MANIFEST-NNNNNN`.
+- `CURRENT` 纯文本指针文件, 记录当前活跃的 `MANIFEST-NNNNNN`.
 - `VersionEdit`: 记录 `AddFile` / `DeleteFile` 版本增量 (JSON line + fsync).
 - 超出 `max_manifest_size` 时自动触发 `rotate_manifest`.
 
@@ -182,7 +182,7 @@ Checkpoint::verify_openable(dest_path, Options::default())?;
 
 ### 调优层级容量
 
-`target_size(Ln) = max_bytes_for_level_base × mult^(n-1)` (L1 起算). 默认 base=256MB, mult=10 → L1=256MB, L2≈2.5GB, L3≈25GB. 修改配置仅影响后续 pick 策略，不影响已有磁盘文件.
+`target_size(Ln) = max_bytes_for_level_base × mult^(n-1)` (L1 起算). 默认 base=256MB, mult=10 → L1=256MB, L2≈2.5GB, L3≈25GB. 修改配置仅影响后续 pick 策略, 不影响已有磁盘文件.
 
 ## 配置与 feature flags
 
