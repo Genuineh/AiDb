@@ -16,3 +16,5 @@
 
 ### Fixed
 
+- 热路径 tracing 收敛: 写路径、raft apply/append/RPC 与 sst 构建的 `info!` 降为 `debug!`, `db_delete_range` span 补 `level = "debug"` 并纳入 span_contract 契约
+
