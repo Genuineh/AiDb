@@ -1,14 +1,15 @@
 //! Snapshot: compaction 不应删除快照可见的旧版本.
+//! @component aidb-snapshot
 
 use super::common::temp_db_compaction;
 
 /// 回归测试 (compaction dedup 边界穿越 bug): 快照边界 sequence 与被保护
 /// key 自身版本的 sequence 不需要精确相等 —— 只要 snapshot 创建前, 中间
 /// 有任何一次对*其它* key 的写入推高了全局 sequence, 而这个 key 自己没有
-/// 再被写过, 该 key 自身版本的 sequence 就会严格小于 snapshot 注册的边界。
+/// 再被写过, 该 key 自身版本的 sequence 就会严格小于 snapshot 注册的边界.
 /// 这种情况在真实工作负载里几乎必然发生, 之前 `snapshot_protected()` 用
 /// `sequence >= min_snapshot_sequence` 做逐条判断, 语义反了: compaction
-/// 会错误丢弃这个边界以下、真正被 snapshot 需要的版本。
+/// 会错误丢弃这个边界以下、真正被 snapshot 需要的版本.
 #[test]
 fn test_snapshot_survives_compaction_when_boundary_not_aligned_to_key_write() {
     let (_dir, db) = temp_db_compaction();

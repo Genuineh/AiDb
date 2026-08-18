@@ -1,4 +1,5 @@
 //! DB 恢复 + compaction 一致性测试.
+//! @component aidb-engine
 //!
 //! 验证: 写入 → flush → compaction → close → reopen → 数据完整.
 

@@ -1,4 +1,5 @@
 //! 可观测性验证工具
+//! @component aidb-test-harness
 //!
 //! 提供跨模块共享的 tracing/metrics 测试辅助函数.
 //! 各模块测试可通过 EventCatcher 捕获 tracing events.

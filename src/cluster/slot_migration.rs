@@ -1011,7 +1011,7 @@ impl SlotMigrationManager {
     /// 从 MetaRaft 的权威迁移状态读取当前 `(source_group, target_group,
     /// slots)`, 而不是从本地 `executor`/`last_run` 推断 —— 这两者在
     /// `run_pending_migration` 执行后会被清空/消费, 不能用来判断"当前是否有
-    /// 迁移在进行"。
+    /// 迁移在进行".
     fn current_migration_signature(&self) -> Result<(u64, u64, Vec<u16>)> {
         match self.meta_raft.get_migration_state() {
             None => Err(ClusterError::InvalidState("no active migration".into()).into()),

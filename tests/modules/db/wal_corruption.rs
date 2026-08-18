@@ -1,4 +1,5 @@
 //! WAL 损坏与截断恢复集成测试 (DB 级)
+//! @component aidb-engine
 //!
 //! DB::close() 会自动 flush + cleanup WAL, 所以需要直接 drop DB
 //! (不调用 close) 来模拟崩溃, 让 WAL 文件保留在磁盘上.

@@ -1,4 +1,5 @@
 //! DB::scan 边界测试 + delete_range/compaction 交互测试
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::DB;

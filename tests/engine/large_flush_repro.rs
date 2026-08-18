@@ -1,4 +1,5 @@
 //! Reproduce production-scale memtable flush (64KB × ~1100 keys).
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::DB;

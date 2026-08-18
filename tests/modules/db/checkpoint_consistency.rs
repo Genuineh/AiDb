@@ -1,4 +1,5 @@
 //! Checkpoint backup 数据一致性校验集成测试
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{Checkpoint, DB};
@@ -49,10 +50,10 @@ fn test_checkpoint_all_20_keys_present() {
 
 /// checkpoint 后在新会话写入 5 个新 key, 验证 backup 中这 5 个 key 不存在 (快照语义).
 ///
-/// 原理：Checkpoint 通过 hard link 捕获活跃 WAL 文件。若在同一会话写入新数据,
-/// 会追加到被 hard link 的 WAL, 导致备份也能看到。
-/// 解决方法：checkpoint 后 close 原 DB, reopen 产生新 WAL (不在备份中),
-/// 再写入新 key, 备份不会包含这些 key。
+/// 原理: Checkpoint 通过 hard link 捕获活跃 WAL 文件. 若在同一会话写入新数据,
+/// 会追加到被 hard link 的 WAL, 导致备份也能看到.
+/// 解决方法: checkpoint 后 close 原 DB, reopen 产生新 WAL (不在备份中),
+/// 再写入新 key, 备份不会包含这些 key.
 #[test]
 fn test_checkpoint_snapshot_excludes_post_checkpoint_writes() {
     let dir = tempdir().unwrap();

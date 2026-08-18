@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 mod group_apply_batch;
 mod harness;
 mod integration;

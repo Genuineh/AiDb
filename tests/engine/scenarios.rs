@@ -1,4 +1,5 @@
 //! DB 全链路: flush / reopen / batch / scan / 并发 (roadmap 5.9)
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{WriteBatch, DB};

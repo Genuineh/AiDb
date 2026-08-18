@@ -1,4 +1,5 @@
 //! Integration tests for LeaderChangeWatcher.
+//! @component aidb-cluster
 //!
 //! Creates a single-node Raft cluster to verify tick behavior.
 

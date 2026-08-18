@@ -28,7 +28,7 @@ fn theoretical_fpr(bits_per_key: f64) -> f64 {
 ///
 /// - `filter`: 已插入键的过滤器
 /// - `test_keys`: 测试查询的不存在键数量
-/// - `run_offset`: 用于生成测试键的种子偏移（确保不与训练集重叠）
+/// - `run_offset`: 用于生成测试键的种子偏移 (确保不与训练集重叠)
 fn measure_fpr(filter: &BloomFilter, test_keys: usize, run_offset: u64) -> f64 {
     let mut false_positives = 0u64;
     for i in 0..test_keys {

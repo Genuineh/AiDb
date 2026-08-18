@@ -31,19 +31,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// 追踪同一个 user_key 分组内是否已经保留过"跨越 `min_snapshot_sequence`
-/// 边界"的版本 (即 sequence <= `min_snapshot_sequence` 的版本)。
+/// 边界"的版本 (即 sequence <= `min_snapshot_sequence` 的版本).
 ///
 /// 正确的多版本保留规则是: 对同一个 user_key, 从最新版本开始往老版本扫描,
 /// 一旦保留了某个 sequence <= min_snapshot_sequence 的版本, 该版本就是所有
 /// 活跃快照 (其边界 >= min_snapshot_sequence) 都能落到的"边界穿越版本",
-/// 更老的版本无论 sequence 是多少都不再被任何快照需要, 可以安全丢弃。
+/// 更老的版本无论 sequence 是多少都不再被任何快照需要, 可以安全丢弃.
 ///
 /// 之前的实现用 `sequence >= min_snapshot_sequence` 作为无状态的逐条判断,
 /// 语义反了: 会保留边界*以上*、其实没有任何快照需要的冗余版本, 却在
 /// snapshot 边界与该 key 自身版本不精确对齐时 (只要期间有别的 key 写入,
 /// 全局 sequence 前进但这个 key 没变, 这种情况在真实工作负载里几乎必然
 /// 发生), 把边界*以下*那个真正被需要的版本当成"不受保护"直接丢弃,
-/// 导致存活的 snapshot 在 compaction 后读到错误结果 (缺失或读到更新版本)。
+/// 导致存活的 snapshot 在 compaction 后读到错误结果 (缺失或读到更新版本).
 #[derive(Default)]
 struct SnapshotDedupTracker {
     crossed: bool,

@@ -172,7 +172,7 @@ fn del(s: u64, k: &[u8]) -> WalEntry {
     }
 }
 
-/// 验证正常关闭后重启，旧 WAL 日志记录的重放与恢复
+/// 验证正常关闭后重启, 旧 WAL 日志记录的重放与恢复
 #[test]
 fn test_wal_replay_after_clean_close() {
     let d = tempdir().unwrap();
@@ -264,7 +264,7 @@ fn test_delete_replay() {
     );
 }
 
-/// 验证空 WAL 文件的正常重放，且无任何有效数据条目
+/// 验证空 WAL 文件的正常重放, 且无任何有效数据条目
 #[test]
 fn test_empty_wal_replay() {
     let d = tempdir().unwrap();

@@ -98,8 +98,8 @@ where
     }
 }
 
-/// encode_internal_key 的 `Arc<[u8]>` 变体。通过 `Vec::into()` 一步到位, 免去
-/// 调用方手动 `from_slice` 产生的中间变量和重复解引用 (F-019)。
+/// encode_internal_key 的 `Arc<[u8]>` 变体. 通过 `Vec::into()` 一步到位, 免去
+/// 调用方手动 `from_slice` 产生的中间变量和重复解引用 (F-019).
 pub fn encode_internal_key_arc(user_key: &[u8], sequence: u64, value_type: ValueType) -> Arc<[u8]> {
     encode_internal_key(user_key, sequence, value_type).into()
 }

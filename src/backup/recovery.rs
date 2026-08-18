@@ -1,4 +1,4 @@
-//! RecoveryManager: 从备份恢复数据目录。
+//! RecoveryManager: 从备份恢复数据目录.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use crate::config::Options;
 use crate::error::{Error, Result};
 use crate::DB;
 
-/// 恢复管理器。
+/// 恢复管理器.
 pub struct RecoveryManager {
     storage: Arc<dyn BackupStorage>,
 }
@@ -22,11 +22,11 @@ impl RecoveryManager {
         Self { storage }
     }
 
-    /// 从备份恢复数据目录。
+    /// 从备份恢复数据目录.
     ///
     /// 1. 读取 manifest 校验 checksum
     /// 2. 在 db_path 同级创建临时恢复目录
-    /// 3. 逐文件恢复到临时目录，验证 SHA256
+    /// 3. 逐文件恢复到临时目录, 验证 SHA256
     /// 4. 用 DB::open 验证 SSTable 完整性
     /// 5. 原子 rename 临时目录 → 目标目录
     #[instrument(name = "backup_restore", skip(self), fields(backup_id = id))]
@@ -139,7 +139,7 @@ impl RecoveryManager {
         Ok(())
     }
 
-    /// 校验备份完整性（不恢复）。
+    /// 校验备份完整性 (不恢复).
     #[instrument(name = "backup_verify", skip(self), fields(backup_id = id))]
     pub fn verify_backup(&self, id: BackupId) -> Result<bool> {
         let manifest_path = self.storage.backup_path(id).join("backup_manifest.json");

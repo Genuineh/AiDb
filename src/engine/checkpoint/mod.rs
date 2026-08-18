@@ -28,7 +28,7 @@ impl Drop for CheckpointGuard<'_> {
 }
 
 impl Checkpoint {
-    /// 创建一致性目录快照. 见 `06-persistence` 0.2.1 并发协议.
+    /// 创建一致性目录快照. 见 `docs/modules/02-engine-storage.md` 并发协议.
     #[tracing::instrument(name = "bgsave_checkpoint", skip(db), fields(dest = %dest.as_ref().display()))]
     pub fn create(db: &DB, dest: impl AsRef<Path>) -> Result<PathBuf> {
         let dest = dest.as_ref();

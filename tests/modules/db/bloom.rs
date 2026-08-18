@@ -1,4 +1,5 @@
 //! Phase7: DB flush 产出带 Bloom Filter 的 SST.
+//! @component aidb-engine
 
 use std::path::Path;
 

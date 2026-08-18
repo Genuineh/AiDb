@@ -441,7 +441,7 @@ impl WALManager {
             };
 
             // 如果第一条不是 FileHeader, 回退到文件开头全量扫描;
-            // 如果是 FileHeader，保持当前reader (FileHeader已消费，后续数据正确对齐)
+            // 如果是 FileHeader, 保持当前reader (FileHeader已消费, 后续数据正确对齐)
             let strict = options.strict_wal_recovery;
             if !is_file_header {
                 reader = match if strict {

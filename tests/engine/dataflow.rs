@@ -1,4 +1,5 @@
 //! L2 引擎黑盒 dataflow — put → flush → get 全路径 (Mode A + E)
+//! @component aidb-engine
 
 use crate::common::dataflow::capture_spans;
 use aidb::config::Options;

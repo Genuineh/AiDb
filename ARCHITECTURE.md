@@ -222,7 +222,7 @@ flowchart TB
 ```mermaid
 stateDiagram-v2
     [*] --> Prepare: 1. Start Migration (Meta 登记源/目标组与 slots)
-    Prepare --> Migrating: 2. 状态机生效，开始全量数据拷贝
+    Prepare --> Migrating: 2. 状态机生效, 开始全量数据拷贝
     
     state Migrating {
         [*] --> FullScan: 源 Group 扫描该 Slot 数据
@@ -231,16 +231,16 @@ stateDiagram-v2
         IncrementalWrite --> MigrationOpLog: 同批落 mig tombstone / tip (F-056-A1)
     }
 
-    Migrating --> Frozen: 3. 全量拷贝完成，进入冻结收尾
+    Migrating --> Frozen: 3. 全量拷贝完成, 进入冻结收尾
     Frozen --> ReadyToCommit: 4. Quiesce 静默写 + Drain 追平 OpLog + 最终验证
     
     ReadyToCommit --> Commit: 5. 提交迁移 (更新 Meta SlotTable)
-    Commit --> GC: 6. 切换完成，异步清理源端数据与 OpLog
+    Commit --> GC: 6. 切换完成, 异步清理源端数据与 OpLog
     GC --> [*]
 
     Migrating --> Cancel: 异常或主动取消
     Frozen --> Cancel
-    Cancel --> CleanTarget: 先回滚 Meta 路由至源端，再异步清理目标端残留
+    Cancel --> CleanTarget: 先回滚 Meta 路由至源端, 再异步清理目标端残留
     CleanTarget --> [*]
 ```
 
@@ -262,9 +262,9 @@ flowchart TD
         Mark --> Tick[LifecycleManager.tick 周期扫描]
         Tick --> Check{是否超过指数退避窗口?}
         Check -->|是: 2s * 2^N 上限 60s| Restart[就地重启该 Group: remove + create]
-        Check -->|否: 仍处于退避中| Wait[跳过本轮，等待下次 tick]
+        Check -->|否: 仍处于退避中| Wait[跳过本轮, 等待下次 tick]
         Restart --> Reload[从磁盘 data/group_gid 重新加载状态]
-        Reload --> Recovered[Group 恢复健康，清零退避计数]
+        Reload --> Recovered[Group 恢复健康, 清零退避计数]
     end
 ```
 

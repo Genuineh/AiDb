@@ -1,14 +1,15 @@
 //! stage2-migration 回归测试.
+//! @component aidb-cluster
 //!
 //! 覆盖修复前的两个真实 bug:
 //! 1. `commit_migration` 曾经只检查 "executor 存不存在 / 有没有被取消",
 //!    在 `run_pending_migration` 从未被调用过的情况下 (对应
 //!    `CLUSTER SETSLOT MIGRATING` 之后直接 `STABLE` 的手动流程) 也会放行,
-//!    导致 target 上一个 key 都没有就把 slot 所有权切过去, 数据静默丢失。
-//! 2. `cancel_migration` 从不清理 target 上已经拷贝过去的残留副本。
+//!    导致 target 上一个 key 都没有就把 slot 所有权切过去, 数据静默丢失.
+//! 2. `cancel_migration` 从不清理 target 上已经拷贝过去的残留副本.
 //!
 //! 使用真实的单节点 `MetaRaftNode` + 双 group 的 `MultiRaftNode`
-//! (source=1, target=2) 驱动 `SlotMigrationManager`, 不使用任何 mock。
+//! (source=1, target=2) 驱动 `SlotMigrationManager`, 不使用任何 mock.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,8 +44,8 @@ impl MetaRaftProvider for MetaRaftProv {
 const TEST_KEY: &[u8] = b"k-slot0";
 
 /// 搭好一个单节点、两个数据 group (1=source, 2=target) 的最小集群, 把
-/// `TEST_KEY` 所在的 slot 分给 group 1。返回
-/// (meta_raft, multi_raft, migration_manager, migrated_slots, _dirs)。
+/// `TEST_KEY` 所在的 slot 分给 group 1. 返回
+/// (meta_raft, multi_raft, migration_manager, migrated_slots, _dirs).
 async fn setup(
     _unused: u16,
 ) -> (
@@ -244,7 +245,7 @@ async fn commit_without_running_migration_is_rejected() {
     assert!(meta_raft.get_migration_state().is_some());
 
     // Bug 修复前: 这里会静默成功, slot 所有权直接切给 target, 但 target 上
-    // 什么数据都没有 —— 数据静默丢失。修复后必须返回 Err。
+    // 什么数据都没有 —— 数据静默丢失. 修复后必须返回 Err.
     let err = sm.commit_migration().await;
     assert!(
         err.is_err(),

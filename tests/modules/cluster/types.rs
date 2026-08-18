@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use aidb::cluster::types::LogEntry;
 use aidb::cluster::{RaftNodeConfig, Request};
 use openraft::vote::leader_id_std::CommittedLeaderId;

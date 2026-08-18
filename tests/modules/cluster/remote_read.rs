@@ -1,4 +1,5 @@
 //! FIX-0056-A1 "读导向" 点 3 (`get_key_from_group_remote`) / "tip 跨节点读取"
+//! @component aidb-cluster
 //! (`read_migration_tip` 远程 fallback) 端到端测试.
 //!
 //! 两个真实 `MultiRaftNode`, 真实数据面 gRPC (`GetKey`/`GetMigrationTip`),
@@ -49,7 +50,7 @@ fn pick_addr() -> SocketAddr {
 }
 
 /// 搭建 node A: 单节点 MetaRaft 驱动 `MultiRaftNode` 本地托管 `TARGET_GROUP`
-/// (leader), 并启动统一数据面 gRPC server. 返回 (multi_raft, "http://addr", _dirs)。
+/// (leader), 并启动统一数据面 gRPC server. 返回 (multi_raft, "http://addr", _dirs).
 async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
     let meta_dir = TempDir::new().unwrap();
     let meta_db = DB::open(meta_dir.path().join("meta"), Options::for_testing()).unwrap();

@@ -1,15 +1,15 @@
 //! PendingLogOverlay — 尚未 flush 到 DB 的 log entries 内存暂存.
 //!
-//! `LogCommitter` 将 entries append 到 DB 前，先写入 PendingLogOverlay.
+//! `LogCommitter` 将 entries append 到 DB 前, 先写入 PendingLogOverlay.
 //! 生成代 (generation) 防护防止过时 flush 覆盖新 entry: 每轮 flush cycle
-//! 递增 generation，`mark_durable` 只删除匹配 generation 的 entry.
+//! 递增 generation, `mark_durable` 只删除匹配 generation 的 entry.
 
 use std::collections::BTreeMap;
 
-/// 内存 pending log entries，按 index 索引.
+/// 内存 pending log entries, 按 index 索引.
 ///
-/// `Ent` 是 entry 的具体类型，由调用方在构造时提供 index.
-/// 本层不依赖 `RaftEntry` trait，保持最小化泛型约束.
+/// `Ent` 是 entry 的具体类型, 由调用方在构造时提供 index.
+/// 本层不依赖 `RaftEntry` trait, 保持最小化泛型约束.
 pub struct PendingLogOverlay<Ent> {
     /// index → (generation, Entry)
     pending: BTreeMap<u64, (u64, Ent)>,
@@ -36,7 +36,7 @@ impl<Ent> PendingLogOverlay<Ent> {
         self.generation
     }
 
-    /// 开始新一轮 flush cycle，递增 generation 并返回新值.
+    /// 开始新一轮 flush cycle, 递增 generation 并返回新值.
     pub fn next_generation(&mut self) -> u64 {
         self.generation += 1;
         self.generation
@@ -44,7 +44,7 @@ impl<Ent> PendingLogOverlay<Ent> {
 
     /// 以当前 generation 插入 entry.
     ///
-    /// `index` 是 entry 的 log index，由调用方提供.
+    /// `index` 是 entry 的 log index, 由调用方提供.
     pub fn insert_at(&mut self, index: u64, entry: Ent) {
         self.pending.insert(index, (self.generation, entry));
     }
@@ -54,7 +54,7 @@ impl<Ent> PendingLogOverlay<Ent> {
         self.pending.get(&index).map(|(_, entry)| entry)
     }
 
-    /// 获取 [start, end) 范围内的 entry 引用，按 index 升序.
+    /// 获取 [start, end) 范围内的 entry 引用, 按 index 升序.
     pub fn get_range(&self, start: u64, end: u64) -> Vec<&Ent> {
         self.pending
             .range(start..end)
@@ -72,7 +72,7 @@ impl<Ent> PendingLogOverlay<Ent> {
 
     /// 标记一批 entry 已持久化 — 仅移除 generation 匹配的 entry.
     ///
-    /// 生成代防护: 当一轮慢 flush 在下一轮新 flush 之后完成时，
+    /// 生成代防护: 当一轮慢 flush 在下一轮新 flush 之后完成时,
     /// 旧 generation 的 `mark_durable` 不会误删新 generation 的 entry.
     pub fn mark_durable(&mut self, indices: &[u64], expected_generation: u64) {
         for &index in indices {

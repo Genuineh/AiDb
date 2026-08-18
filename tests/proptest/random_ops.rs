@@ -1,4 +1,5 @@
 //! 随机 put/delete/flush/compact/writebatch 与线性模型一致.
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::WriteBatch;

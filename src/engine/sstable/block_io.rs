@@ -71,7 +71,7 @@ pub fn read_block_cached(
     Ok(bytes)
 }
 
-/// 从 `File` 以 pread 语义读取 block，支持 `Arc<File>` 安全并发读.
+/// 从 `File` 以 pread 语义读取 block, 支持 `Arc<File>` 安全并发读.
 pub fn read_block_from_file(file: &std::fs::File, handle: &BlockHandle) -> Result<Vec<u8>> {
     use std::os::unix::fs::FileExt;
     let mut raw = vec![0u8; handle.size as usize];
@@ -84,7 +84,7 @@ fn read_block_from_file_traced(file: &std::fs::File, handle: &BlockHandle) -> Re
     read_block_from_file(file, handle)
 }
 
-/// 通用 `Read + Seek` reader 的 block 读取（非并发安全）。
+/// 通用 `Read + Seek` reader 的 block 读取 (非并发安全).
 pub fn read_block_bytes<R: Read + Seek>(reader: &mut R, handle: &BlockHandle) -> Result<Vec<u8>> {
     reader.seek(SeekFrom::Start(handle.offset))?;
     let mut raw = vec![0u8; handle.size as usize];
@@ -92,7 +92,7 @@ pub fn read_block_bytes<R: Read + Seek>(reader: &mut R, handle: &BlockHandle) ->
     parse_block_bytes(&raw, handle)
 }
 
-/// 解析 raw block 数据：校验 size、CRC、解压。
+/// 解析 raw block 数据: 校验 size、CRC、解压.
 fn parse_block_bytes(raw: &[u8], handle: &BlockHandle) -> Result<Vec<u8>> {
     if handle.size < BLOCK_TRAILER_SIZE as u64 {
         return Err(Error::Corruption(format!(
@@ -105,7 +105,7 @@ fn parse_block_bytes(raw: &[u8], handle: &BlockHandle) -> Result<Vec<u8>> {
     let compression_type = raw[data_len];
     let stored_crc = u32::from_le_bytes(raw[data_len + 1..].try_into().unwrap());
 
-    // `raw_data` 是已压缩的数据（`compress_block` 的输出），需解压后再校验 CRC
+    // `raw_data` 是已压缩的数据 (`compress_block` 的输出), 需解压后再校验 CRC
     let decompressed = if compression_type == COMPRESSION_NONE {
         raw_data.to_vec()
     } else {
@@ -127,7 +127,7 @@ fn parse_block_bytes(raw: &[u8], handle: &BlockHandle) -> Result<Vec<u8>> {
     Ok(decompressed)
 }
 
-/// 压缩 block 数据。
+/// 压缩 block 数据.
 fn compress_block(data: &[u8], compression: CompressionType) -> Result<Vec<u8>> {
     match compression {
         CompressionType::None => Ok(data.to_vec()),
@@ -147,7 +147,7 @@ fn compress_block(data: &[u8], compression: CompressionType) -> Result<Vec<u8>> 
     }
 }
 
-/// 解压 block 数据。
+/// 解压 block 数据.
 fn decompress_block(data: &[u8], compression: CompressionType) -> Result<Vec<u8>> {
     match compression {
         CompressionType::None => Ok(data.to_vec()),

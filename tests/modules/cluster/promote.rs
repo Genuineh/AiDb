@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 #![cfg(feature = "cluster")]
 
 //! MetaRaft promote 集成测试.

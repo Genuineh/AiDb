@@ -1,6 +1,6 @@
 //! ISSUE-005 — 数据 Group apply: SM + last_applied 单 WriteBatch 原子持久化 (B1.2 模板)
+//! @component aidb-cluster
 //!
-//! 规格: `WiQunTools/docs/wiqun-db-inventory/09-raft.md` §apply 原子 WriteBatch
 
 use aidb::cluster::types::{LogEntry, Request, ThinWriteBatch};
 use aidb::cluster::{OpenRaftStorage, DEFAULT_GROUP_ID};

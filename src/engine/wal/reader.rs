@@ -74,7 +74,7 @@ impl Reader {
 
     /// 顺序读取一条 Record.
     ///
-    /// 返回 `ReadStatus` 区分正常记录、文件尾部、CRC 损坏等。
+    /// 返回 `ReadStatus` 区分正常记录、文件尾部、CRC 损坏等.
     #[tracing::instrument(skip(self))]
     pub fn read_record(&mut self) -> Result<ReadStatus> {
         // 检查是否需要跳过 block trailer padding

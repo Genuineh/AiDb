@@ -282,9 +282,9 @@ impl MultiRaftNode {
                       }
 
                       // Fail-fast 自愈: apply.rs 遇到真实存储故障时会让 openraft
-                      // 把该 group 标记为 Fatal 并停止服务 (见 stage2-apply)。
+                      // 把该 group 标记为 Fatal 并停止服务 (见 stage2-apply).
                       // 这里检测 Fatal 状态并尝试就地重开 group, 避免每次真实
-                      // 磁盘故障之外的偶发错误都需要人工介入重启整个进程。
+                      // 磁盘故障之外的偶发错误都需要人工介入重启整个进程.
                       Self::supervise_groups(
                         &groups,
                         &storages,
@@ -486,11 +486,11 @@ impl MultiRaftNode {
     /// 扫描本地 group, 检测是否有实例进入 openraft 的 `Fatal` 状态 (由
     /// `apply_to_state_machine` 遇到真实存储错误后 fail-fast 触发), 并对
     /// 命中的 group 尝试就地重开 (等价于"重启这一个 group 的进程", 但不影响
-    /// 同一节点上其它 group 或 gRPC server)。
+    /// 同一节点上其它 group 或 gRPC server).
     ///
     /// 重开时**不**传 `init_as_voter=true` —— 该 group 之前已经是集群里正常
     /// 运行的成员 (leader 或 follower), 磁盘上已经有它自己的 log/vote/
-    /// membership 状态; 这里只是重新加载现有状态, 不是重新做单节点 bootstrap。
+    /// membership 状态; 这里只是重新加载现有状态, 不是重新做单节点 bootstrap.
     async fn supervise_groups(
         groups: &Arc<RwLock<HashMap<u64, Arc<OpenRaftNode>>>>,
         storages: &Arc<RwLock<HashMap<u64, ShardedStorage>>>,

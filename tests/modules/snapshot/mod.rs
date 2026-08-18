@@ -1,3 +1,5 @@
+//! @component aidb-snapshot
+
 mod common;
 
 pub mod basic;

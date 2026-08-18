@@ -1,4 +1,5 @@
 //! 分区/脑裂 failover 集成测试 (cluster-test-util).
+//! @component aidb-cluster
 //!
 //! 复用 `ClusterTestHarness` (3 节点 linearizable), 用网络黑洞 (failpoint) +
 //! per-node server abort 组合模拟真实双向分区, 验证三层防线:

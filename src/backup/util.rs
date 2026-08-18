@@ -1,10 +1,10 @@
-//! SHA256 工具函数，供整个 backup 模块共享。
+//! SHA256 工具函数, 供整个 backup 模块共享.
 
 use crate::error::Result;
 use std::io::Read;
 use std::path::Path;
 
-/// 计算文件的 SHA256 十六进制字符串。
+/// 计算文件的 SHA256 十六进制字符串.
 pub fn sha256_file(path: &Path) -> Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
@@ -19,7 +19,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(hex::encode(ctx.finish().as_ref()))
 }
 
-/// 计算字节数据的 SHA256 十六进制字符串。
+/// 计算字节数据的 SHA256 十六进制字符串.
 pub fn sha256_bytes(data: &[u8]) -> String {
     let ctx = ring::digest::Context::new(&ring::digest::SHA256);
     let mut ctx = ctx;

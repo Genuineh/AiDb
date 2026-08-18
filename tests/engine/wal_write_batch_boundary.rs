@@ -1,4 +1,5 @@
 //! ISSUE-001 — DB::write + WriteBatch 在 WAL rotate 下的崩溃恢复原子性 (L2).
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{WriteBatch, DB};

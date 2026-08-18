@@ -1,7 +1,6 @@
 //! ISSUE-001 / ISSUE-002 — WriteBatch 与 WAL rotate 边界 (B1.2 模板)
 //! @component aidb-wal
 //!
-//! 规格: `WiQunTools/docs/wiqun-db-inventory/01-wal.md`
 
 use aidb::config::Options;
 use aidb::engine::wal::manager::WALManager;

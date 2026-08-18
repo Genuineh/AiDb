@@ -1,4 +1,5 @@
 //! CompactionFilter property-based 测试:
+//! @component aidb-engine
 //! 随机 put/delete/flush/compact 操作序列 + 对照模型, 验证 filter 语义.
 
 use aidb::config::Options;

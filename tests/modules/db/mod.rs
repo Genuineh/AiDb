@@ -1,3 +1,5 @@
+//! @component aidb-engine
+
 pub mod bloom;
 pub mod bootstrap_migration;
 pub mod cache;

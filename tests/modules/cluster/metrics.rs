@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use aidb::cluster::metrics;
 use aidb::metrics::testutil;
 
