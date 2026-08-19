@@ -13,18 +13,18 @@ use std::path::Path;
 const HOT_PATH_SPANS: &[(&str, &str)] = &[
     // 集群读写路径 (E8/E19): 每条集群 SET/GET 的入口
     (
-        "src/cluster/multi_raft_node.rs",
+        "src/cluster/multi_raft_node/io.rs",
         "pub async fn propose_group(",
     ),
     (
-        "src/cluster/multi_raft_node.rs",
+        "src/cluster/multi_raft_node/io.rs",
         "pub async fn propose_key(",
     ),
-    ("src/cluster/multi_raft_node.rs", "pub async fn get_key("),
+    ("src/cluster/multi_raft_node/io.rs", "pub async fn get_key("),
     ("src/cluster/node.rs", "pub async fn propose("),
     // 集群复制/选举 RPC (每条日志批次发往 follower + 心跳)
-    ("src/cluster/network.rs", "name = \"raft_rpc_ae\""),
-    ("src/cluster/network.rs", "name = \"raft_rpc_vote\""),
+    ("src/cluster/network/client.rs", "name = \"raft_rpc_ae\""),
+    ("src/cluster/network/client.rs", "name = \"raft_rpc_vote\""),
     // 引擎单 key 读写路径
     ("src/engine/db/inner/write.rs", "name = \"db_put\""),
     ("src/engine/db/inner/read.rs", "name = \"db_get\""),

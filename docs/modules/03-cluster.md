@@ -55,10 +55,10 @@ flowchart TB
 | `cluster/mod.rs` | 模块根; re-export 公共类型 | — |
 | `cluster/types.rs` | `TypeConfig`, `Request`/`Response`, `ThinWriteBatch`, `RaftNodeConfig` | `Request::Meta`, `RaftNodeConfig::validate` |
 | `cluster/meta_types.rs` | `ClusterMeta`, `SlotTable`, `MetaRequest`, `METARAFT_GROUP_ID=0` | `MetaRequest::*`, `SLOT_COUNT=16384` |
-| `cluster/meta_state_machine.rs` | Meta 状态机: 校验 + Apply → 3 组元数据 KV | `apply_meta_request`, `validate_meta_request` |
+| `cluster/meta_state_machine/` | Meta 状态机: 校验 + Apply → 元数据 KV | `mod.rs::apply_meta_request`, `validate.rs`, `apply.rs` |
 | `cluster/meta_raft_node.rs` | 控制平面 Raft 节点封装 | `new`, `initialize`, `propose`, `start_server_with_dispatcher` |
 | `cluster/node.rs` | 通用 OpenRaft 节点包装 | `new_with_storage`, `propose`, `change_membership`, `get` |
-| `cluster/multi_raft_node.rs` | 数据面编排总入口 | `start`, `start_lifecycle_with_data`, `propose_key`, `get_local` |
+| `cluster/multi_raft_node/` | 数据面编排总入口 | `lifecycle.rs::start`, `io.rs::propose_key` / `get_local` |
 | `cluster/router.rs` | 16384 槽路由计算与映射表 | `key_to_slot`, `route_key`, `refresh_from_data`, `group_ops` |
 | `cluster/sharded_storage.rs` | 每 Group 独立 DB 实例管理 | `ShardedStorage::open` |
 | `cluster/storage/mod.rs` | OpenRaftStorage 存储适配层根 | `OpenRaftStorage` |
@@ -68,12 +68,12 @@ flowchart TB
 | `cluster/storage/snapshot.rs` | OpenRaft Snapshot 生成与安装 | `build_snapshot`, `install_snapshot` |
 | `cluster/pending_log.rs` | 未落盘 Log Entry 内存暂存与 Generation 防护 | `PendingLogOverlay` |
 | `cluster/log_committer.rs` | 异步批量 I/O Actor; 聚合 Log 写入并保序 flush | `LogCommitter` |
-| `cluster/network.rs` | gRPC 客户端/服务端与分发调度 | `RaftNetworkClientFactory`, `RaftServiceDispatcher` |
-| `cluster/aidb.raft.rs` | Prost 生成的 gRPC Protobuf 消息定义 | — |
+| `cluster/network/` | gRPC 客户端/服务端与分发调度 | `factory.rs`, `server.rs::RaftServiceDispatcher` |
+| `cluster/network/aidb.raft.rs` | Prost 生成的 gRPC Protobuf 消息定义 | `@generated` |
 | `cluster/lifecycle_manager.rs` | Group 创建/销毁与 Router 自动刷新 | `tick` → `TickResult` |
 | `cluster/leader_watcher.rs` | 本地 Leader 探活并同步 Meta `is_leader` | `tick`, `spawn_background` |
 | `cluster/membership_coordinator.rs` | 节点加入/离开/替换成员变更协调 | `add_node`, `remove_node`, `change_group_membership` |
-| `cluster/slot_migration.rs` | 在线 Slot 迁移执行器与状态机 | `SlotMigrationManager`, `SlotMigrationExecutor` |
+| `cluster/slot_migration/` | 在线 Slot 迁移执行器与状态机 | `executor.rs`, `manager.rs` |
 | `cluster/migration_oplog.rs` | 迁移 Tombstone 与 Tip 值编码 (F-056-A1) | `MigOp`, `encode_tombstone`, `encode_tip` |
 | `cluster/replica_allocator.rs` | 副本与 Slot 分配算法 (纯计算) | `allocate_group`, `rebalance_replicas` |
 | `cluster/metrics.rs` | Raft RPC 计数 (feature `monitoring`) | `record_raft_rpc` |

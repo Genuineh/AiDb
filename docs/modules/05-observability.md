@@ -19,7 +19,7 @@ description: AiDb 可观测性 — OTel 指标 (monitoring feature)、tracing sp
 | 路径 | 职责 | 入口 |
 | --- | --- | --- |
 | `src/metrics.rs` | 引擎 OTel instruments 注册 + `init` / `init_otel` / `record_*` | `DB::open` → `init()` |
-| `src/cluster/metrics.rs` | Raft RPC 与集群自愈指标埋点 (需 `cluster` + `monitoring`) | `cluster/network.rs` |
+| `src/cluster/metrics.rs` | Raft RPC 与集群自愈指标埋点 (需 `cluster` + `monitoring`) | `cluster/network/` (`client.rs` / `server.rs`) |
 | `src/lib.rs` | `#[cfg(feature = "monitoring")] pub mod metrics` 声明 | — |
 | `tests/common/observability.rs` | `EventCatcher`、tracing 捕获与测试锁 | 跨模块 tracing 验收 |
 | `tests/metrics.rs` | cache / bloom / DB histogram 指标导出测试 (InMemory exporter) | `--test metrics` |

@@ -9,6 +9,7 @@
 
 ### Changed
 
+- cluster 层模块拆分: `network` / `multi_raft_node` / `slot_migration` / `meta_state_machine` 改为子目录, 生成代码 `aidb.raft.rs` 随 `network/` 隔离
 - CONTRIBUTING 补充 test-compression 与 partition/failover 测试说明
 - 同步与 AiKv 的依赖关系 (git 依赖 + 本地 patch)
 - 全面重构并优化项目核心文档与模块文档体系

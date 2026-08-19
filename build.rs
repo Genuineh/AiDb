@@ -5,7 +5,7 @@ fn main() {
     if std::env::var("CARGO_FEATURE_CLUSTER").is_ok() {
         println!("cargo:rerun-if-changed=proto/raft.proto");
 
-        let out = Path::new("src").join("cluster");
+        let out = Path::new("src").join("cluster").join("network");
         let _ = std::fs::create_dir_all(&out);
 
         // Only compile proto if protoc is available (CI may not have it).
