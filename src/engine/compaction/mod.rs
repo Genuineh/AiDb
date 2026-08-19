@@ -5,6 +5,7 @@ mod helpers;
 mod job;
 mod merge;
 mod picker;
+mod trackers;
 mod version;
 
 pub use filter::{CompactionFilter, FilterDecision};

@@ -41,11 +41,11 @@ description: AiDb 持久化层 — SSTable 布局、层级 compaction、布隆�
 | `engine/cache/block_cache.rs` | 16 分片 LRU Data Block cache | `BlockCache::get/insert` |
 | `engine/checkpoint/mod.rs` | 目录一致性硬链接快照 | `Checkpoint::create`, `verify_openable` |
 
-**DB 协调入口** (`engine/db/inner.rs`):
-- `flush_memtable_to_sstable`: MemTable → L0 SSTable (`SSTableBuilder` / `VersionEdit::AddFile`)
-- `get_from_sstables`: L0 新→旧 + L1+ 范围定位点查
-- `run_compaction_once`: pick → claim → trivial/subcompaction → apply
-- `enter_checkpoint` / `leave_checkpoint`: Checkpoint 互斥加锁 + SST pin
+**DB 协调入口** (`engine/db/inner/`):
+- `flush.rs::flush_memtable_to_sstable`: MemTable → L0 SSTable (`SSTableBuilder` / `VersionEdit::AddFile`)
+- `read.rs::get_from_sstables`: L0 新→旧 + L1+ 范围定位点查
+- `compaction.rs::run_compaction_once`: pick → claim → trivial/subcompaction → apply
+- `mod.rs::enter_checkpoint` / `leave_checkpoint`: Checkpoint 互斥加锁 + SST pin
 
 公共 re-export (`src/lib.rs`): `BlockCache`, `CacheStats`, `Checkpoint`.
 

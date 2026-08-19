@@ -31,7 +31,7 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 | `engine/memtable/iterator.rs` | MemTable 迭代 | `MemTableIterator` |
 | `engine/memtable/range_tombstone.rs` | Range tombstone 辅助 (`[start,end)` 覆盖 / 最大 seq) | `max_covering_range_tombstone_seq` |
 | `engine/db/mod.rs` | DB 模块根; re-export | — |
-| `engine/db/inner.rs` | DB 总协调: open/写/读/flush/close/后台线程 | `DB::open`, `put`, `write`, `get` |
+| `engine/db/inner/` | DB 总协调 (子目录): `mod.rs` 生命周期/状态 + `write.rs` 写路径 + `read.rs` 读路径 + `flush.rs` Flush + `compaction.rs` Compaction | `DB::open`, `put`, `write`, `get` |
 | `engine/db/write_batch.rs` | 批写容器 | `WriteBatch`, `WriteOp` |
 | `engine/db/replay.rs` | WAL entry → MemTable 回放 | `replay_entries` |
 | `engine/db/snapshot.rs` | MVCC 快照; `SnapshotList` | `Snapshot::get`, `SnapshotList` |
