@@ -17,4 +17,6 @@
 ### Fixed
 
 - 热路径 tracing 收敛: 写路径、raft apply/append/RPC 与 sst 构建的 `info!` 降为 `debug!`, `db_delete_range` span 补 `level = "debug"` 并纳入 span_contract 契约
+- 依赖安全: `crossbeam-epoch` 0.9.18 → 0.9.20 (RUSTSEC-2026-0204), `deny.toml` 豁免 hashbrown 构建链重复版本
+- `test_flush_reclaim` 断言放宽为容忍后台 flush 竞态 (对齐 `test_auto_flush_on_memtable_full`), 消除 flaky
 

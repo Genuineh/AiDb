@@ -19,6 +19,8 @@ skip = [
   { name = "getrandom" },
   # ring v0.17 依赖 windows-sys 0.52, 项目已有 windows-sys 0.61
   { name = "windows-sys" },
+  # dashmap 6.x 锁 hashbrown 0.14, indexmap 2.x (经 prost-build) 锁 0.17, 无法合并
+  { name = "hashbrown" },
 ]
 
 [sources]

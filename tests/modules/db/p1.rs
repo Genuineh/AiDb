@@ -256,7 +256,10 @@ fn test_flush_reclaim() {
     for i in 0..40u8 {
         db.put(&filler_key(i), &[i; 64]).unwrap();
     }
-    assert!(db.immutable_memtable_count() >= 1);
+    assert!(
+        db.immutable_memtable_count() >= 1 || db.level0_sstable_count() >= 1,
+        "memtable full should freeze or flush"
+    );
     db.flush().unwrap();
     assert_eq!(db.immutable_memtable_count(), 0);
     db.close().unwrap();
