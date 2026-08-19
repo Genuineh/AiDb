@@ -68,8 +68,7 @@ flowchart TB
 | `cluster/storage/snapshot.rs` | OpenRaft Snapshot 生成与安装 | `build_snapshot`, `install_snapshot` |
 | `cluster/pending_log.rs` | 未落盘 Log Entry 内存暂存与 Generation 防护 | `PendingLogOverlay` |
 | `cluster/log_committer.rs` | 异步批量 I/O Actor; 聚合 Log 写入并保序 flush | `LogCommitter` |
-| `cluster/network/` | gRPC 客户端/服务端与分发调度 | `factory.rs`, `server.rs::RaftServiceDispatcher` |
-| `cluster/network/aidb.raft.rs` | Prost 生成的 gRPC Protobuf 消息定义 | `@generated` |
+| `cluster/network/` | gRPC 客户端/服务端与分发调度; prost 桩由 `build.rs` 生成到 `OUT_DIR` (需 `protoc`) | `incoming.rs`, `factory.rs`, `server.rs::RaftServiceDispatcher` |
 | `cluster/lifecycle_manager.rs` | Group 创建/销毁与 Router 自动刷新 | `tick` → `TickResult` |
 | `cluster/leader_watcher.rs` | 本地 Leader 探活并同步 Meta `is_leader` | `tick`, `spawn_background` |
 | `cluster/membership_coordinator.rs` | 节点加入/离开/替换成员变更协调 | `add_node`, `remove_node`, `change_group_membership` |

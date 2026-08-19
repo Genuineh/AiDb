@@ -54,7 +54,7 @@ pub(super) use crate::error::{Error, Result};
 
 #[allow(clippy::all)]
 pub mod raft_rpc {
-    include!("aidb.raft.rs");
+    include!(concat!(env!("OUT_DIR"), "/aidb.raft.rs"));
 }
 
 pub(super) use raft_rpc::raft_service_client::RaftServiceClient;
@@ -81,10 +81,12 @@ where
 
 mod client;
 mod factory;
+mod incoming;
 mod server;
 #[cfg(test)]
 mod tests;
 
 pub use client::RaftNetworkClient;
 pub use factory::RaftNetworkClientFactory;
+pub use incoming::{raft_server, tcp_incoming};
 pub use server::{RaftServiceDispatcher, RaftServiceImpl};

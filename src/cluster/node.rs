@@ -654,7 +654,6 @@ impl OpenRaftNode {
     ) -> Result<()> {
         use raft_rpc::raft_service_server::RaftServiceServer;
         use tokio::net::TcpListener;
-        use tokio_stream::wrappers::TcpListenerStream;
 
         let listener = TcpListener::bind(addr)
             .await
@@ -666,9 +665,9 @@ impl OpenRaftNode {
             .max_decoding_message_size(max_message_size as usize)
             .max_encoding_message_size(max_message_size as usize);
 
-        tonic::transport::Server::builder()
+        crate::cluster::network::raft_server()
             .add_service(server)
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(crate::cluster::network::tcp_incoming(listener))
             .await
             .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
         Ok(())

@@ -45,7 +45,7 @@ aidb/
 │   ├── pre-commit           #   commit 时依次执行下面 3 个脚本 + fmt/clippy
 │   ├── check-branch.sh      #   分支保护: 禁止在基础分支直接提交
 │   ├── check-docs-links.sh  #   staged .md 相对链接存在性检查
-│   ├── check-security.sh    #   cargo audit + deny (SKIP_SECURITY 逃生门)
+│   ├── check-security.sh    #   cargo audit + deny
 │   └── commit-msg           #   Conventional Commits 提交说明校验
 ├── deny.toml            # cargo deny 策略 (许可证/来源)
 ├── rust-toolchain.toml  # 工具链 (stable, 自动切换)
@@ -76,7 +76,7 @@ aidb/
 | Local  | `[hooks/pre-commit](../hooks/pre-commit)`                        | commit 门禁入口, 按序执行分支保护 → 链接 → fmt/clippy → security|
 | Local  | `[hooks/check-branch.sh](../hooks/check-branch.sh)`              | 分支保护: 禁止在基础分支直接提交                                 |
 | Local  | `[hooks/check-docs-links.sh](../hooks/check-docs-links.sh)`      | staged `.md` 相对链接存在性检查                               |
-| Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny` (支持 `SKIP_SECURITY` 逃生门)   |
+| Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny`   |
 | Local  | `[deny.toml](../deny.toml)`                                      | cargo deny 策略 (许可证/来源)                                |
 | Local  | `[hooks/commit-msg](../hooks/commit-msg)`                        | Conventional Commits 提交说明校验                            |
 | GitHub | `[ISSUE_TEMPLATE/feat.yml](ISSUE_TEMPLATE/feat.yml)`             | Issue 模板: 新功能                                          |

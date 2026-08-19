@@ -19,7 +19,7 @@ description: AiDb 依赖嵌入、生产配置调优与运维实践指南 (How to
 | **操作系统** | Linux (kernel ≥ 5.4) / macOS | Linux x86_64 / aarch64 | CI 运行在 `ubuntu-latest` |
 | **磁盘存储** | 高性能 NVMe SSD | 标准 SSD / HDD | LSM 写 WAL 与 Compaction 读写高度依赖磁盘 IOPS |
 | **内存容量** | 4 GiB ~ 32 GiB+ | 512 MiB | 与 `Options` 中 MemTable、BlockCache 容量及活跃并发数正相关 |
-| **Protobuf 编译器** | `protoc` (最新 stable) | 系统包管理器自带版本 | 仅编译 `cluster` feature 时需要 (构建脚本支持回退) |
+| **Protobuf 编译器** | `protoc` (最新 stable) | 系统包管理器自带版本 | 仅编译 `cluster` feature 时需要; 缺少 protoc 时构建失败 |
 
 ---
 

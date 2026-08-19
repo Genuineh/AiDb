@@ -431,14 +431,13 @@ impl raft_rpc::raft_service_server::RaftService for SlowGetKeyService {
 async fn get_key_from_group_remote_timeout_is_not_silently_treated_as_absent() {
     use raft_rpc::raft_service_server::RaftServiceServer;
     use tokio::net::TcpListener as AsyncTcpListener;
-    use tokio_stream::wrappers::TcpListenerStream;
 
     let addr = pick_addr();
     let listener = AsyncTcpListener::bind(addr).await.unwrap();
     tokio::spawn(async move {
-        let _ = tonic::transport::Server::builder()
+        let _ = aidb::cluster::network::raft_server()
             .add_service(RaftServiceServer::new(SlowGetKeyService))
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(aidb::cluster::network::tcp_incoming(listener))
             .await;
     });
     tokio::time::sleep(Duration::from_millis(100)).await;

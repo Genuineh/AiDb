@@ -49,7 +49,7 @@ cargo test -- --test-threads=1
 
 ### Feature 专项与全量测试
 ```bash
-# Cluster 特性验证 (需本地 protoc 或 checked-in proto)
+# Cluster 特性验证 (需本地 protoc)
 cargo clippy --all-targets --features cluster
 cargo test --features cluster -- --test-threads=1
 

@@ -11,6 +11,7 @@ backup = ["dep:ring", "dep:hex", "dep:serde_json"]
 compression = ["dep:snap", "dep:lz4"]
 cluster = [
   "dep:tonic",
+  "dep:tonic-prost",
   "dep:prost",
   "dep:tokio",
   "dep:tokio-stream",
@@ -62,8 +63,9 @@ opentelemetry = { version = "0.32", optional = true }
 opentelemetry_sdk = { version = "0.32", optional = true, features = ["testing"] }
 
 # Cluster feature (optional)
-tonic   = { version = "0.11", optional = true }
-prost   = { version = "0.12", optional = true }
+tonic = { version = "0.14.6", optional = true }
+tonic-prost = { version = "0.14.6", optional = true }
+prost = { version = "0.14", optional = true }
 tokio   = { version = "1",    features = ["full"], optional = true }
 openraft = { version = "0.10.0-alpha.33", features = ["type-alias", "serde"], optional = true }
 openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
@@ -73,8 +75,7 @@ tokio-stream = { version = "0.1", features = ["net"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 [build-dependencies]
-tonic-build = "0.11"
-prost-build = "0.12"
+tonic-prost-build = "0.14.6"
 
 [dev-dependencies]
 ctor = "0.2"

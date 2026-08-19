@@ -64,14 +64,9 @@ brew install protobuf
 
 > **说明**: Git hook 默认 **不执行** `cargo test`, 测试由开发者本地手动或 CI 运行.
 
-### Security 检查与逃生门
+### Security 检查
 
-`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖. 
-若遇到已知依赖漏洞需等待上游修复时, 可使用逃生门临时跳过安全扫描:
-
-```bash
-SKIP_SECURITY=1 git commit -m "..."   # 仅跳过 security, fmt 与 clippy 仍正常执行
-```
+`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖.
 
 若本地未安装对应工具, 钩子会自动跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
 
@@ -116,7 +111,7 @@ cargo test -- --test-threads=1
 
 | Feature / 专项 | 校验与测试命令 | 说明 |
 | --- | --- | --- |
-| `cluster` | `cargo clippy --all-targets --features cluster`<br>`cargo test --features cluster -- --test-threads=1` | MultiRaft 与集群路由测试 (需本地 protoc 或 checked-in proto) |
+| `cluster` | `cargo clippy --all-targets --features cluster`<br>`cargo test --features cluster -- --test-threads=1` | MultiRaft 与集群路由测试 (需本地 protoc) |
 | `compression` | `cargo test --features compression --test sstable -- multi_block_read_with -- --test-threads=1` | Snap / LZ4 SSTable 块压缩 roundtrip 测试 |
 | `monitoring` | `cargo test --test metrics --features monitoring -- --test-threads=1` | OpenTelemetry 指标与 Tracing 上下文测试 |
 | **故障隔离 (脑裂)** | `cargo test --features cluster,cluster-test-util --test raft -- judge_leader_quorum_rules network_blackhole_drops_rpc lease_read_fails_after_leader_isolated -- --test-threads=1` | 脑裂与故障注入测试 (精确命中 3 个用例) |

@@ -25,7 +25,6 @@ impl MultiRaftNode {
     pub async fn start(&self, addr: SocketAddr, max_message_size: u64) -> Result<()> {
         use raft_rpc::raft_service_server::RaftServiceServer;
         use tokio::net::TcpListener;
-        use tokio_stream::wrappers::TcpListenerStream;
 
         let listener = TcpListener::bind(addr).await.map_err(ClusterError::Io)?;
         let service = RaftServiceImpl::new(self.grpc_dispatcher.clone());
@@ -34,9 +33,9 @@ impl MultiRaftNode {
             .max_encoding_message_size(max_message_size as usize);
 
         let handle = tokio::spawn(async move {
-            tonic::transport::Server::builder()
+            crate::cluster::network::raft_server()
                 .add_service(server)
-                .serve_with_incoming(TcpListenerStream::new(listener))
+                .serve_with_incoming(crate::cluster::network::tcp_incoming(listener))
                 .await
                 .ok();
         });
