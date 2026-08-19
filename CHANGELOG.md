@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- 依赖安全: `anyhow` 1.0.102 → 1.0.104 (RUSTSEC-2026-0190)
 - 依赖安全: 移除 tonic 0.11 引入的 h2 0.3.27 (RUSTSEC-2026-0258); SKIP_SECURITY 逃生门已删除; deny.toml 允许 Zlib (foldhash)
 - 热路径 tracing 收敛: 写路径、raft apply/append/RPC 与 sst 构建的 `info!` 降为 `debug!`, `db_delete_range` span 补 `level = "debug"` 并纳入 span_contract 契约
 - 依赖安全: `crossbeam-epoch` 0.9.18 → 0.9.20 (RUSTSEC-2026-0204), `deny.toml` 豁免 hashbrown 构建链重复版本

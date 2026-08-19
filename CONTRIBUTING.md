@@ -66,7 +66,7 @@ brew install protobuf
 
 ### Security 检查
 
-`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖.
+`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖. `cargo audit` 读取 `.cargo/audit.toml` (与 `deny.toml` 独立).
 
 若本地未安装对应工具, 钩子会自动跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
 
