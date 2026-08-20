@@ -73,7 +73,7 @@ impl SlotMigrationManager {
     fn load_run_record(dir: &std::path::Path) -> Option<MigrationRunRecord> {
         let path = Self::run_record_path(dir);
         let bytes = std::fs::read(&path).ok()?;
-        bincode::deserialize(&bytes).ok()
+        postcard::from_bytes(&bytes).ok()
     }
 
     fn persist_run_record(&self, record: &MigrationRunRecord) -> Result<()> {
@@ -81,8 +81,8 @@ impl SlotMigrationManager {
         let tmp = self
             .checkpoint_dir
             .join(format!("{}.tmp", MIGRATION_RUN_FILE));
-        let bytes =
-            bincode::serialize(record).map_err(|e| ClusterError::Serialization(e.to_string()))?;
+        let bytes = postcard::to_allocvec(record)
+            .map_err(|e| ClusterError::Serialization(e.to_string()))?;
         std::fs::write(&tmp, bytes).map_err(ClusterError::Io)?;
         std::fs::rename(&tmp, &path).map_err(ClusterError::Io)?;
         Ok(())

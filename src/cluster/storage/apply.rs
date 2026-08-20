@@ -393,7 +393,7 @@ impl OpenRaftStorage {
         log_id: &LIdOf,
     ) -> Result<Response> {
         let stored = openraft::StoredMembership::new(Some(*log_id), membership.clone());
-        let data = bincode::serialize(&stored)
+        let data = postcard::to_allocvec(&stored)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
         let mut batch = WriteBatch::new();
         batch.put(membership_key(self.group_id), data);

@@ -2,10 +2,6 @@
 # 每个被忽略的 advisory 需注明原因与跟踪 Issue, 避免静默累积
 
 [advisories]
-ignore = [
-    # RUSTSEC-2025-0141: bincode unmaintained (v1.3 停维护)
-    # 跟踪: AiDb Issue #77 — 迁移到维护中的序列化后端后移除
-    "RUSTSEC-2025-0141",
-]
+ignore = []
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"

@@ -151,7 +151,7 @@ sequenceDiagram
 ### VersionSet / MANIFEST
 
 - `CURRENT` 纯文本指针文件, 记录当前活跃的 `MANIFEST-NNNNNN`.
-- `VersionEdit`: 记录 `AddFile` / `DeleteFile` 版本增量 (JSON line + fsync).
+- `VersionEdit`: 记录 `AddFile` / `DeleteFile` 版本增量 (`crc32 + u32 len + postcard(VersionEdit)` + fsync).
 - 超出 `max_manifest_size` 时自动触发 `rotate_manifest`.
 
 ### Checkpoint API

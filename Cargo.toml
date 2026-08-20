@@ -41,7 +41,7 @@ crossbeam-skiplist = "0.1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 # File locking
 fs2 = "0.4"

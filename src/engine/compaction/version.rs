@@ -7,7 +7,7 @@
 //! open_new            → 新库: MANIFEST-000001 + CURRENT
 //! recover             → 读 CURRENT → replay MANIFEST → 重建 Version
 //! bootstrap_from_scan → 无 CURRENT 遗留库: 目录扫描生成 edits 后重建
-//! apply_edit          → MANIFEST append (JSON line + sync) → 更新内存 Version
+//! apply_edit          → MANIFEST append (crc32 + len + postcard payload) → 更新内存 Version
 //!                     → 超过 max_manifest_size 时 rotate_manifest
 //! rotate_manifest     → 当前 Version 全量快照写入新 MANIFEST, 原子写 CURRENT
 //! ```
@@ -440,7 +440,7 @@ fn parse_manifest_number(name: &str) -> Result<u64> {
 }
 
 fn write_manifest_record(writer: &mut impl Write, edit: &VersionEdit) -> Result<()> {
-    let payload = bincode::serialize(edit)
+    let payload = postcard::to_allocvec(edit)
         .map_err(|e| Error::Corruption(format!("serialize VersionEdit: {e}")))?;
     let len = payload.len() as u32;
     let mut crc_input = Vec::with_capacity(4 + payload.len());
@@ -476,7 +476,7 @@ fn read_manifest_record(reader: &mut impl Read) -> Result<Option<VersionEdit>> {
     if expected != actual {
         return Err(Error::Corruption("MANIFEST CRC mismatch".into()));
     }
-    let edit: VersionEdit = bincode::deserialize(&payload)
+    let edit: VersionEdit = postcard::from_bytes(&payload)
         .map_err(|e| Error::Corruption(format!("deserialize VersionEdit: {e}")))?;
     Ok(Some(edit))
 }

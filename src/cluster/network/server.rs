@@ -252,7 +252,7 @@ impl RaftService for RaftServiceImpl {
             openraft::vote::leader_id_std::CommittedLeaderId<u64>,
             NodeId,
             openraft::BasicNode,
-        > = bincode::deserialize(&meta.last_membership)
+        > = postcard::from_bytes(&meta.last_membership)
             .map_err(|e| tonic::Status::internal(format!("membership decode: {e}")))?;
 
         let snapshot_meta = openraft::SnapshotMeta {
@@ -355,11 +355,11 @@ impl RaftService for RaftServiceImpl {
             .get_node(req.group_id)
             .ok_or_else(|| tonic::Status::not_found(format!("group {} not found", req.group_id)))?;
 
-        let inner: Request = bincode::deserialize(&req.request)
+        let inner: Request = postcard::from_bytes(&req.request)
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
         match node.propose(inner).await {
             Ok(resp) => {
-                let payload = bincode::serialize(&resp)
+                let payload = postcard::to_allocvec(&resp)
                     .map_err(|e| tonic::Status::internal(e.to_string()))?;
                 Ok(tonic::Response::new(raft_rpc::RemoteProposeResponse {
                     response: payload,

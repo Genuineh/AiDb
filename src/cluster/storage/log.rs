@@ -261,7 +261,7 @@ impl OpenRaftStorage {
                 "load_state: found key, deserializing"
             );
             state.snapshot_meta = Some(
-                bincode::deserialize(&data)
+                postcard::from_bytes(&data)
                     .map_err(|e| ClusterError::Serialization(format!("snapshot_meta: {}", e)))?,
             );
         }
@@ -313,7 +313,7 @@ impl OpenRaftStorage {
                             if let openraft::EntryPayload::Membership(ref m) = entry.payload {
                                 let stored =
                                     openraft::StoredMembership::new(Some(entry.log_id), m.clone());
-                                let mem_data = bincode::serialize(&stored)
+                                let mem_data = postcard::to_allocvec(&stored)
                                     .map_err(|e| ClusterError::Serialization(e.to_string()))?;
                                 self.db.put(&membership_key(gid), &mem_data)?;
                                 break;
@@ -363,7 +363,7 @@ impl OpenRaftStorage {
     ) -> std::result::Result<openraft::StoredMembership<CLId, u64, openraft::BasicNode>, Error>
     {
         match self.db.get(&membership_key(self.group_id))? {
-            Some(data) => match bincode::deserialize(&data) {
+            Some(data) => match postcard::from_bytes(&data) {
                 Ok(m) => Ok(m),
                 Err(e) => {
                     tracing::warn!(

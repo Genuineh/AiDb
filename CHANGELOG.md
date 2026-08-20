@@ -9,6 +9,7 @@
 
 ### Changed
 
+- 序列化: `bincode 1.x` → `postcard 1.x` (开发期磁盘格式不兼容: MANIFEST payload, Raft snapshot/membership, MigrationRunRecord checkpoint, RemotePropose)
 - 升级 tonic 0.11 → 0.14.6 (tonic-prost), Raft gRPC 生成代码改为 OUT_DIR, 入站连接启用 TCP_NODELAY
 - cluster 层模块拆分: `network` / `multi_raft_node` / `slot_migration` / `meta_state_machine` 改为子目录, 生成代码 `aidb.raft.rs` 随 `network/` 隔离
 - CONTRIBUTING 补充 test-compression 与 partition/failover 测试说明

@@ -189,7 +189,7 @@ impl RaftNetworkClient {
     ///
     /// 用于 `propose_group` 在 group 非本地时的远程 fallback (在线 slot
     /// 迁移的 `PutConditional` 全量拷贝 / `MigrationBarrier` 写屏障等必须
-    /// 落到持有 target group 的节点). 请求/响应以 bincode 序列化, 与
+    /// 落到持有 target group 的节点). 请求/响应以 postcard 序列化, 与
     /// `GetKey` 共用同一 gRPC 通道与超时语义; 对端 `NotLeader` 映射为
     /// `failed_precondition`, 由调用方决定转发/重试.
     pub async fn remote_propose(&mut self, group_id: u64, request: &Request) -> Result<Response> {
@@ -199,7 +199,7 @@ impl RaftNetworkClient {
             .await
             .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
 
-        let payload = bincode::serialize(request)
+        let payload = postcard::to_allocvec(request)
             .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))?;
         let request = raft_rpc::RemoteProposeRequest {
             group_id,
@@ -224,7 +224,7 @@ impl RaftNetworkClient {
             }
         };
         let payload = response.into_inner().response;
-        bincode::deserialize(&payload)
+        postcard::from_bytes(&payload)
             .map_err(|e| Error::Cluster(ClusterError::Internal(e.to_string())))
     }
 
@@ -420,11 +420,13 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
             last_log_index: snapshot.meta.last_log_id.map(|id| id.index),
             last_log_term: snapshot.meta.last_log_id.map(|id| id.leader_id.term),
             last_log_leader_id: snapshot.meta.last_log_id.map(|id| id.leader_id.term),
-            last_membership: bincode::serialize(&snapshot.meta.last_membership).map_err(|e| {
-                openraft::error::StreamingError::Network(NetworkError::<TypeConfig>::new(
-                    &Unreachable::<TypeConfig>::new(&e),
-                ))
-            })?,
+            last_membership: postcard::to_allocvec(&snapshot.meta.last_membership).map_err(
+                |e| {
+                    openraft::error::StreamingError::Network(NetworkError::<TypeConfig>::new(
+                        &Unreachable::<TypeConfig>::new(&e),
+                    ))
+                },
+            )?,
             snapshot_id: snapshot
                 .meta
                 .last_log_id

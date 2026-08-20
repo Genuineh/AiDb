@@ -7,7 +7,7 @@
 //! build (OpenRaftSnapshotBuilder / get_current_snapshot)
 //!   ├─ db.flush() -> 数据全部进 SST
 //!   ├─ checkpoint 协议 pin SST (SnapshotCheckpointGuard)
-//!   ├─ 收集文件 -> bincode(SnapshotBundle { relative_path, data })
+//!   ├─ 收集文件 -> postcard(SnapshotBundle { relative_path, data })
 //!   └─ meta = SnapshotMeta { last_log_id, last_membership }
 //!
 //! install (install_snapshot_atomic)
@@ -102,7 +102,7 @@ pub(crate) fn prepare_snapshot_bundle(db: &DB) -> Result<Vec<u8>> {
     let _guard = SnapshotCheckpointGuard::new(db);
     let bundle = SnapshotBundle::from_files(db)?;
 
-    bincode::serialize(&bundle)
+    postcard::to_allocvec(&bundle)
         .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
 }
 
@@ -120,7 +120,7 @@ impl OpenRaftSnapshotBuilder {
 impl OpenRaftStorage {
     /// 文件级 snapshot 安装: 关闭旧 DB → 清空目录 → 写入新文件 → 重新打开 DB.
     pub(crate) fn install_snapshot_atomic(&mut self, meta: &SMOf, data: &[u8]) -> Result<()> {
-        let bundle: SnapshotBundle = bincode::deserialize(data)
+        let bundle: SnapshotBundle = postcard::from_bytes(data)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
 
         // 关闭旧 DB, 终止后台线程 (flush/compaction).
@@ -159,7 +159,7 @@ impl OpenRaftStorage {
         self.db = new_db;
 
         // 写入 snapshot meta 等元数据 (与原逻辑相同).
-        let meta_bytes = bincode::serialize(meta)
+        let meta_bytes = postcard::to_allocvec(meta)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
         self.db
             .put(&snapshot_meta_key(self.group_id), &meta_bytes)?;
@@ -205,7 +205,7 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
             .db
             .get(&super::keys::membership_key(self.group_id))
             .map_err(|e| std::io::Error::other(e.to_string()))?
-            .map(|d| bincode::deserialize(&d).unwrap_or_default())
+            .map(|d| postcard::from_bytes(&d).unwrap_or_default())
             .unwrap_or_default();
 
         let last_applied: Option<LIdOf> = self
