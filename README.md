@@ -84,7 +84,7 @@ fn main() -> aidb::Result<()> {
     let db = DB::open("/tmp/aidb-demo", Options::default())?;
 
     // 2. 基础写入与点查 (CRUD)
-    db.put(b"hello", b"world")?;
+    let _ = db.put(b"hello", b"world")?;
     assert_eq!(db.get(b"hello")?, Some(b"world".to_vec()));
 
     // 3. 删除与关闭

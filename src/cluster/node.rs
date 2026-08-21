@@ -538,11 +538,11 @@ impl OpenRaftNode {
 
     pub async fn write_batch(&self, batch: ThinWriteBatch) -> Result<()> {
         match self.propose(Request::WriteBatch(batch)).await? {
-            Response::Ok => Ok(()),
+            Response::Ok | Response::WriteStats { .. } => Ok(()),
             Response::Error(msg) => Err(Error::Cluster(ClusterError::Internal(msg))),
-            _ => Err(Error::Cluster(ClusterError::Internal(
-                "unexpected write_batch response".into(),
-            ))),
+            other => Err(Error::Cluster(ClusterError::Internal(format!(
+                "unexpected write_batch response: {other}"
+            )))),
         }
     }
 

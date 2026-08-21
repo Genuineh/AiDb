@@ -3,11 +3,12 @@
 //! # 点查流程
 //!
 //! ```text
-//! get(seek_key)
+//! get(seek_key) / value_type(seek_key)
 //!   ├─ Bloom: may_contain(extract_user_key)      miss → 直接 None (免 I/O)
 //!   ├─ Index: find_block_handle 二分定位 Data Block
 //!   ├─ BlockCache hit → Block; miss → 文件读取 + CRC 校验
-//!   └─ Block 内扫描: user_key 匹配且 seq <= seek_seq → 返回 (value, ValueType)
+//!   └─ Block 内扫描: user_key 匹配且 seq <= seek_seq
+//!        → get: 返回 (value, ValueType); value_type: 仅返回 ValueType
 //! ```
 //!
 //! # Invariant
@@ -201,6 +202,74 @@ impl SSTableReader {
             }
         }
         tracing::debug!(target: "sst", found = false, "sst.seek.result");
+        if bloom_passed {
+            record_bloom_false_positive();
+        }
+        Ok(None)
+    }
+
+    /// 点查只返回 `ValueType`, 不分配 value `Vec`.
+    #[tracing::instrument(
+    level = "debug",
+    name = "sst_value_type",
+    skip(self, seek_key),
+    fields(file_number = self.file_number, level = self.level)
+  )]
+    pub fn value_type(&self, seek_key: &[u8]) -> Result<Option<ValueType>> {
+        let target_user = extract_user_key(seek_key);
+
+        let bloom_passed = if let Some(ref filter) = self.bloom_filter {
+            let hit = filter.may_contain(target_user);
+            tracing::debug!(
+              target: "sst",
+              file_number = self.file_number,
+              hit,
+              "bloom_check"
+            );
+            if !hit {
+                tracing::debug!(target: "sst", found = false, "sst.value_type.result");
+                return Ok(None);
+            }
+            true
+        } else {
+            false
+        };
+
+        let handle = find_block_handle(&self.index_entries, seek_key)?;
+        let block_data = read_block_cached(
+            &self.file,
+            self.file_number,
+            &handle,
+            self.block_cache.as_ref(),
+        )?;
+        let block = Block::new(block_data)?;
+        let mut it = block.iter();
+        let seek_seq = extract_sequence(seek_key)?;
+
+        while it.valid() {
+            let key = it.key();
+            match extract_user_key(key).cmp(target_user) {
+                Ordering::Greater => break,
+                Ordering::Less => {
+                    if !it.advance() {
+                        break;
+                    }
+                    continue;
+                }
+                Ordering::Equal => {
+                    let seq = extract_sequence(key)?;
+                    if seq <= seek_seq {
+                        let ty = extract_value_type(key)?;
+                        tracing::debug!(target: "sst", found = true, "sst.value_type.result");
+                        return Ok(Some(ty));
+                    }
+                }
+            }
+            if !it.advance() {
+                break;
+            }
+        }
+        tracing::debug!(target: "sst", found = false, "sst.value_type.result");
         if bloom_passed {
             record_bloom_false_positive();
         }

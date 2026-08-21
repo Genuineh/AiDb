@@ -1,10 +1,11 @@
 //! LSM DB 引擎总协调器: 聚合 WAL / MemTable / SSTable / VersionSet / SnapshotList, 对外提供
-//! `open` / `put` / `get` / `delete` / `write` / `snapshot` / `iter` / `scan` / `flush` / `close`,
-//! 并驱动后台 flush 与 compaction 线程.
+//! `open` / `put` / `get` / `key_exists` / `delete` / `write` / `snapshot` / `iter` / `scan` /
+//! `flush` / `close`, 并驱动后台 flush 与 compaction 线程.
 //!
 //! 本文件为拆分后的模块根, 子模块按职责划分:
 //! - `write`: 单 key 写与 WriteBatch 写入, WAL 落盘与 MemTable 更新
 //! - `read`: get/scan/snapshot 读路径聚合
+//! - `exists`: key_exists 完整存在性判定 (不物化 Value)
 //! - `flush`: 冻结 MemTable 与后台 Flush 调度
 //! - `compaction`: 文件 claim、subcompaction 与后台压缩循环
 //!
@@ -16,7 +17,7 @@
 //!   → (sync_wal: wait_group_commit_sync) → MemTable put/delete
 //!   → maybe_freeze (超过 memtable_size) → ImmutableMemTable
 //!   → 后台 flush 线程 (flush_pending) → L0 SSTable
-//! 读路径 (get_at_sequence):
+//! 读路径 (get_at_sequence / key_exists_at_sequence):
 //!   active MemTable → immutable MemTable (新→旧) → L0 SSTable (新→旧全扫)
 //!   → L1+ (find_sstable_for_key 按 user_key range 定位)
 //! 后台线程: flush 线程 (poll flush_poll_ms); compaction 线程 (compaction_signals 触发
@@ -40,6 +41,7 @@
 //!   行为 intentionally 不同 (详见 `docs/modules/01-engine.md`).
 
 mod compaction;
+mod exists;
 mod flush;
 mod read;
 mod write;
@@ -48,7 +50,7 @@ pub(super) use super::iterator::DbIterGuard;
 pub(super) use super::numbers::scan_next_wal_file_number;
 pub(super) use super::replay::replay_entries;
 pub(super) use super::snapshot::{Snapshot, SnapshotList};
-pub(super) use super::write_batch::{WriteBatch, WriteOp};
+pub(super) use super::write_batch::{EngineWriteStats, WriteBatch, WriteOp};
 pub(super) use crate::config::Options;
 pub(super) use crate::engine::cache::{BlockCache, CacheStats};
 pub(super) use crate::engine::compaction::{

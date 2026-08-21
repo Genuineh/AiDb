@@ -161,12 +161,14 @@ impl OpenRaftStorage {
         // 写入 snapshot meta 等元数据 (与原逻辑相同).
         let meta_bytes = postcard::to_allocvec(meta)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-        self.db
+        let _ = self
+            .db
             .put(&snapshot_meta_key(self.group_id), &meta_bytes)?;
         if let Some(log_id) = meta.last_log_id {
             let la = rmp_serde::to_vec(&log_id)
                 .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-            self.db
+            let _ = self
+                .db
                 .put(&super::keys::last_applied_key(self.group_id), &la)?;
         }
 
@@ -357,7 +359,7 @@ mod tests {
             for (k, v) in &output.kv_pairs {
                 wb.put(k.clone(), v.clone());
             }
-            db.write(&wb).unwrap();
+            let _ = db.write(&wb).unwrap();
         }
 
         let bundle_data = prepare_snapshot_bundle(&db).unwrap();

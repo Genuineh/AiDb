@@ -31,8 +31,8 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 | `engine/memtable/iterator.rs` | MemTable 迭代 | `MemTableIterator` |
 | `engine/memtable/range_tombstone.rs` | Range tombstone 辅助 (`[start,end)` 覆盖 / 最大 seq) | `max_covering_range_tombstone_seq` |
 | `engine/db/mod.rs` | DB 模块根; re-export | — |
-| `engine/db/inner/` | DB 总协调 (子目录): `mod.rs` 生命周期/状态 + `write.rs` 写路径 + `read.rs` 读路径 + `flush.rs` Flush + `compaction.rs` Compaction | `DB::open`, `put`, `write`, `get` |
-| `engine/db/write_batch.rs` | 批写容器 | `WriteBatch`, `WriteOp` |
+| `engine/db/inner/` | DB 总协调 (子目录): `mod.rs` 生命周期/状态 + `write.rs` 写路径 + `read.rs` 读路径 + `exists.rs` 存在性判定 + `flush.rs` Flush + `compaction.rs` Compaction | `DB::open`, `put`, `write`, `get`, `key_exists` |
+| `engine/db/write_batch.rs` | 批写容器与写摘要 | `WriteBatch`, `WriteOp`, `EngineWriteStats` |
 | `engine/db/replay.rs` | WAL entry → MemTable 回放 | `replay_entries` |
 | `engine/db/snapshot.rs` | MVCC 快照; `SnapshotList` | `Snapshot::get`, `SnapshotList` |
 | `engine/db/iterator.rs` | 跨 MemTable + SSTable 归并迭代 | `DBIterator` |
@@ -40,7 +40,7 @@ description: AiDb 写路径 — WAL、MemTable、DB API、WriteBatch、MVCC 快�
 | `src/config.rs` | 引擎配置: `Options` / `ClusterConfig` / `MigrationConfig` / `CompressionType` | `Options::for_testing`, `Options::validate` |
 | `src/error.rs` | 类型化错误 (`thiserror`); `Cluster` 变体需 feature `cluster` | `Error`, `Result` |
 
-公共 re-export (`src/lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `Snapshot`, `DbIterGuard`.
+公共 re-export (`src/lib.rs`): `DB`, `WriteBatch`, `WriteOp`, `EngineWriteStats`, `Snapshot`, `DbIterGuard`.
 
 ## 关键 invariant (勿破坏)
 
@@ -84,9 +84,11 @@ flowchart TD
 
 SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 
-### 读取 (get / snapshot)
+### 读取 (get / snapshot / key_exists)
 
 `get_at_sequence(key, max_seq)`: 构造 `seek_key = encode_internal_key(key, max_seq, TypePut)` → active MemTable → immutable (新→旧) → SSTable 层 (L0 新→旧, L1+ 二分定位).
+
+`key_exists` / `key_exists_at_sequence`: 查序与 `get` 相同, 但热路径只读 `ValueType` (mem/imm 用 `search`, SST 用 `SSTableReader::value_type`), **不**物化 Value. 禁止仅用 `MemTable::contains_key` 代替完整存在性判定.
 
 ## 关键类型与 API
 
@@ -113,9 +115,12 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 | API | 说明 |
 | --- | --- |
 | `DB::open(path, Options)` | 恢复 + 启动后台 flush/compaction 线程 |
-| `put(key, value)` / `delete(key)` | 单条写; 分配连续 sequence |
-| `write(&WriteBatch)` | 原子批量写; BatchStart + 连续 seq; 一次 `sync_wal` |
+| `put(key, value) -> Result<bool>` | 单条写; 返回是否 insert (新 key); 同源更新 `total_key_count` |
+| `write(&WriteBatch) -> Result<EngineWriteStats>` | 原子批量写; BatchStart + 连续 seq; 一次 `sync_wal`; 批内 overlay 累计 inserted/deleted |
+| `write_without_wal(&WriteBatch) -> Result<EngineWriteStats>` | 同上但不写引擎 WAL (Raft apply 等); 同样用 `key_exists` + overlay |
+| `delete(key)` | 单条删; 分配连续 sequence |
 | `get(key)` | 读取最新可见版本 |
+| `key_exists(key)` | 完整存在性判定 (mem→imm→SST); 不物化 Value |
 | `delete_range(start, end)` | RangeTombstone O(1) 写入; 记 WAL + memtable `put_range_delete` |
 | `snapshot()` | 创建 MVCC 点快照 |
 | `iter()` / `scan(range)` | 全表或范围迭代 (见 invariant) |
@@ -152,16 +157,16 @@ SSTable / VersionSet 细节见 [engine-storage.md](02-engine-storage.md).
 let mut batch = WriteBatch::new();
 batch.put(b"k1", b"v1");
 batch.delete(b"k2");
-db.write(&batch)?;
+let _ = db.write(&batch)?;
 ```
 
-空 batch 为 no-op (不写 WAL, 不分配 sequence).
+空 batch 为 no-op (不写 WAL, 不分配 sequence; 返回零值 `EngineWriteStats`).
 
 ### Snapshot 点读
 
 ```rust
 let snap = db.snapshot()?;
-db.put(b"k", b"new")?;
+let _ = db.put(b"k", b"new")?;
 assert_eq!(snap.get(b"k")?, Some(b"old".to_vec()));
 ```
 
@@ -209,5 +214,5 @@ cargo test --test engine --test snapshot -- --test-threads=1
 
 - 并发 `get` 无锁读 MemTable: WriteBatch 逐条写入 MemTable 期间, 其他线程可能看到 batch **部分** 效果 (与 LevelDB 一致). Snapshot 创建持 `write_lock`, 无此问题.
 - `iter`/`scan` 不过滤到当前 sequence, 使用 `K_MAX_SEQUENCE` 见全部已写入版本.
-- `total_key_count` 在 `write_lock` 内通过 active MemTable 快速检查 key 存在性, 仅作近似统计 / metrics (AtomicUsize Relaxed 序, 不持久化).
+- `total_key_count` 与 `put`/`write`/`write_without_wal` 返回的 insert/delete 摘要同源: 经完整 `key_exists` (及批内 overlay) 判定后增减 (AtomicUsize Relaxed 序, 不持久化).
 - 数据目录格式与旧版 `aidb-oldmain` **不兼容** (文本 WAL → 二进制 WalEntry).

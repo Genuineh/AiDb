@@ -34,7 +34,7 @@ impl DB {
         }
     }
 
-    fn has_active_range_tombstones(&self) -> bool {
+    pub(super) fn has_active_range_tombstones(&self) -> bool {
         if self.memtable.read().has_range_tombstones() {
             return true;
         }
@@ -262,7 +262,7 @@ pub(super) fn min_sequence_in_memtable(mt: &MemTable) -> Option<u64> {
     min
 }
 
-fn find_sstable_for_key<'a>(
+pub(super) fn find_sstable_for_key<'a>(
     level: &'a [Arc<SSTableReader>],
     user_key: &[u8],
 ) -> Option<&'a Arc<SSTableReader>> {

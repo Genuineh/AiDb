@@ -4,9 +4,17 @@
 //! 冻结逻辑 (`maybe_freeze` / `wait_for_memtable_slot`) 也在此维护.
 
 use super::{
-    AtomicOrdering, CompactionPicker, Duration, Error, OpType, Result, WalEntry, WriteBatch,
-    WriteOp, DB, SEQUENCE_LIMIT,
+    AtomicOrdering, CompactionPicker, Duration, EngineWriteStats, Error, OpType, Result, WalEntry,
+    WriteBatch, WriteOp, DB, SEQUENCE_LIMIT,
 };
+use std::collections::HashMap;
+
+/// 批内分类用的操作种类 (key 为 DB 中实际 key).
+#[derive(Clone, Copy)]
+enum ClassifyOp {
+    Put,
+    Delete,
+}
 
 impl DB {
     fn alloc_sequence(&self, count: u64) -> Result<u64> {
@@ -148,7 +156,7 @@ impl DB {
     }
 
     #[tracing::instrument(level = "debug", name = "db_put", skip(self, key, value))]
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<bool> {
         #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
@@ -171,15 +179,13 @@ impl DB {
         }
 
         // Phase 3: MemTable (after WAL is durable)
-        let existed = self
-            .memtable
-            .read()
-            .contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)?;
+        let existed = self.key_exists(key)?;
         self.memtable.read().put(key, value, seq)?;
         self.committed_sequence
             .fetch_max(seq, AtomicOrdering::SeqCst);
 
-        if !existed {
+        let inserted = !existed;
+        if inserted {
             self.total_key_count.fetch_add(1, AtomicOrdering::Relaxed);
             #[cfg(feature = "monitoring")]
             crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
@@ -188,7 +194,7 @@ impl DB {
         tracing::debug!(target: "db", "db.put");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation_duration("put", op_start.elapsed().as_secs_f64());
-        Ok(())
+        Ok(inserted)
     }
 
     #[tracing::instrument(level = "debug", name = "db_delete", skip(self, key))]
@@ -238,9 +244,9 @@ impl DB {
     }
 
     #[tracing::instrument(level = "debug", name = "db_write_batch", skip(self, batch))]
-    pub fn write(&self, batch: &WriteBatch) -> Result<()> {
+    pub fn write(&self, batch: &WriteBatch) -> Result<EngineWriteStats> {
         if batch.is_empty() {
-            return Ok(());
+            return Ok(EngineWriteStats::default());
         }
         let t0 = std::time::Instant::now();
         #[cfg(feature = "monitoring")]
@@ -250,7 +256,6 @@ impl DB {
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation("write_batch");
 
-        // 在写锁内用 MemTable 快速检查 key 存在性 (避免全 LSM 读)
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
         let lock_acquired = std::time::Instant::now();
@@ -273,8 +278,7 @@ impl DB {
             wal.append_encoded_write_batch(&encoded, base)?;
         }
 
-        // 在 MemTable 写入前检查 key 存在性, 用 O(1) 内存操作替代 O(log N) 磁盘读
-        let mut key_delta: isize = 0;
+        let stats = self.classify_ops_with_overlay(batch_ops_iter(batch))?;
         {
             let mt = self.memtable.read();
             for (i, op) in batch.operations.iter().enumerate() {
@@ -282,16 +286,10 @@ impl DB {
                 match op {
                     WriteOp::Put { key, value } => {
                         Self::validate_user_key(key)?;
-                        if !mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
-                            key_delta += 1;
-                        }
                         mt.put(key, value, seq)?;
                     }
                     WriteOp::Delete { key } => {
                         Self::validate_user_key(key)?;
-                        if mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
-                            key_delta -= 1;
-                        }
                         mt.delete(key, seq)?;
                     }
                 }
@@ -311,21 +309,7 @@ impl DB {
         }
 
         let lock_hold_us = lock_acquired.elapsed().as_micros();
-        if key_delta > 0 {
-            self.total_key_count
-                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
-        } else if key_delta < 0 {
-            let sub = (-key_delta) as usize;
-            self.total_key_count
-                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
-                    Some(c.saturating_sub(sub))
-                })
-                .ok();
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
-        }
+        self.apply_key_count_delta(&stats);
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
         tracing::debug!(
@@ -338,14 +322,14 @@ impl DB {
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_operation_duration("write_batch", op_start.elapsed().as_secs_f64());
-        Ok(())
+        Ok(stats)
     }
 
     /// 写入 WriteBatch 但不经由 DB 自身的 WAL (适用于 StateMachine 写入, 避免双重 WAL 磁盘开销).
     #[tracing::instrument(level = "debug", name = "db_write_batch_no_wal", skip(self, batch))]
-    pub fn write_without_wal(&self, batch: &WriteBatch) -> Result<()> {
+    pub fn write_without_wal(&self, batch: &WriteBatch) -> Result<EngineWriteStats> {
         if batch.is_empty() {
-            return Ok(());
+            return Ok(EngineWriteStats::default());
         }
         let t0 = std::time::Instant::now();
         #[cfg(feature = "monitoring")]
@@ -360,7 +344,7 @@ impl DB {
         let lock_acquired = std::time::Instant::now();
         let base = self.alloc_sequence(n)?;
 
-        let mut key_delta: isize = 0;
+        let stats = self.classify_ops_with_overlay(batch_ops_iter(batch))?;
         {
             let mt = self.memtable.read();
             for (i, op) in batch.operations.iter().enumerate() {
@@ -368,16 +352,10 @@ impl DB {
                 match op {
                     WriteOp::Put { key, value } => {
                         Self::validate_user_key(key)?;
-                        if !mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
-                            key_delta += 1;
-                        }
                         mt.put(key, value, seq)?;
                     }
                     WriteOp::Delete { key } => {
                         Self::validate_user_key(key)?;
-                        if mt.contains_key(key, crate::engine::memtable::K_MAX_SEQUENCE)? {
-                            key_delta -= 1;
-                        }
                         mt.delete(key, seq)?;
                     }
                 }
@@ -390,21 +368,7 @@ impl DB {
         drop(_guard);
 
         let lock_hold_us = lock_acquired.elapsed().as_micros();
-        if key_delta > 0 {
-            self.total_key_count
-                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
-        } else if key_delta < 0 {
-            let sub = (-key_delta) as usize;
-            self.total_key_count
-                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
-                    Some(c.saturating_sub(sub))
-                })
-                .ok();
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
-        }
+        self.apply_key_count_delta(&stats);
         self.maybe_freeze()?;
         let total_us = t0.elapsed().as_micros();
         tracing::debug!(
@@ -420,7 +384,56 @@ impl DB {
             "write_batch_no_wal",
             op_start.elapsed().as_secs_f64(),
         );
-        Ok(())
+        Ok(stats)
+    }
+
+    /// 用 `key_exists` + 批内 overlay 判定每条 op 的 insert/delete, 供 stats 与 `total_key_count` 同源.
+    fn classify_ops_with_overlay<'a, I>(&self, ops: I) -> Result<EngineWriteStats>
+    where
+        I: IntoIterator<Item = (&'a [u8], ClassifyOp)>,
+    {
+        let mut overlay: HashMap<Vec<u8>, bool> = HashMap::new();
+        let mut stats = EngineWriteStats::default();
+        for (key, kind) in ops {
+            let existed = match overlay.get(key) {
+                Some(present) => *present,
+                None => self.key_exists(key)?,
+            };
+            match kind {
+                ClassifyOp::Put => {
+                    overlay.insert(key.to_vec(), true);
+                    if !existed {
+                        stats.inserted += 1;
+                    }
+                }
+                ClassifyOp::Delete => {
+                    overlay.insert(key.to_vec(), false);
+                    if existed {
+                        stats.deleted += 1;
+                    }
+                }
+            }
+        }
+        Ok(stats)
+    }
+
+    fn apply_key_count_delta(&self, stats: &EngineWriteStats) {
+        let key_delta = stats.inserted as i64 - stats.deleted as i64;
+        if key_delta > 0 {
+            self.total_key_count
+                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+        } else if key_delta < 0 {
+            let sub = (-key_delta) as usize;
+            self.total_key_count
+                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
+                    Some(c.saturating_sub(sub))
+                })
+                .ok();
+            #[cfg(feature = "monitoring")]
+            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+        }
     }
 
     /// 删除 `[start, end)` 半开区间内的全部 user key (RangeTombstone, O(1) 写入).
@@ -598,6 +611,13 @@ impl DB {
         self.immutable_memtables.write().push(old.freeze(flush_seq));
         Ok(())
     }
+}
+
+fn batch_ops_iter(batch: &WriteBatch) -> impl Iterator<Item = (&[u8], ClassifyOp)> + '_ {
+    batch.operations.iter().map(|op| match op {
+        WriteOp::Put { key, .. } => (key.as_slice(), ClassifyOp::Put),
+        WriteOp::Delete { key } => (key.as_slice(), ClassifyOp::Delete),
+    })
 }
 
 fn wal_entry_for_op(op: &WriteOp, seq: u64) -> Result<WalEntry> {

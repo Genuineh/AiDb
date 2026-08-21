@@ -7,8 +7,12 @@
 
 ### Added
 
+- 引擎: `DB::key_exists` / `key_exists_at_sequence` (mem→imm→SST, 不物化 Value); `put`→`Result<bool>`; `write` / `write_without_wal`→`EngineWriteStats`; 批内 overlay
+- 集群: `Response::WriteStats { effects }` — apply 回传 per-op insert/delete 摘要 (同版本滚动)
+
 ### Changed
 
+- 引擎: `total_key_count` / `aidb_total_key_count` 与完整 `key_exists` (+ overlay) 同源更新 (含 `write_without_wal`)
 - 序列化: `bincode 1.x` → `postcard 1.x` (开发期磁盘格式不兼容: MANIFEST payload, Raft snapshot/membership, MigrationRunRecord checkpoint, RemotePropose)
 - 升级 tonic 0.11 → 0.14.6 (tonic-prost), Raft gRPC 生成代码改为 OUT_DIR, 入站连接启用 TCP_NODELAY
 - cluster 层模块拆分: `network` / `multi_raft_node` / `slot_migration` / `meta_state_machine` 改为子目录, 生成代码 `aidb.raft.rs` 随 `network/` 隔离

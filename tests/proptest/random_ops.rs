@@ -105,7 +105,7 @@ proptest! {
       for (k, v) in kvs {
         wb.put([*k], [*v]);
       }
-      db.write(&wb).unwrap();
+      let _ = db.write(&wb).unwrap();
       apply_model(&mut model, batch_kvs);
     }
 

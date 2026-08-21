@@ -20,7 +20,7 @@ description: AiDb 持久化层 — SSTable 布局、层级 compaction、布隆�
 | `engine/sstable/block.rs` | Data Block: 前缀压缩 (prefix compression) + 重启点 (restart points) | `BlockBuilder::add`, `Block::iter` |
 | `engine/sstable/block_io.rs` | Block trailer (压缩类型 + CRC); cache 读写 | `write_block`, `read_block_cached` |
 | `engine/sstable/builder.rs` | InternalKey 有序写盘; `.sst.tmp` → rename | `SSTableBuilder::add`, `finish` |
-| `engine/sstable/reader.rs` | Footer → Index → Bloom → Block 点查 | `SSTableReader::open`, `get` |
+| `engine/sstable/reader.rs` | Footer → Index → Bloom → Block 点查 | `SSTableReader::open`, `get`, `value_type` |
 | `engine/sstable/iterator.rs` | 单文件顺序迭代 | `SSTableIterator` |
 | `engine/sstable/index.rs` | Block 最大 InternalKey → `BlockHandle` | `find_block_handle` |
 | `engine/sstable/handle.rs` | Block offset + size 编码 (Index/Meta Index 引用) | `BlockHandle::encode/decode` |
