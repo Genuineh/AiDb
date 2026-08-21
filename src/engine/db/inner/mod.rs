@@ -53,8 +53,8 @@ pub(super) use crate::config::Options;
 pub(super) use crate::engine::cache::{BlockCache, CacheStats};
 pub(super) use crate::engine::compaction::{
     current_exists, load_sstables_from_version, remove_orphan_sstables,
-    scan_version_edits_from_dir, CompactionFilter, CompactionJob, CompactionPicker, CompactionTask,
-    VersionEdit, VersionSet,
+    scan_version_edits_from_dir, CompactionFilter, CompactionJob, CompactionPicker,
+    CompactionRemovalListener, CompactionTask, VersionEdit, VersionSet,
 };
 pub(super) use crate::engine::memtable::{
     encode_internal_key_buffered, extract_sequence, ImmutableMemTable, MemTable, PointState,
@@ -104,6 +104,8 @@ pub struct DB {
     closed: AtomicBool,
     /// Compaction 过滤器: 在 entry 写入输出 SST 前判断是否保留.
     compaction_filter: RwLock<Option<Arc<dyn CompactionFilter>>>,
+    /// 最新 Put 被 filter Remove 时的监听器 (filter 保持无副作用).
+    compaction_removal_listener: RwLock<Option<Arc<dyn CompactionRemovalListener>>>,
     checkpoint_in_progress: AtomicBool,
     total_key_count: AtomicUsize,
     block_cache: Arc<BlockCache>,
@@ -214,6 +216,7 @@ impl DB {
             compacting: Mutex::new(HashSet::new()),
             closed: AtomicBool::new(false),
             compaction_filter: RwLock::new(None),
+            compaction_removal_listener: RwLock::new(None),
             checkpoint_in_progress: AtomicBool::new(false),
             total_key_count: AtomicUsize::new(0),
             block_cache,
@@ -280,6 +283,14 @@ impl DB {
     /// 设置 compaction 过滤器. 在下次 compaction 时生效.
     pub fn set_compaction_filter(&self, filter: Option<Arc<dyn CompactionFilter>>) {
         *self.compaction_filter.write() = filter;
+    }
+
+    /// 设置 filter Remove (最新 Put) 监听器. 在下次 compaction 时生效.
+    pub fn set_compaction_removal_listener(
+        &self,
+        listener: Option<Arc<dyn CompactionRemovalListener>>,
+    ) {
+        *self.compaction_removal_listener.write() = listener;
     }
 
     pub fn use_wal(&self) -> bool {
@@ -430,6 +441,8 @@ impl DB {
             let _ = h.join();
         }
         self.do_flush()?;
+        *self.compaction_filter.write() = None;
+        *self.compaction_removal_listener.write() = None;
         self.closed.store(true, AtomicOrdering::Release);
         self.wal.write().sync()?;
         let _ = self.wal.write().close();

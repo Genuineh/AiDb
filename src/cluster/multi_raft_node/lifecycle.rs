@@ -87,9 +87,11 @@ impl MultiRaftNode {
                 });
             *net_factory.write() = RaftNetworkClientFactory::new(node_id, 0, rpc_timeout, msg_size);
 
+            let mut next_delay = std::time::Duration::ZERO;
             loop {
                 tokio::select! {
-                  _ = tokio::time::sleep(lifecycle.tick_interval()) => {
+                  _ = tokio::time::sleep(next_delay) => {
+                    next_delay = lifecycle.tick_interval();
                     let tick_result = lifecycle.tick();
                     if let Some(ref cfg) = cfg {
                       // 从 MetaRaft 元数据判断本节点是否为 group 的 leader (is_leader=true).
@@ -294,6 +296,9 @@ impl MultiRaftNode {
     ) -> Result<(OpenRaftNode, ShardedStorage)> {
         let storage = ShardedStorage::open(&cfg.data_dir, group_id, cfg.options.clone())?;
         storage.set_compaction_filter(cfg.compaction_filter.clone());
+        if let Some(factory) = &cfg.compaction_removal_listener_factory {
+            storage.set_compaction_removal_listener(Some(factory(storage.db().clone())));
+        }
         let db = storage.db().clone();
         let mut config = cfg.raft_node_config.clone();
         config.group_id = group_id;

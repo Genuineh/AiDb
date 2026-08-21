@@ -130,6 +130,7 @@ async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
         },
         options: Options::for_testing(),
         compaction_filter: None,
+        compaction_removal_listener_factory: None,
     });
 
     for _ in 0..100 {

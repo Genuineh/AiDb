@@ -5,7 +5,8 @@
 //! # 架构
 //!
 //! ```text
-//! lifecycle task (tick, 默认 1s)
+//! lifecycle task (首次立即 tick, 之后默认 1s)
+
 //!   ├─ LifecycleManager::tick -> TickResult (期望拓扑 vs 本地 Group)
 //!   ├─ groups_to_create  -> create_group_inner(gid, is_leader, rpc_addr)
 //!   │     ├─ ShardedStorage::open -> OpenRaftNode::new (注入 network factory)
@@ -44,7 +45,7 @@ use crate::cluster::router::Router;
 use crate::cluster::sharded_storage::ShardedStorage;
 use crate::cluster::types::{NodeId, RaftNodeConfig};
 use crate::config::Options;
-use crate::engine::compaction::CompactionFilter;
+use crate::engine::compaction::{CompactionFilter, CompactionRemovalListener};
 
 mod io;
 mod lifecycle;
@@ -78,6 +79,10 @@ pub struct MultiRaftNode {
     network_factory: Arc<RwLock<RaftNetworkClientFactory>>,
 }
 
+/// 按 group `DB` 构造 `CompactionRemovalListener` (每 group 独立实例).
+pub type CompactionRemovalListenerFactory =
+    Arc<dyn Fn(Arc<crate::DB>) -> Arc<dyn CompactionRemovalListener> + Send + Sync>;
+
 /// Group 生命周期配置 (用于 start_lifecycle_with_data).
 #[derive(Clone)]
 pub struct LifecycleConfig {
@@ -86,6 +91,8 @@ pub struct LifecycleConfig {
     pub options: Options,
     /// 可选的 compaction 过滤器 (如 TTL 过期自动删除).
     pub compaction_filter: Option<Arc<dyn CompactionFilter>>,
+    /// 按 group DB 构造 Remove 监听器 (每 group 独立 `Arc<DB>`).
+    pub compaction_removal_listener_factory: Option<CompactionRemovalListenerFactory>,
 }
 
 /// 单个 group 的自愈重启退避状态.

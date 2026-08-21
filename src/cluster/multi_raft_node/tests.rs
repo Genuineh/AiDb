@@ -98,6 +98,7 @@ async fn supervise_groups_restarts_fatal_group_and_preserves_data() {
         },
         options: Options::for_testing(),
         compaction_filter: None,
+        compaction_removal_listener_factory: None,
     };
     let net_factory = Arc::new(RwLock::new(RaftNetworkClientFactory::new(
         1,

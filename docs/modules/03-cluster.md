@@ -135,6 +135,8 @@ flowchart LR
 
 ### Lifecycle Tick (本地 Group 对齐与自愈)
 
+`start_lifecycle_with_data` 首次 tick 立即执行 (delay=0), 之后按 `tick_interval` 巡检, 避免冷启动必须空等一个周期才能打开 data group.
+
 ```mermaid
 flowchart TD
     T[LifecycleManager.tick] --> M[读取 MetaRaft ClusterMeta + SlotTable]

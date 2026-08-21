@@ -53,6 +53,8 @@ pub struct CompactionResult {
     pub smallest_key: Vec<u8>,
     pub largest_key: Vec<u8>,
     pub file_size: u64,
+    /// 本子任务中因 filter 丢弃的最新 Put 的 user_key (去重前由调用方合并).
+    pub filter_removed_user_keys: Vec<Vec<u8>>,
 }
 
 impl CompactionJob {
@@ -248,6 +250,7 @@ impl CompactionJob {
         }
 
         let mut merge_iter = MergeIterator::new(self.all_inputs())?;
+        let mut filter_removed: Vec<Vec<u8>> = Vec::new();
         let mut entry_count = 0usize;
         let mut last_user_key: Option<Vec<u8>> = None;
         let mut smallest_key: Option<Vec<u8>> = None;
@@ -313,6 +316,9 @@ impl CompactionJob {
             if !self.should_filter(&key, &value) {
                 builder.add(&key, &value)?;
                 entry_count += 1;
+            } else if value_type == ValueType::TypePut {
+                // 记录; Version 安装后再通知 listener (见 DB::run_compaction_once).
+                filter_removed.push(user_key.to_vec());
             }
             last_user_key = Some(user_key.to_vec());
             tracker.observe(seq, self.min_snapshot_sequence);
@@ -331,6 +337,7 @@ impl CompactionJob {
                 smallest_key: vec![],
                 largest_key: vec![],
                 file_size: 0,
+                filter_removed_user_keys: filter_removed,
             });
         }
 
@@ -349,6 +356,7 @@ impl CompactionJob {
             smallest_key: smallest_key.unwrap_or_default(),
             largest_key: largest_key.unwrap_or_default(),
             file_size,
+            filter_removed_user_keys: filter_removed,
         })
     }
 
@@ -365,6 +373,7 @@ impl CompactionJob {
                 smallest_key: vec![],
                 largest_key: vec![],
                 file_size: 0,
+                filter_removed_user_keys: vec![],
             }]);
         }
 
@@ -378,7 +387,6 @@ impl CompactionJob {
         let bloom_fpr = self.bloom_false_positive_rate;
         let min_snap_seq = self.min_snapshot_sequence;
         let compaction_filter = self.compaction_filter.clone();
-
         let results: Vec<Result<CompactionResult>> = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(split_keys.len() + 1);
 
@@ -417,7 +425,7 @@ impl CompactionJob {
                         bloom_fpr,
                         min_snap_seq,
                         expected,
-                        filter.clone(),
+                        filter,
                     )
                 }));
             }
@@ -474,6 +482,7 @@ fn write_sub_compaction(
             smallest_key: vec![],
             largest_key: vec![],
             file_size: 0,
+            filter_removed_user_keys: vec![],
         });
     }
 
@@ -494,6 +503,7 @@ fn write_sub_compaction(
         MergeIterator::new(readers.to_vec())?
     };
 
+    let mut filter_removed: Vec<Vec<u8>> = Vec::new();
     let mut entry_count = 0usize;
     let mut last_user_key: Option<Vec<u8>> = None;
     let mut smallest_key: Option<Vec<u8>> = None;
@@ -566,6 +576,8 @@ fn write_sub_compaction(
         if !should_filter_impl(&compaction_filter, output_level, &key, &value) {
             builder.add(&key, &value)?;
             entry_count += 1;
+        } else if value_type == ValueType::TypePut {
+            filter_removed.push(user_key.to_vec());
         }
         last_user_key = Some(user_key.to_vec());
         tracker.observe(seq, min_snap_seq);
@@ -584,6 +596,7 @@ fn write_sub_compaction(
             smallest_key: vec![],
             largest_key: vec![],
             file_size: 0,
+            filter_removed_user_keys: filter_removed,
         });
     }
 
@@ -595,6 +608,7 @@ fn write_sub_compaction(
         smallest_key: smallest_key.unwrap_or_default(),
         largest_key: largest_key.unwrap_or_default(),
         file_size,
+        filter_removed_user_keys: filter_removed,
     })
 }
 
@@ -674,6 +688,43 @@ mod tests {
         let out = job.run(&[11]).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].entry_count, 1);
+    }
+
+    #[test]
+    fn test_filter_removed_user_keys_recorded() {
+        use crate::engine::compaction::{CompactionFilter, FilterDecision};
+
+        struct DropPuts;
+        impl CompactionFilter for DropPuts {
+            fn filter(&self, _: usize, _: &[u8], _: &[u8]) -> FilterDecision {
+                FilterDecision::Remove
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let a = sst(
+            dir.path(),
+            1,
+            0,
+            &[
+                (b"k", 2, ValueType::TypePut, b"v2"),
+                (b"k", 1, ValueType::TypePut, b"v1"),
+            ],
+        );
+        let job = CompactionJob::new(
+            vec![a],
+            vec![],
+            1,
+            dir.path().to_path_buf(),
+            512,
+            16,
+            CompressionType::None,
+            0.0,
+        )
+        .with_filter(Some(Arc::new(DropPuts)));
+        let out = job.run(&[20]).unwrap();
+        assert_eq!(out[0].entry_count, 0);
+        assert_eq!(out[0].filter_removed_user_keys, vec![b"k".to_vec()]);
     }
 
     #[test]

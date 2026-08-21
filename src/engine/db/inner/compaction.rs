@@ -187,6 +187,15 @@ impl DB {
 
         update_sstable_metrics(&self.sstables.read());
 
+        // Version 已切换: 再通知 listener, 便于上层用 get==None 安全扣减.
+        if let Some(listener) = self.compaction_removal_listener.read().clone() {
+            for result in &results {
+                for uk in &result.filter_removed_user_keys {
+                    listener.on_latest_put_removed(uk);
+                }
+            }
+        }
+
         self.try_cleanup_wals()?;
 
         for input in &task.inputs {

@@ -153,6 +153,7 @@ async fn setup(
         },
         options: Options::for_testing(),
         compaction_filter: None,
+        compaction_removal_listener_factory: None,
     });
 
     // 等两个 group 都在本地创建出来并选出 leader.
