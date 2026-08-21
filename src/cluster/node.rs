@@ -438,7 +438,12 @@ impl OpenRaftNode {
                                             .await;
                                         continue;
                                     }
-                                    return Err(forward_err);
+                                    // 远端仍返回 ForwardToLeader Display 串时, 归一成 NotLeader.
+                                    return Err(normalize_forward_like_error(
+                                        forward_err,
+                                        ftl.leader_id,
+                                        leader_addr.clone(),
+                                    ));
                                 }
                             }
                         }
@@ -452,7 +457,17 @@ impl OpenRaftNode {
                             is_ask: false,
                         }));
                     }
-                    return Err(Error::Cluster(ClusterError::Raft(e.to_string())));
+                    // 部分 openraft 错误 Display 含 "has to forward" 但 forward_to_leader()
+                    // 抽不出结构体 — 仍按 NotLeader 处理, 避免 CLUSTER MEET 等直接致命失败.
+                    let msg = e.to_string();
+                    if msg.contains("has to forward request to") {
+                        return Err(Error::Cluster(ClusterError::NotLeader {
+                            leader: None,
+                            leader_addr: None,
+                            is_ask: false,
+                        }));
+                    }
+                    return Err(Error::Cluster(ClusterError::Raft(msg)));
                 }
             }
         }
@@ -693,6 +708,25 @@ impl OpenRaftNode {
 
     pub fn add_node_address(&self, node_id: NodeId, address: String) {
         self.network_factory.write().add_node(node_id, address);
+    }
+}
+
+/// 转发失败时若仍是 ForwardToLeader 语义, 归一为 `NotLeader`.
+fn normalize_forward_like_error(
+    err: Error,
+    leader: Option<NodeId>,
+    leader_addr: Option<String>,
+) -> Error {
+    match err {
+        Error::Cluster(ClusterError::NotLeader { .. }) => err,
+        Error::Cluster(ClusterError::Raft(msg)) if msg.contains("has to forward request to") => {
+            Error::Cluster(ClusterError::NotLeader {
+                leader,
+                leader_addr,
+                is_ask: false,
+            })
+        }
+        other => other,
     }
 }
 

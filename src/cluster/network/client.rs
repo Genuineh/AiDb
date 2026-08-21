@@ -560,6 +560,21 @@ fn map_rpc_status_error(rpc_name: &str, status: tonic::Status) -> Error {
             "{rpc_name}: {}",
             status.message()
         ))),
+        // 对端可能把 openraft ForwardToLeader 打成 Internal/其它码; 统一成 NotLeader
+        // 以便上层 (CLUSTER MEET 等) 退避重试, 而不是把 Display 串当致命 Raft 错.
+        other if status.message().contains("has to forward request to") => {
+            tracing::debug!(
+                rpc = rpc_name,
+                code = ?other,
+                msg = %status.message(),
+                "map ForwardToLeader-like status to NotLeader"
+            );
+            Error::Cluster(ClusterError::NotLeader {
+                leader: None,
+                leader_addr: None,
+                is_ask: false,
+            })
+        }
         _ => Error::Cluster(ClusterError::Raft(format!(
             "{rpc_name} failed: {}",
             status.message()
