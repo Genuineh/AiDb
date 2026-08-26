@@ -1,9 +1,26 @@
 [package]
 name = "aidb"
-version = "0.14.10"
+version = "1.0.0"
 edition = "2021"
-description = "LSM-Tree based KV storage engine with optional cluster support"
+description = "Pure Rust LSM-tree key-value storage engine with optional MultiRaft support"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/wiqun/AiDb"
+homepage = "https://github.com/wiqun/AiDb"
+documentation = "https://docs.rs/aidb"
+readme = "README.md"
+keywords = ["database", "lsm-tree", "key-value", "raft", "storage-engine"]
+categories = ["database-implementations", "data-structures", "concurrency"]
+exclude = [
+  ".cargo/",
+  ".github/",
+  ".cursor/",
+  ".claude/",
+  "hooks/",
+  "install-hooks.sh",
+  "clippy.toml",
+  "deny.toml",
+  "rustfmt.toml",
+]
 
 [features]
 default = ["backup"]
@@ -98,6 +115,14 @@ harness = false
 [[bench]]
 name = "backup_bench"
 harness = false
+
+[[example]]
+name = "backup"
+required-features = ["backup"]
+
+[[test]]
+name = "backup"
+required-features = ["backup"]
 
 [profile.release]
 lto            = true

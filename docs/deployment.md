@@ -16,7 +16,7 @@ description: AiDb 依赖嵌入、生产配置调优与运维实践指南 (How to
 | 资源维度 | 生产推荐配置 | 最低运行要求 | 运维与规划说明 |
 | --- | --- | --- | --- |
 | **Rust 工具链** | Rust **stable** | 声明于 `rust-toolchain.toml` | 编译构建需要, 包含 `clippy` 与 `rustfmt` |
-| **操作系统** | Linux (kernel ≥ 5.4) / macOS | Linux x86_64 / aarch64 | CI 运行在 `ubuntu-latest` |
+| **操作系统** | Linux x86_64 | Linux x86_64 | 正式验证平台; 其他平台仅提供 best-effort 支持 |
 | **磁盘存储** | 高性能 NVMe SSD | 标准 SSD / HDD | LSM 写 WAL 与 Compaction 读写高度依赖磁盘 IOPS |
 | **内存容量** | 4 GiB ~ 32 GiB+ | 512 MiB | 与 `Options` 中 MemTable、BlockCache 容量及活跃并发数正相关 |
 | **Protobuf 编译器** | `protoc` (最新 stable) | 系统包管理器自带版本 | 仅编译 `cluster` feature 时需要; 缺少 protoc 时构建失败 |
@@ -32,7 +32,7 @@ description: AiDb 依赖嵌入、生产配置调优与运维实践指南 (How to
 | `default` | ✅ | 包含 `backup` 与核心 LSM 引擎 | 单机嵌入且需要本地全量备份 |
 | (engine only) | — | 仅 `src/engine/*`, 零外部可选依赖 | 极简单机嵌入 (`--no-default-features`) |
 | `backup` | ✅ | `src/backup/*`, 依赖 `ring`, `hex`, `serde_json` | 单机全量备份与数据恢复 (`BackupManager`) |
-| `compression` | ❌ | SSTable 块压缩, 依赖 `snap`, `lz4_flex` | 节省磁盘空间, 启用时 `Options` 默认使用 Snap |
+| `compression` | ❌ | SSTable 块压缩, 依赖 `snap`, `lz4` | 节省磁盘空间, 启用时 `Options` 默认使用 Snap |
 | `cluster` | ❌ | `src/cluster/*`, 依赖 `openraft`, `tonic`, `tokio` | MetaRaft + MultiRaft 16384 槽位集群共识 |
 | `monitoring` | ❌ | `src/metrics.rs`, 依赖 `opentelemetry` 系列 | 内部指标埋点 (`aidb_*`), 配合宿主 OTLP 导出 |
 
@@ -59,8 +59,8 @@ cargo build --release --features compression,cluster,monitoring
 
 ```toml
 [dependencies]
-# 方式 A: 来自 crates.io (以最新版本为准)
-aidb = { version = "0.14", default-features = false, features = ["backup", "compression", "monitoring"] }
+# 方式 A: 来自 crates.io
+aidb = { version = "1.0.0", default-features = false, features = ["backup", "compression", "monitoring"] }
 
 # 方式 B: 本地 Monorepo 路径依赖 (如 AiKv 引入)
 aidb = { path = "../aidb", features = ["backup", "compression", "cluster", "monitoring"] }
@@ -112,6 +112,19 @@ let value = tokio::task::spawn_blocking(move || {
     db_clone.get(b"target_key")
 }).await.map_err(|e| aidb::Error::Internal(e.to_string()))??;
 ```
+
+### 3.4 版本兼容与数据迁移
+
+`1.x` 遵循 Cargo SemVer, 保持公开 Rust API 兼容. 此兼容承诺不包含持久化数据格式
+和集群跨版本互操作:
+
+- v1 不保证读取 v1 之前版本生成的 WAL, MANIFEST, SSTable, Raft snapshot 或
+  migration checkpoint.
+- v1 不支持与 v1 之前版本进行集群滚动升级.
+- 从开发版本升级到 v1 时, 应使用新数据目录, 或通过应用层导入导出迁移数据.
+
+生产构建和运行的正式验证平台为 Linux x86_64. 其他平台仅提供 best-effort 支持,
+部署前应由集成方自行完成构建和数据恢复验证.
 
 ---
 

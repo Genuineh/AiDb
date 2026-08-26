@@ -1,8 +1,8 @@
 # AiDb
 
 [![Rust 2021](https://img.shields.io/badge/Rust-2021-blue.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.14.10-orange.svg)](Cargo.toml)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](Cargo.toml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可证)
 [![CI Status](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 > **AiDb** 是一个纯 Rust 实现的高性能、轻量级**嵌入式 LSM-Tree 键值存储引擎库** (lib crate).  
@@ -71,7 +71,7 @@ flowchart TB
 
 ```toml
 [dependencies]
-aidb = "0.14.10"
+aidb = "1.0.0"
 ```
 
 ### 基础读写示例
@@ -118,6 +118,17 @@ fn main() -> aidb::Result<()> {
 
 构建与 Feature 详细配置见 [docs/deployment.md](docs/deployment.md).
 
+## 兼容性与支持平台
+
+- `1.x` 遵循 Cargo SemVer, 保持公开 Rust API 兼容.
+- v1 不保证读取 v1 之前版本生成的 WAL, MANIFEST, SSTable, Raft snapshot 或
+  migration checkpoint, 也不支持与 v1 之前版本进行集群滚动升级.
+- 从开发版本升级到 v1 时, 应使用新数据目录, 或通过应用层导入导出迁移数据.
+- Linux x86_64 是正式验证平台. 其他平台仅提供 best-effort 支持.
+
+安全漏洞报告方式见 [SECURITY.md](SECURITY.md), 手工发布步骤见
+[RELEASING.md](RELEASING.md).
+
 ## 基准测试 (Benchmarks)
 
 基准测试基于 [criterion](https://github.com/bheisler/criterion.rs):
@@ -153,4 +164,4 @@ cargo bench --bench backup_bench
 
 ## 许可证
 
-本项目采用 [MIT OR Apache-2.0](LICENSE) 双重开源许可证 (见 [Cargo.toml](Cargo.toml)).
+本项目采用 [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE) 双重开源许可证 (见 [Cargo.toml](Cargo.toml)).
