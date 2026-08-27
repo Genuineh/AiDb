@@ -1,4 +1,5 @@
 //! DB 层跨模块 dataflow — put/get/flush/delete 的 span 树 (Mode A)
+//! @component aidb-engine
 
 use crate::common::dataflow::{capture_spans, capture_spans_and_events};
 use crate::common::observability::tracing_test_lock;

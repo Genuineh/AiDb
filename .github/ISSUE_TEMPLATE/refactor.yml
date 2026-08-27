@@ -1,0 +1,34 @@
+name: Refactor
+description: "Restructure code without changing external behavior (commit type: refactor)"
+labels: ["refactor"]
+title: "[refactor] Summary"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A refactor must not change external behavior. Explain the motivation and how you
+        verified there is no regression.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Motivation
+      description: Why refactor — maintainability, performance, removing duplication, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Refactoring plan
+      description: Outline of the structural changes (modules / interfaces / data flow)
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How it was verified
+      description: How behavior is confirmed unchanged — test coverage, benchmark comparison
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Risks, affected modules, related discussion

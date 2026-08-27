@@ -1,4 +1,26 @@
-//! DB 配置: 选项不超过 20 个, 保持简单.
+//! 配置结构 — 单机 LSM 引擎 `Options`, 以及 feature-gated 的集群配置
+//! `ClusterConfig` / `MigrationConfig`; 含默认值、预设 (for_testing /
+//! for_production 等) 与打开 DB 前的校验 (`Options::validate`).
+//!
+//! # 分层
+//!
+//! ```text
+//! Options          引擎层: MemTable / SSTable / WAL / Compaction / 运行时调优
+//! ClusterConfig    集群: group_count / replication_factor / log 限制 /
+//!                   MigrationConfig / snapshot_size_threshold
+//! MigrationConfig  迁移: max_batch_size / progress_report_interval /
+//!                   max_retries / retry_base_delay_ms / verify_sample_factor
+//! ```
+//!
+//! # Invariant
+//!
+//! - Raft 模式要求 `use_wal = true` (在 `node.rs` 强制校验, 见
+//!   `docs/modules/03-cluster.md`).
+//! - `Options::validate` 在 DB 打开前检查 memtable / block / level0 / poll 间隔
+//!   等下限, `min_sub_compactions <= max_sub_compactions`.
+//! - `ClusterConfig::for_testing()` 用 4 slot、RF=1; 生产默认 256 group、RF=3.
+//! - `snapshot_size_threshold: None` = 禁用 size-based snapshot, 仅依赖
+//!   `LogsSinceLast` 策略.
 
 /// 压缩算法
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -108,7 +130,13 @@ impl Default for Options {
             block_size: 4 * 1024,
             block_restart_interval: 16,
             block_cache_size: 64 * 1024 * 1024,
+            // 生产 (启用 compression feature) 默认 Snap 压缩; 无 feature 时默认
+            // None, 保证默认构建 (cargo test / 无 feature 部署) 可正常读写 SST.
+            // 避免 "默认 Options 声明 Snap 但 feature 未启用" 的不一致 (见 A-001).
+            #[cfg(feature = "compression")]
             compression: CompressionType::Snap,
+            #[cfg(not(feature = "compression"))]
+            compression: CompressionType::None,
             bloom_false_positive_rate: 0.01,
             use_wal: true,
             sync_wal: false,
@@ -185,13 +213,16 @@ impl Options {
         }
     }
 
-    /// 高写入吞吐: 大 MemTable + 大 Block + 启用压缩
+    /// 高写入吞吐: 大 MemTable + 大 Block + 启用压缩 (有 compression feature 时)
     pub fn for_high_write_throughput() -> Self {
         Self {
             memtable_size: 256 * 1024 * 1024,
             max_write_buffer_number: 4,
             block_size: 16 * 1024,
+            #[cfg(feature = "compression")]
             compression: CompressionType::Snap,
+            #[cfg(not(feature = "compression"))]
+            compression: CompressionType::None,
             ..Self::default()
         }
     }
@@ -355,7 +386,10 @@ mod tests {
         assert_eq!(opts.max_write_buffer_number, 2);
         assert_eq!(opts.min_write_buffer_number_to_merge, 1);
         assert_eq!(opts.block_restart_interval, 16);
+        #[cfg(feature = "compression")]
         assert_eq!(opts.compression, CompressionType::Snap);
+        #[cfg(not(feature = "compression"))]
+        assert_eq!(opts.compression, CompressionType::None);
         assert!((opts.bloom_false_positive_rate - 0.01).abs() < 1e-6);
         assert_eq!(opts.level0_compaction_trigger, 4);
         assert_eq!(opts.max_bytes_for_level_base, 256 * 1024 * 1024);
@@ -396,7 +430,10 @@ mod tests {
     fn for_high_write_throughput_has_large_memtable() {
         let opts = Options::for_high_write_throughput();
         assert_eq!(opts.memtable_size, 256 * 1024 * 1024);
+        #[cfg(feature = "compression")]
         assert_eq!(opts.compression, CompressionType::Snap);
+        #[cfg(not(feature = "compression"))]
+        assert_eq!(opts.compression, CompressionType::None);
         assert_eq!(opts.block_size, 16 * 1024);
         assert_eq!(opts.max_write_buffer_number, 4);
         // unchanged from default

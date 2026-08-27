@@ -1,4 +1,5 @@
 //! Integration tests for LeaderChangeWatcher.
+//! @component aidb-cluster
 //!
 //! Creates a single-node Raft cluster to verify tick behavior.
 
@@ -60,6 +61,7 @@ async fn test_watcher_tick_no_panic_empty_groups() {
         multi_raft.clone(),
         meta_raft.clone(),
         Duration::from_millis(100),
+        Duration::from_millis(400), // lease = election_timeout_max
     );
 
     // tick() on empty groups should return empty vec, no panic
@@ -112,6 +114,7 @@ async fn test_watcher_populates_cache_on_first_tick() {
         multi_raft.clone(),
         meta_raft.clone(),
         Duration::from_millis(100),
+        Duration::from_millis(400), // lease = election_timeout_max
     );
 
     // Even with empty groups, tick should not panic

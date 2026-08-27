@@ -1,6 +1,6 @@
 //! ISSUE-005 — 数据 Group apply: SM + last_applied 单 WriteBatch 原子持久化 (B1.2 模板)
+//! @component aidb-cluster
 //!
-//! 规格: `WiQunTools/docs/wiqun-db-inventory/09-raft.md` §apply 原子 WriteBatch
 
 use aidb::cluster::types::{LogEntry, Request, ThinWriteBatch};
 use aidb::cluster::{OpenRaftStorage, DEFAULT_GROUP_ID};
@@ -48,6 +48,10 @@ async fn test_data_put_last_applied_consistent_after_reopen() {
         storage
             .apply_entries_internal(&[put_entry(1, b"k1", b"v1")])
             .unwrap();
+        // apply 只写 memtable (write_without_wal), 崩溃恢复依赖 raft log 重放.
+        // 本测试直接调 apply_entries_internal 绕过 raft log, 故需显式 flush 让
+        // 状态机数据落 SST, 否则 reopen 时 memtable 未持久化会丢失.
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;
@@ -74,6 +78,7 @@ async fn test_write_batch_entry_atomic_with_last_applied() {
             payload: EntryPayload::Normal(Request::WriteBatch(wb)),
         };
         storage.apply_entries_internal(&[entry]).unwrap();
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;
@@ -102,6 +107,7 @@ async fn test_multi_entry_apply_sequential_consistency() {
                 put_entry(3, b"c", b"3"),
             ])
             .unwrap();
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;
@@ -145,6 +151,7 @@ async fn test_membership_and_last_applied_atomic() {
             payload: EntryPayload::Membership(membership),
         };
         storage.apply_entries_internal(&[entry]).unwrap();
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;
@@ -172,6 +179,7 @@ async fn test_put_conditional_skips_existing_key() {
             }),
         };
         storage.apply_entries_internal(&[conditional]).unwrap();
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;
@@ -194,6 +202,7 @@ async fn test_apply_idempotent_after_reopen() {
             .apply_entries_internal(std::slice::from_ref(&entry))
             .unwrap();
         storage.apply_entries_internal(&[entry]).unwrap();
+        storage.db().flush().unwrap();
     }
 
     let mut storage = reopen_storage(&path).await;

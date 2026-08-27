@@ -1,4 +1,18 @@
-//! SSTable 构建: 排序 K-V → 磁盘文件.
+//! SSTableBuilder — 将严格递增的 InternalKey 序列写为单个 `.sst` 文件.
+//!
+//! # 构建流程
+//!
+//! ```text
+//! add: 严格递增校验 → 写入 Data Block; 达到 block_size 即 flush (含 trailer + CRC)
+//! finish: 收尾 Data Block → Bloom / Properties (raw) → Meta Index → Index → Footer
+//!         → sync → rename .sst.tmp → .sst
+//! abandon: 丢弃未完成的 .sst.tmp
+//! ```
+//!
+//! # Invariant
+//!
+//! - 空 SST (0 entry) 的 `finish` 被拒绝 (`Error::InvalidArgument`).
+//! - Data Block 达到 `block_size` 才 flush; Index / Meta Index 固定 `CompressionType::None`.
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
@@ -88,10 +102,11 @@ impl SSTableBuilder {
     }
 
     #[tracing::instrument(
-    name = "sst_build_add",
-    skip(self, key, value),
-    fields(key_len = key.len())
-  )]
+        level = "debug",
+        name = "sst_build_add",
+        skip(self, key, value),
+        fields(key_len = key.len())
+    )]
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if key.is_empty() {
             return Err(Error::InvalidArgument("empty SSTable key".into()));
@@ -161,7 +176,7 @@ impl SSTableBuilder {
     }
 
     pub fn finish(mut self) -> Result<u64> {
-        let _span = tracing::info_span!(
+        let _span = tracing::debug_span!(
           "sst_build_finish",
           file = %self.final_path.display()
         )
@@ -186,7 +201,7 @@ impl SSTableBuilder {
             let num_bits = filter.num_bits();
             let num_hashes = filter.num_hashes();
             let _bloom_span =
-                tracing::info_span!("bloom_build", key_count, num_bits, num_hashes).entered();
+                tracing::debug_span!("bloom_build", key_count, num_bits, num_hashes).entered();
             let encoded = filter.encode();
             tracing::debug!(
               target: "sst",
@@ -248,7 +263,7 @@ impl SSTableBuilder {
         fs::rename(&self.tmp_path, &self.final_path)?;
         let file_size = fs::metadata(&self.final_path)?.len();
 
-        tracing::info!(
+        tracing::debug!(
           target: "sst",
           block_count = self.block_count,
           file_size,

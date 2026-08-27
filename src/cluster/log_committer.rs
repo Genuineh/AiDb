@@ -121,6 +121,9 @@ pub(crate) enum IoCommand {
 #[derive(Clone)]
 pub struct LogCommitterHandle {
     tx: mpsc::UnboundedSender<IoCommand>,
+    /// actor 任务句柄, `shutdown()` 时 await 以确保 Arc<DB> 完全释放
+    /// (自愈重开前必须等它退出, 否则 WAL LOCK 仍被占用 → `Database already in use`).
+    join: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub metrics: Arc<LogCommitterMetrics>,
     pub fatal: Arc<AtomicBool>,
     pub overlay: Arc<Mutex<PendingLogOverlay<EOf>>>,
@@ -131,6 +134,17 @@ impl LogCommitterHandle {
         self.tx
             .send(cmd)
             .map_err(|_| ClusterError::Internal("LogCommitter channel closed".into()).into())
+    }
+
+    /// 优雅关闭: 发送 `Shutdown` 命令, 等待 actor 处理完当前 batch 后退出.
+    /// 之后调用方即可安全 drop 底层 DB (文件锁随之释放).
+    pub async fn shutdown(&self) {
+        // 通道已断 (actor 已退出) 时 send 失败, 属正常情况.
+        let _ = self.send(IoCommand::Shutdown);
+        let join = self.join.lock().take();
+        if let Some(join) = join {
+            let _ = join.await;
+        }
     }
 
     /// 发送 Append 命令, 等待 flush 完成.
@@ -219,14 +233,17 @@ pub(crate) fn spawn_committer(
 
     let handle = LogCommitterHandle {
         tx,
+        join: Arc::new(Mutex::new(None)),
         metrics: metrics.clone(),
         fatal: fatal.clone(),
         overlay: overlay.clone(),
     };
 
-    tokio::spawn(run_committer(
+    let join = tokio::spawn(run_committer(
         group_id, db, rx, cfg, metrics, fatal, overlay,
     ));
+
+    handle.join.lock().replace(join);
 
     handle
 }
@@ -596,7 +613,7 @@ fn sync_flush(
             }
         }
 
-        db.write(&batch)?;
+        let _ = db.write(&batch)?;
     }
 
     // 2. Truncate — 使用 DB 级别的 delete_range
@@ -615,7 +632,7 @@ fn sync_flush(
                             .map_err(|e| ClusterError::Serialization(e.to_string()))?;
                         let mut b = WriteBatch::new();
                         b.put(keys::last_log_id_key(group_id), lid_data);
-                        db.write(&b)?;
+                        let _ = db.write(&b)?;
                     }
                 }
             }

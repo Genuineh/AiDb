@@ -1,4 +1,5 @@
 //! L2 Integration Tests for Multi-Raft
+//! @component aidb-cluster
 //!
 //! These tests combine multiple modules (Router, LifecycleManager, ShardedStorage,
 //! MultiRaftNode, RaftServiceDispatcher, MockMetaRaft) to verify end-to-end

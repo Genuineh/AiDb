@@ -1,0 +1,24 @@
+name: Documentation
+description: "Add or update documentation (commit type: docs)"
+labels: ["docs"]
+title: "[docs] Summary"
+body:
+  - type: textarea
+    id: target
+    attributes:
+      label: Docs affected
+      description: Which documents (README / docs/ / CONTRIBUTING / API comments, etc.)
+    validations:
+      required: true
+  - type: textarea
+    id: content
+    attributes:
+      label: Changes
+      description: Outline of additions / revisions / removals
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Related code changes, prior discussion

@@ -1,4 +1,28 @@
-//! Raft log persistence (vote + log entries).
+//! Raft log 持久化 — vote 与 log entry 在 LSM 上的读写, 以及启动时从 DB 恢复
+//! 内存态. key 布局见 `storage/keys.rs` 的 `\x00raft/{gid}/*`.
+//!
+//! # 数据流
+//!
+//! ```text
+//! RaftLogStorage (gid 维度)
+//!   ├─ save_vote       -> vote_key
+//!   ├─ append          -> log/{idx} 逐条 + last_log_id_key
+//!   ├─ truncate_after  -> delete_range(log/{idx} .. log0) + 回写 last_log_id
+//!   ├─ purge           -> delete_range(上次 purge 之后 .. idx) + last_purged_log_id_key
+//!   └─ get_log_entries -> PendingLogOverlay 优先, DB 点查 fallback
+//!
+//! load_state (构造时)
+//!   ├─ try_deser_or_clean: 反序列化失败 -> wipe_group_raft_data (openraft 升级兼容)
+//!   ├─ last_log_id: 持久化 key 优先 (O(1)), 缺失/悬挂则 O(N) 扫描重建
+//!   └─ membership 缺失时从 log 反查最近 Membership entry 重建
+//! ```
+//!
+//! # Invariant
+//!
+//! - `get_log_entries` 按 index 点查: overlay 立即可读, DB 兜底.
+//! - `purge` / `truncate` 使用 `delete_range` 批量删, 避免 log 累积后逐条 delete.
+//! - `last_log_id` 持久化 key 存在但对应 entry 丢失 (悬挂) 时走扫描重建.
+//! - 数据不兼容 (如版本升级) 时 wipe 该 group 全部 raft 数据并重建.
 
 use std::ops::{Bound, RangeBounds};
 
@@ -16,7 +40,7 @@ impl OpenRaftStorage {
     pub(crate) fn save_vote_internal(&self, vote: &VOf) -> Result<()> {
         let data =
             rmp_serde::to_vec(vote).map_err(|e| ClusterError::Serialization(e.to_string()))?;
-        self.db.put(&vote_key(self.group_id), &data)?;
+        let _ = self.db.put(&vote_key(self.group_id), &data)?;
         self.state.write().vote = Some(*vote);
         Ok(())
     }
@@ -91,12 +115,12 @@ impl OpenRaftStorage {
                 .map_err(|e| ClusterError::Serialization(e.to_string()))?;
             batch.put(last_log_id_key(self.group_id), data);
         }
-        self.db.write(&batch)?;
+        let _ = self.db.write(&batch)?;
         let mut state = self.state.write();
         if let Some(last) = entries.last() {
             state.last_log_id = Some(last.log_id);
         }
-        tracing::info!(
+        tracing::debug!(
             target: "perf",
             group_id = self.group_id,
             entry_count = entries.len(),
@@ -134,7 +158,7 @@ impl OpenRaftStorage {
             if let Some(ref lid) = state.last_log_id {
                 let data = rmp_serde::to_vec(lid)
                     .map_err(|e| ClusterError::Serialization(e.to_string()))?;
-                self.db.put(&last_log_id_key(self.group_id), &data)?;
+                let _ = self.db.put(&last_log_id_key(self.group_id), &data)?;
             }
         }
         Ok(())
@@ -165,7 +189,7 @@ impl OpenRaftStorage {
         self.state.write().last_purged_log_id = Some(log_id);
         let data =
             rmp_serde::to_vec(&log_id).map_err(|e| ClusterError::Serialization(e.to_string()))?;
-        self.db.put(&last_purged_log_id_key(self.group_id), &data)?;
+        let _ = self.db.put(&last_purged_log_id_key(self.group_id), &data)?;
         Ok(())
     }
 
@@ -237,7 +261,7 @@ impl OpenRaftStorage {
                 "load_state: found key, deserializing"
             );
             state.snapshot_meta = Some(
-                bincode::deserialize(&data)
+                postcard::from_bytes(&data)
                     .map_err(|e| ClusterError::Serialization(format!("snapshot_meta: {}", e)))?,
             );
         }
@@ -289,9 +313,9 @@ impl OpenRaftStorage {
                             if let openraft::EntryPayload::Membership(ref m) = entry.payload {
                                 let stored =
                                     openraft::StoredMembership::new(Some(entry.log_id), m.clone());
-                                let mem_data = bincode::serialize(&stored)
+                                let mem_data = postcard::to_allocvec(&stored)
                                     .map_err(|e| ClusterError::Serialization(e.to_string()))?;
-                                self.db.put(&membership_key(gid), &mem_data)?;
+                                let _ = self.db.put(&membership_key(gid), &mem_data)?;
                                 break;
                             }
                         }
@@ -339,7 +363,7 @@ impl OpenRaftStorage {
     ) -> std::result::Result<openraft::StoredMembership<CLId, u64, openraft::BasicNode>, Error>
     {
         match self.db.get(&membership_key(self.group_id))? {
-            Some(data) => match bincode::deserialize(&data) {
+            Some(data) => match postcard::from_bytes(&data) {
                 Ok(m) => Ok(m),
                 Err(e) => {
                     tracing::warn!(

@@ -1,4 +1,5 @@
 //! DB 共享 BlockCache 集成测试 (Phase7.4)
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::engine::db::DB;

@@ -1,0 +1,22 @@
+name: Chore
+description: "Build, dependency, config, or tooling maintenance (commit type: chore)"
+labels: ["chore"]
+title: "[chore] Summary"
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Task
+      description: What maintenance work to do (dependency updates / config / CI changes, etc.)
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why this maintenance is needed
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Risks, verification steps, related issues

@@ -1,4 +1,4 @@
-//! BackupManager: 备份创建、列举、删除、保留策略。
+//! BackupManager: 备份创建、列举、删除、保留策略.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -15,10 +15,10 @@ use crate::engine::checkpoint::Checkpoint;
 use crate::error::{Error, Result};
 use crate::DB;
 
-/// 备份 ID, 基于时间戳生成。
+/// 备份 ID, 基于时间戳生成.
 pub type BackupId = u64;
 
-/// 备份元信息。
+/// 备份元信息.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupMetadata {
     pub id: BackupId,
@@ -32,14 +32,14 @@ pub struct BackupMetadata {
     pub version: String,
 }
 
-/// 备份清单。
+/// 备份清单.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupManifest {
     pub metadata: BackupMetadata,
     pub files: Vec<BackupFileEntry>,
 }
 
-/// 备份文件条目。
+/// 备份文件条目.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupFileEntry {
     pub relative_path: String,
@@ -47,7 +47,7 @@ pub struct BackupFileEntry {
     pub checksum: String,
 }
 
-/// 保留策略。
+/// 保留策略.
 #[derive(Debug, Clone)]
 pub struct RetentionPolicy {
     pub min_count: usize,
@@ -68,12 +68,12 @@ impl Default for RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    /// 返回应被删除的备份 ID 列表。
+    /// 返回应被删除的备份 ID 列表.
     ///
-    /// 规则（按优先级）:
+    /// 规则 (按优先级):
     /// 1. min_age 以内的备份不删
     /// 2. 至少保留 min_count 个
-    /// 3. 不超过 max_count 个（max_count >= min_count 时有意义）
+    /// 3. 不超过 max_count 个 (max_count >= min_count 时有意义)
     /// 4. max_age 硬过期: 超过 max_age 的备份无条件删除
     pub fn select_for_deletion(&self, backups: &[BackupMetadata]) -> Vec<BackupId> {
         let now = SystemTime::now()
@@ -83,7 +83,7 @@ impl RetentionPolicy {
         // 按 created_at 升序排列 = 最旧在前
         sorted.sort_by_key(|b| b.created_at);
 
-        // partition_point: 找到第一个 age < min_age 的位置（即第一个"年轻"备份）
+        // partition_point: 找到第一个 age < min_age 的位置 (即第一个"年轻"备份)
         let cutoff = sorted.partition_point(|b| {
             let age = now
                 .checked_sub(b.created_at.duration_since(UNIX_EPOCH).unwrap_or_default())
@@ -92,7 +92,7 @@ impl RetentionPolicy {
         });
         let (old, young) = sorted.split_at(cutoff);
 
-        // 2. 从 old 组中删除最旧的，直到剩余不超过 max_count
+        // 2. 从 old 组中删除最旧的, 直到剩余不超过 max_count
         //    但必须保留至少 min_count 个
         let young_count = young.len();
 
@@ -106,7 +106,7 @@ impl RetentionPolicy {
 
         let mut to_delete: Vec<BackupId> = old[..delete_count].iter().map(|b| b.id).collect();
 
-        // 3. max_age 硬过期: 超过 max_age 的备份无条件删除（不受 min_count 保护）
+        // 3. max_age 硬过期: 超过 max_age 的备份无条件删除 (不受 min_count 保护)
         for b in &sorted {
             let age = now
                 .checked_sub(b.created_at.duration_since(UNIX_EPOCH).unwrap_or_default())
@@ -120,7 +120,7 @@ impl RetentionPolicy {
     }
 }
 
-/// 备份管理器。
+/// 备份管理器.
 pub struct BackupManager {
     storage: Arc<dyn BackupStorage>,
     policy: RetentionPolicy,

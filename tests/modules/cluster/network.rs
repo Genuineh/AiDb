@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use aidb::cluster::RaftNetworkClientFactory;
 
 #[test]

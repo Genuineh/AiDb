@@ -1,4 +1,5 @@
 //! WAL 恢复数据完整性 proptest.
+//! @component aidb-engine
 //!
 //! 验证 crash (非正常 close) 后重启, 已 flush 的数据不丢.
 

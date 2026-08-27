@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use aidb::cluster::{OpenRaftStorage, DEFAULT_GROUP_ID};
 use aidb::config::Options;
 use aidb::DB;

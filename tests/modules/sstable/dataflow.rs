@@ -1,4 +1,5 @@
 //! SSTable 模块级可观测性
+//! @component aidb-sstable
 
 use aidb::config::CompressionType;
 use aidb::engine::memtable::{encode_internal_key, ValueType};
@@ -8,6 +9,7 @@ use tempfile::tempdir;
 use crate::common::dataflow::capture_spans_under_lock;
 use crate::common::observability::{capture_events_under_lock, tracing_test_lock};
 
+/// 验证 SSTable 构建与读取的可观测性 (Tracing spans & events) 记录
 #[test]
 fn test_sst_observability() {
     let _lock = tracing_test_lock();

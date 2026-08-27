@@ -1,4 +1,5 @@
 //! Compaction 集成: 经 `DB` API (CI 默认 ~800 keys).
+//! @component aidb-engine
 //!
 //! ```bash
 //! cargo test --test engine compaction -- --test-threads=1

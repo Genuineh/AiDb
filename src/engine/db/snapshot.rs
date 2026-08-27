@@ -1,7 +1,14 @@
-//! MVCC 点时间快照 (Phase5: get; P1: iter/scan).
+//! MVCC 点时间快照: 创建时固定 `sequence` 边界, `Snapshot::get` / `iter` / `scan` 仅可见
+//! `seq <= snapshot_seq` 的写入 (Phase5: get; P1: iter/scan).
 //!
-//! Snapshot 注册 (Phase 7.5 P2): `SnapshotList` 跟踪活跃快照,
-//! compaction 查询最小活跃 sequence 以保留快照可见版本。
+//! `SnapshotList` 是全局快照注册表: `DB::snapshot` 在 `write_lock` 下读 sequence 并 `register`,
+//! `Snapshot` Drop 时 `unregister`; compaction 通过 `min_snapshot_sequence()` 查询活跃快照中
+//! 的最小 sequence (无活跃快照时返回 `u64::MAX`), 以决定旧版本可安全丢弃的阈值.
+//!
+//! # Invariant
+//!
+//! - register 必须在 `write_lock` 释放前完成, 与 compaction 读 `min_snapshot_sequence()`
+//!   之间形成 happens-before, 避免 compaction 误 GC 快照所需版本 (见 `docs/modules/01-engine.md`).
 
 use super::inner::DB;
 use super::iterator::DbIterGuard;

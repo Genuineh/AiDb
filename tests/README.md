@@ -4,8 +4,8 @@
 
 | 层级 | Cargo 入口 | 源码 | 说明 |
 |------|------------|------|------|
-| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试; test-ui 一级 **单元测试** (`src/**` 路径映射) |
-| **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`); 另有 `meta` / `multi_raft` / `metrics` / `cluster_ops` 等入口, 以 `tests/*.rs` 与 `Cargo.toml` `[[test]]` 为准 |
+| **L0** | `cargo test --lib` | `src/**` `#[cfg(test)]` | 单元测试; console 一级 **单元测试** (`src/**` 路径映射) |
+| **L1** | `tests/{wal,memtable,filter,cache,sstable,db,compaction,snapshot,raft}.rs` | `tests/modules/{mod}/` | 单模块功能 + **模块级** tracing (`dataflow.rs`); 另有 `meta` / `multi_raft` / `metrics` / `cluster_ops` / `span_contract` 等入口, 以 `tests/*.rs` 与 `Cargo.toml` `[[test]]` 为准 |
 | **L2** | `tests/pipeline.rs`, `tests/engine.rs` | `tests/pipeline/`, `tests/engine/` | 跨模块 / 引擎黑盒 |
 | **L3** | `tests/proptest.rs` | `tests/proptest/` | 随机操作 + 引擎不变式 |
 | **L4** | `tests/regression.rs` | `tests/regression/` | 已修 bug 固化 |
@@ -15,7 +15,7 @@ L5–L7 (协议兼容 / E2E / bench) 在 aikv 或 `benches/`.
 ## 测试写法与范围 (硬性)
 
 对新测 / 改测强制执行. 旧测不要求本次回填. 细粒度「每个 API 必测几条」不在本文范围.
-test-ui 中文一级目录由**路径虚拟映射**生成 (见 aifactory `test-ui/README`); 分类不靠 `@suite`.
+测试分类由**路径虚拟映射**生成; 分类不靠 `@suite`.
 
 ### 写法
 
@@ -24,7 +24,7 @@ test-ui 中文一级目录由**路径虚拟映射**生成 (见 aifactory `test-u
 | `tests/` 下新建/改动的集成测文件 | 文件顶 `//! @component aidb-{domain}` + 中文摘要段 (第一段非空) |
 | L0 `src/**` 内新建 `#[test]` | 中文 `///`; 模块可用 `//!`; **不要求** `@component` |
 | 每个新增/改动的 `#[test]` | 正上方中文 `///`; **禁止**用 `//` 顶替 |
-| bug 回归 | `///` 含现象、期望、ISSUE (若有) |
+| bug 回归 | `///` 含现象、期望、Issue 编号 (若有) |
 
 - 命名: 描述性 `test_*`
 - `#[ignore]`: 必须 `slow:` / `stress:` 前缀; 禁止裸 `#[ignore]`
@@ -83,6 +83,7 @@ cargo test --test db dataflow -- --test-threads=1
 cargo test --test engine dataflow -- --test-threads=1
 cargo test --test compaction -- --test-threads=1
 cargo test --test snapshot -- --test-threads=1
+cargo test --test span_contract -- --test-threads=1  # 热路径 span 级别契约 (源码扫描)
 cargo test --test pipeline -- --test-threads=1
 cargo test --test engine -- --test-threads=1
 cargo test --test engine compaction -- --test-threads=1
@@ -103,7 +104,7 @@ cargo test --features cluster raft_3nodes -- --test-threads=1
 
 ## 回归测 (L4, 必带)
 
-bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-必带).
+bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-bugfix-必带).
 
 | 场景 | 落点 |
 |------|------|
@@ -113,7 +114,7 @@ bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBU
 
 ## 慢测与压测 (`#[ignore]`)
 
-前缀: `slow:` / `stress:`. 详见 [CONTRIBUTING.md](../CONTRIBUTING.md#ignore-慢测与压测).
+前缀: `slow:` / `stress:`. 详见 [CONTRIBUTING.md §慢测与压测](../CONTRIBUTING.md#慢测与压测-ignore).
 
 | 测试 | 标签 | test target | CI job |
 |------|------|-------------|--------|

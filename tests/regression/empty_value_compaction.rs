@@ -1,10 +1,12 @@
 //! compaction 后空 value 不应被误删.
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::DB;
 use std::sync::Arc;
 use tempfile::tempdir;
 
+/// 验证 Compaction 压实后 0 字节空 Value 的记录不被误剔除
 #[test]
 fn regression_empty_value_not_removed_by_compaction() {
     let dir = tempdir().unwrap();

@@ -5,10 +5,6 @@ fn main() {
     if std::env::var("CARGO_FEATURE_CLUSTER").is_ok() {
         println!("cargo:rerun-if-changed=proto/raft.proto");
 
-        let out = Path::new("src").join("cluster");
-        let _ = std::fs::create_dir_all(&out);
-
-        // Only compile proto if protoc is available (CI may not have it).
         let protoc_available = std::env::var("PROTOC")
             .ok()
             .filter(|p| !p.is_empty() && Path::new(p).exists())
@@ -18,15 +14,17 @@ fn main() {
                 .output()
                 .is_ok_and(|o| o.status.success());
 
-        if protoc_available {
-            if let Err(e) = tonic_build::configure()
-                .out_dir(&out)
-                .compile(&["proto/raft.proto"], &["proto"])
-            {
-                panic!("failed to compile proto: {e}");
-            }
-        } else {
-            println!("cargo:warning=protoc not found, using checked-in generated code");
+        if !protoc_available {
+            panic!(
+                "cluster feature 需要 protoc (protobuf-compiler). \
+                 安装后重试, 或设置 PROTOC 为编译器路径."
+            );
+        }
+
+        if let Err(e) =
+            tonic_prost_build::configure().compile_protos(&["proto/raft.proto"], &["proto"])
+        {
+            panic!("failed to compile proto: {e}");
         }
     }
 }

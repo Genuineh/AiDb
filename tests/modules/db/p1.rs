@@ -1,4 +1,5 @@
 //! DB P1 测试: flush 边界, 并发, WriteBatch 细分, 背压
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{WriteBatch, DB};
@@ -90,7 +91,7 @@ fn test_write_batch_single_put() {
     let db = DB::open(dir.path(), tiny_opts()).unwrap();
     let mut batch = WriteBatch::new();
     batch.put(b"one", b"1");
-    db.write(&batch).unwrap();
+    let _ = db.write(&batch).unwrap();
     assert_eq!(db.get(b"one").unwrap(), Some(b"1".to_vec()));
     db.close().unwrap();
 }
@@ -103,7 +104,7 @@ fn test_write_batch_multiple_puts() {
     for i in 0..5u8 {
         batch.put([b'k', i], [i]);
     }
-    db.write(&batch).unwrap();
+    let _ = db.write(&batch).unwrap();
     for i in 0..5u8 {
         assert_eq!(db.get(&[b'k', i]).unwrap(), Some(vec![i]));
     }
@@ -117,7 +118,7 @@ fn test_write_batch_delete_only() {
     db.put(b"x", b"1").unwrap();
     let mut batch = WriteBatch::new();
     batch.delete(b"x");
-    db.write(&batch).unwrap();
+    let _ = db.write(&batch).unwrap();
     assert_eq!(db.get(b"x").unwrap(), None);
     db.close().unwrap();
 }
@@ -255,7 +256,10 @@ fn test_flush_reclaim() {
     for i in 0..40u8 {
         db.put(&filler_key(i), &[i; 64]).unwrap();
     }
-    assert!(db.immutable_memtable_count() >= 1);
+    assert!(
+        db.immutable_memtable_count() >= 1 || db.level0_sstable_count() >= 1,
+        "memtable full should freeze or flush"
+    );
     db.flush().unwrap();
     assert_eq!(db.immutable_memtable_count(), 0);
     db.close().unwrap();

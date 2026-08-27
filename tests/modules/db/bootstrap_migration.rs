@@ -1,4 +1,5 @@
 //! Phase5 → Phase6 迁移回归: 无 CURRENT 的 flush 产物经 bootstrap, 再 MANIFEST reopen.
+//! @component aidb-engine
 
 use aidb::config::CompressionType;
 use aidb::config::Options;

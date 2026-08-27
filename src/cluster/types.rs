@@ -136,6 +136,9 @@ impl std::fmt::Display for Response {
             Response::Ok => write!(f, "Ok"),
             Response::Value(None) => write!(f, "Value(None)"),
             Response::Value(Some(v)) => write!(f, "Value(len={})", v.len()),
+            Response::WriteStats { effects } => {
+                write!(f, "WriteStats(ops={})", effects.len())
+            }
             Response::Error(msg) => write!(f, "Error({})", msg),
         }
     }
@@ -185,6 +188,11 @@ impl Request {
 pub enum Response {
     Ok,
     Value(Option<Vec<u8>>),
+    /// 数据写成功摘要. `effects` 与本次 Request 实际 op 顺序对齐:
+    /// Put 为 `inserted`, Delete 为 `deleted`.
+    WriteStats {
+        effects: Vec<bool>,
+    },
     Error(String),
 }
 
@@ -299,7 +307,7 @@ mod tests {
     #[test]
     fn test_raft_config_default_values() {
         let cfg = RaftNodeConfig::default();
-        assert_eq!(cfg.max_payload_entries, 100);
+        assert_eq!(cfg.max_payload_entries, 512);
         assert_eq!(cfg.max_entry_size, 8 * 1024 * 1024);
         assert_eq!(cfg.rpc_timeout_ms, 200);
         assert_eq!(cfg.grpc_max_message_size, 64 * 1024 * 1024);

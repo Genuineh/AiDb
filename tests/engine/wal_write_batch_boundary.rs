@@ -1,4 +1,5 @@
 //! ISSUE-001 — DB::write + WriteBatch 在 WAL rotate 下的崩溃恢复原子性 (L2).
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{WriteBatch, DB};
@@ -77,7 +78,7 @@ fn test_db_write_batch_crash_recovery_with_wal_rotate() {
         for key in &keys {
             batch.put(key.as_slice(), b"val");
         }
-        db.write(&batch).unwrap();
+        let _ = db.write(&batch).unwrap();
         // 故意不 close — 模拟崩溃; Drop 会 sync WAL.
     }
 

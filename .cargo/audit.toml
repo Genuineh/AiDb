@@ -1,0 +1,7 @@
+# cargo-audit 独立配置 (不读 deny.toml)
+# 每个被忽略的 advisory 需注明原因与跟踪 Issue, 避免静默累积
+
+[advisories]
+ignore = []
+informational_warnings = ["unmaintained"]
+severity_threshold = "low"

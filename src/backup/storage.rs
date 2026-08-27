@@ -1,4 +1,4 @@
-//! BackupStorage trait + LocalFileStorage 实现。
+//! BackupStorage trait + LocalFileStorage 实现.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::backup::util;
 use crate::error::Result;
 
-/// 备份存储抽象，支持多种后端 (本地文件系统、对象存储等)。
+/// 备份存储抽象, 支持多种后端 (本地文件系统、对象存储等).
 pub trait BackupStorage: Send + Sync {
     fn store(&self, src: &Path, dest_path: &Path) -> Result<String>;
     fn store_bytes(&self, dest_path: &Path, data: &[u8]) -> Result<String>;

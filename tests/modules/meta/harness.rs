@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,4 +1,5 @@
 //! FIX-0056-A1 "读导向" 点 3 (`get_key_from_group_remote`) / "tip 跨节点读取"
+//! @component aidb-cluster
 //! (`read_migration_tip` 远程 fallback) 端到端测试.
 //!
 //! 两个真实 `MultiRaftNode`, 真实数据面 gRPC (`GetKey`/`GetMigrationTip`),
@@ -49,7 +50,7 @@ fn pick_addr() -> SocketAddr {
 }
 
 /// 搭建 node A: 单节点 MetaRaft 驱动 `MultiRaftNode` 本地托管 `TARGET_GROUP`
-/// (leader), 并启动统一数据面 gRPC server. 返回 (multi_raft, "http://addr", _dirs)。
+/// (leader), 并启动统一数据面 gRPC server. 返回 (multi_raft, "http://addr", _dirs).
 async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
     let meta_dir = TempDir::new().unwrap();
     let meta_db = DB::open(meta_dir.path().join("meta"), Options::for_testing()).unwrap();
@@ -129,6 +130,7 @@ async fn setup_leader_node() -> (Arc<MultiRaftNode>, String, TempDir, TempDir) {
         },
         options: Options::for_testing(),
         compaction_filter: None,
+        compaction_removal_listener_factory: None,
     });
 
     for _ in 0..100 {
@@ -175,6 +177,11 @@ fn setup_follower_node(leader_node_id: u64, leader_addr: &str) -> Arc<MultiRaftN
         node_addrs,
         group_leaders,
     );
+
+    // Follower 无 lifecycle, `remote_leader_client` 的 MetaRaft 元数据查找
+    // 必然落空; 需把 leader 地址注册进 network factory 缓存, 供其回退解析
+    // (否则 `new_client` 拿到空 addr → 空 URI, 见 A-003).
+    multi_raft.register_peer_addr(leader_node_id, leader_addr.to_string());
 
     multi_raft
 }
@@ -397,6 +404,13 @@ impl raft_rpc::raft_service_server::RaftService for SlowGetKeyService {
         }))
     }
 
+    async fn remote_propose(
+        &self,
+        _request: tonic::Request<raft_rpc::RemoteProposeRequest>,
+    ) -> std::result::Result<tonic::Response<raft_rpc::RemoteProposeResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("not used in this test"))
+    }
+
     async fn get_migration_tip(
         &self,
         _request: tonic::Request<raft_rpc::GetMigrationTipRequest>,
@@ -418,14 +432,13 @@ impl raft_rpc::raft_service_server::RaftService for SlowGetKeyService {
 async fn get_key_from_group_remote_timeout_is_not_silently_treated_as_absent() {
     use raft_rpc::raft_service_server::RaftServiceServer;
     use tokio::net::TcpListener as AsyncTcpListener;
-    use tokio_stream::wrappers::TcpListenerStream;
 
     let addr = pick_addr();
     let listener = AsyncTcpListener::bind(addr).await.unwrap();
     tokio::spawn(async move {
-        let _ = tonic::transport::Server::builder()
+        let _ = aidb::cluster::network::raft_server()
             .add_service(RaftServiceServer::new(SlowGetKeyService))
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(aidb::cluster::network::tcp_incoming(listener))
             .await;
     });
     tokio::time::sleep(Duration::from_millis(100)).await;

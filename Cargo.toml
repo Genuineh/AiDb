@@ -1,9 +1,26 @@
 [package]
 name = "aidb"
-version = "0.14.10"
+version = "1.0.0"
 edition = "2021"
-description = "LSM-Tree based KV storage engine with optional cluster support"
+description = "Pure Rust LSM-tree key-value storage engine with optional MultiRaft support"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/wiqun/AiDb"
+homepage = "https://github.com/wiqun/AiDb"
+documentation = "https://docs.rs/aidb"
+readme = "README.md"
+keywords = ["database", "lsm-tree", "key-value", "raft", "storage-engine"]
+categories = ["database-implementations", "data-structures", "concurrency"]
+exclude = [
+  ".cargo/",
+  ".github/",
+  ".cursor/",
+  ".claude/",
+  "hooks/",
+  "install-hooks.sh",
+  "clippy.toml",
+  "deny.toml",
+  "rustfmt.toml",
+]
 
 [features]
 default = ["backup"]
@@ -11,6 +28,7 @@ backup = ["dep:ring", "dep:hex", "dep:serde_json"]
 compression = ["dep:snap", "dep:lz4"]
 cluster = [
   "dep:tonic",
+  "dep:tonic-prost",
   "dep:prost",
   "dep:tokio",
   "dep:tokio-stream",
@@ -40,7 +58,7 @@ crossbeam-skiplist = "0.1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 # File locking
 fs2 = "0.4"
@@ -62,19 +80,19 @@ opentelemetry = { version = "0.32", optional = true }
 opentelemetry_sdk = { version = "0.32", optional = true, features = ["testing"] }
 
 # Cluster feature (optional)
-tonic   = { version = "0.11", optional = true }
-prost   = { version = "0.12", optional = true }
+tonic = { version = "0.14.6", optional = true }
+tonic-prost = { version = "0.14.6", optional = true }
+prost = { version = "0.14", optional = true }
 tokio   = { version = "1",    features = ["full"], optional = true }
-openraft = { version = "0.10.0-alpha.31", features = ["type-alias", "serde"], optional = true }
-openraft-rt-tokio = { version = "0.10.0-alpha.31", optional = true }
+openraft = { version = "0.10.0-alpha.33", features = ["type-alias", "serde"], optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
 rmp-serde = { version = "1", optional = true }
 async-trait = { version = "0.1", optional = true }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 [build-dependencies]
-tonic-build = "0.11"
-prost-build = "0.12"
+tonic-prost-build = "0.14.6"
 
 [dev-dependencies]
 ctor = "0.2"
@@ -97,6 +115,14 @@ harness = false
 [[bench]]
 name = "backup_bench"
 harness = false
+
+[[example]]
+name = "backup"
+required-features = ["backup"]
+
+[[test]]
+name = "backup"
+required-features = ["backup"]
 
 [profile.release]
 lto            = true

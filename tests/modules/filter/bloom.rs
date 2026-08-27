@@ -1,7 +1,9 @@
 //! Bloom Filter 集成测试 (验收映射)
+//! @component aidb-filter
 
 use aidb::engine::filter::{BloomFilter, Filter};
 
+/// 验证 Bloom Filter 基本写入添加与可能存在判定
 #[test]
 fn test_bloom_filter_basic() {
     let mut f = BloomFilter::new(100, 0.01);
@@ -10,6 +12,7 @@ fn test_bloom_filter_basic() {
     assert!(!f.may_contain(b"missing"));
 }
 
+/// 验证 Bloom Filter 绝对不存在假阴性 (No False Negatives)
 #[test]
 fn test_bloom_filter_no_false_negatives() {
     let mut f = BloomFilter::new(1000, 0.01);
@@ -22,6 +25,7 @@ fn test_bloom_filter_no_false_negatives() {
     }
 }
 
+/// 验证 Bloom Filter 假阳性率 (FPR) 控制在设定阈值范围内
 #[test]
 fn test_bloom_filter_false_positive_rate() {
     let mut f = BloomFilter::new(10000, 0.01);
@@ -38,6 +42,7 @@ fn test_bloom_filter_false_positive_rate() {
     assert!(rate < 0.02, "FPR {rate} >= 2%");
 }
 
+/// 验证 Bloom Filter 编码与解码
 #[test]
 fn test_bloom_filter_encode_decode() {
     let mut f = BloomFilter::new(50, 0.01);
@@ -48,6 +53,7 @@ fn test_bloom_filter_encode_decode() {
     assert!(!decoded.may_contain(b"z"));
 }
 
+/// 验证解码无效/损坏字节流时返回错误
 #[test]
 fn test_bloom_filter_decode_invalid() {
     assert!(BloomFilter::decode(&[1, 2, 3]).is_err());

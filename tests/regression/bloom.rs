@@ -1,4 +1,5 @@
 //! Bloom 过滤器长期统计回归测试.
+//! @component aidb-filter
 //!
 //! 验证 BloomFilter 的假阳性率在统计意义上与理论值一致.
 //!
@@ -27,7 +28,7 @@ fn theoretical_fpr(bits_per_key: f64) -> f64 {
 ///
 /// - `filter`: 已插入键的过滤器
 /// - `test_keys`: 测试查询的不存在键数量
-/// - `run_offset`: 用于生成测试键的种子偏移（确保不与训练集重叠）
+/// - `run_offset`: 用于生成测试键的种子偏移 (确保不与训练集重叠)
 fn measure_fpr(filter: &BloomFilter, test_keys: usize, run_offset: u64) -> f64 {
     let mut false_positives = 0u64;
     for i in 0..test_keys {
@@ -66,6 +67,8 @@ fn run_single_test(
 // ---------------------------------------------------------------------------
 // Test 1: 统计回归 — 固定参数 100 次独立运行
 // ---------------------------------------------------------------------------
+
+/// 验证 100 次独立运行下 BloomFilter 平均假阳性率符合统计回归预置
 #[test]
 fn test_bloom_statistical_regression() {
     const EXPECTED_KEYS: usize = 10_000;
@@ -106,6 +109,8 @@ fn test_bloom_statistical_regression() {
 // ---------------------------------------------------------------------------
 // Test 2: 参数化 FPR — 不同 bits_per_key × 不同键数量
 // ---------------------------------------------------------------------------
+
+/// 验证 参数化不同 bits_per_key 与键规模下假阳性率在理论阈值内
 #[test]
 fn test_bloom_parameterized_fpr() {
     let cases = [
@@ -160,6 +165,8 @@ fn test_bloom_parameterized_fpr() {
 // ---------------------------------------------------------------------------
 // Test 3: 通过 DB API 验证 bloom_false_positive_count 单调递增
 // ---------------------------------------------------------------------------
+
+/// 验证 通过 DB API 查询调用时全局 bloom_false_positive_count 计数器单调递增
 #[test]
 fn test_bloom_false_positive_counter() {
     let dir = tempdir().unwrap();
@@ -203,6 +210,8 @@ fn test_bloom_false_positive_counter() {
 // ---------------------------------------------------------------------------
 // Test 4: 压力测试 (#[ignore])
 // ---------------------------------------------------------------------------
+
+/// 验证 100 万大条目量级下 BloomFilter 假阳性率压力测试
 #[test]
 #[ignore = "stress: 1M keys bloom FPR sampling"]
 fn test_bloom_stress() {

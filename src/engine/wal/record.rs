@@ -1,7 +1,19 @@
-//! WAL Record 格式: 磁盘上的物理记录单元.
+//! WAL Record 格式: 磁盘上的物理记录单元, 也是 WAL 文件的最小读写单位.
+//! Record 由 Header (7B) + Data 组成, Data 承载编码后的 `WalEntry`.
 //!
-//! Record 是 WAL 文件的最小读写单位, 包含 CRC32 + Length + Type + Data.
-//! Data 部分承载编码后的 WalEntry.
+//! # 布局
+//!
+//! ```text
+//! Record   = [CRC32:4][Length:2 LE][Type:1][Data: Length B]
+//! 分片链   = Full 单条承载 / First + Middle* + Last 跨 Record 承载超大 entry
+//! WalEntry = [sequence:8 BE][op_type:1][has_value:1][key_len:2 LE][key][value_len:4 LE][value]
+//! ```
+//!
+//! # Invariant
+//!
+//! - 单条 Record 的 Data 不超过 `BLOCK_SIZE - HEADER_SIZE` (32KB block 内, 超出自动分片).
+//! - CRC32 覆盖 `Length + Type + Data` (不含 CRC 自身), 与 Reader / Writer 两侧一致.
+//! - `OpType` 决定语义: `TypePut` / `TypeDelete` / `TypeDeleteRange` / `BatchStart` / `FileHeader`.
 
 use crate::error::{Error, Result};
 

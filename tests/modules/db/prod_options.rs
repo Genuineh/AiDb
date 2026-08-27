@@ -1,4 +1,5 @@
 //! 生产-like Options 集成测试
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::DB;

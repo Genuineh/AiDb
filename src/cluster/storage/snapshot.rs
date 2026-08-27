@@ -1,4 +1,29 @@
-//! Raft snapshot build / install.
+//! Raft snapshot 构建与安装 — 以 DB 目录文件级打包传输 (借鉴 Kvrocks/TiKV),
+//! 替代逐条 KV 拷贝, 避免 build 端全量 scan 与 install 端逐条 put 的开销.
+//!
+//! # 数据流
+//!
+//! ```text
+//! build (OpenRaftSnapshotBuilder / get_current_snapshot)
+//!   ├─ db.flush() -> 数据全部进 SST
+//!   ├─ checkpoint 协议 pin SST (SnapshotCheckpointGuard)
+//!   ├─ 收集文件 -> postcard(SnapshotBundle { relative_path, data })
+//!   └─ meta = SnapshotMeta { last_log_id, last_membership }
+//!
+//! install (install_snapshot_atomic)
+//!   ├─ 先写临时文件 + fsync 父目录 (crash 安全)
+//!   ├─ 关闭旧 DB -> 清空目录 -> 写入接收文件 -> DB::open 重开
+//!   ├─ 写 snapshot_meta / last_applied
+//!   ├─ 重建 MetaStateMachine (旧实例持有已关闭 DB)
+//!   └─ 清空 overlay 与内存态 -> load_state 重载
+//! ```
+//!
+//! # Invariant
+//!
+//! - install 是"目录整体替换"式原子操作, 失败时清理临时文件.
+//! - snapshot 安装后所有 in-memory 缓存 (overlay / StorageState) 一律作废重载.
+//! - MetaRaft 也有快照: 目录打包天然包含 `\x00meta_raft/*`, 安装后重建
+//!   `MetaStateMachine` 恢复集群元数据.
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -77,7 +102,7 @@ pub(crate) fn prepare_snapshot_bundle(db: &DB) -> Result<Vec<u8>> {
     let _guard = SnapshotCheckpointGuard::new(db);
     let bundle = SnapshotBundle::from_files(db)?;
 
-    bincode::serialize(&bundle)
+    postcard::to_allocvec(&bundle)
         .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))
 }
 
@@ -95,7 +120,7 @@ impl OpenRaftSnapshotBuilder {
 impl OpenRaftStorage {
     /// 文件级 snapshot 安装: 关闭旧 DB → 清空目录 → 写入新文件 → 重新打开 DB.
     pub(crate) fn install_snapshot_atomic(&mut self, meta: &SMOf, data: &[u8]) -> Result<()> {
-        let bundle: SnapshotBundle = bincode::deserialize(data)
+        let bundle: SnapshotBundle = postcard::from_bytes(data)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
 
         // 关闭旧 DB, 终止后台线程 (flush/compaction).
@@ -134,14 +159,16 @@ impl OpenRaftStorage {
         self.db = new_db;
 
         // 写入 snapshot meta 等元数据 (与原逻辑相同).
-        let meta_bytes = bincode::serialize(meta)
+        let meta_bytes = postcard::to_allocvec(meta)
             .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-        self.db
+        let _ = self
+            .db
             .put(&snapshot_meta_key(self.group_id), &meta_bytes)?;
         if let Some(log_id) = meta.last_log_id {
             let la = rmp_serde::to_vec(&log_id)
                 .map_err(|e| Error::Cluster(ClusterError::Serialization(e.to_string())))?;
-            self.db
+            let _ = self
+                .db
                 .put(&super::keys::last_applied_key(self.group_id), &la)?;
         }
 
@@ -180,7 +207,7 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
             .db
             .get(&super::keys::membership_key(self.group_id))
             .map_err(|e| std::io::Error::other(e.to_string()))?
-            .map(|d| bincode::deserialize(&d).unwrap_or_default())
+            .map(|d| postcard::from_bytes(&d).unwrap_or_default())
             .unwrap_or_default();
 
         let last_applied: Option<LIdOf> = self
@@ -189,11 +216,9 @@ impl openraft::RaftSnapshotBuilder<TypeConfig> for OpenRaftSnapshotBuilder {
             .map_err(|e| std::io::Error::other(e.to_string()))?
             .and_then(|d| rmp_serde::from_slice(&d).ok());
 
-        let snapshot_id = format!("snap-{}", last_applied.map(|id| id.index).unwrap_or(0));
         let meta = SnapshotMeta {
             last_log_id: last_applied,
             last_membership: membership,
-            snapshot_id,
         };
 
         Ok(Snapshot {
@@ -235,7 +260,6 @@ mod tests {
         let meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
-            snapshot_id: "snap-5".into(),
         };
         storage
             .install_snapshot_atomic(&meta, &bundle_data)
@@ -280,7 +304,6 @@ mod tests {
             let meta = SnapshotMeta {
                 last_log_id: Some(log_id),
                 last_membership: StoredMembership::default(),
-                snapshot_id: "snap-5".into(),
             };
             storage.install_snapshot_atomic(&meta, &snap_data).unwrap();
 
@@ -336,7 +359,7 @@ mod tests {
             for (k, v) in &output.kv_pairs {
                 wb.put(k.clone(), v.clone());
             }
-            db.write(&wb).unwrap();
+            let _ = db.write(&wb).unwrap();
         }
 
         let bundle_data = prepare_snapshot_bundle(&db).unwrap();
@@ -352,7 +375,6 @@ mod tests {
         let snap_meta = SnapshotMeta {
             last_log_id: Some(log_id),
             last_membership: StoredMembership::default(),
-            snapshot_id: "meta-snap-3".into(),
         };
         storage2
             .install_snapshot_atomic(&snap_meta, &bundle_data)

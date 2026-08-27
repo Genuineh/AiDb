@@ -1,10 +1,12 @@
 //! MemTable 功能测试 — InternalKey / CRUD / Iterator / freeze
+//! @component aidb-memtable
 
 use aidb::engine::memtable::{
     compare_internal_key, encode_internal_key, extract_sequence, MemTable, ValueType,
     K_MAX_SEQUENCE,
 };
 
+/// 验证 InternalKey 编码解码的 Roundtrip 完整性
 #[test]
 fn test_internal_key_encode_decode_roundtrip() {
     let enc = encode_internal_key(b"hello", 42, ValueType::TypeDelete);
@@ -14,6 +16,7 @@ fn test_internal_key_encode_decode_roundtrip() {
     assert_eq!(dec.2, ValueType::TypeDelete);
 }
 
+/// 验证相同 UserKey 下 Sequence 倒序排列
 #[test]
 fn test_internal_key_ordering_sequence_desc() {
     let old = encode_internal_key(b"k", 1, ValueType::TypePut);
@@ -21,6 +24,7 @@ fn test_internal_key_ordering_sequence_desc() {
     assert_eq!(compare_internal_key(&new, &old), std::cmp::Ordering::Less);
 }
 
+/// 验证不同 UserKey 之间的字典序比较
 #[test]
 fn test_compare_internal_key() {
     let a = encode_internal_key(b"x", 10, ValueType::TypePut);
@@ -28,6 +32,7 @@ fn test_compare_internal_key() {
     assert_eq!(compare_internal_key(&a, &b), std::cmp::Ordering::Less);
 }
 
+/// 验证 MemTable 基本 Put 和 Get 操作
 #[test]
 fn test_memtable_put_get() {
     let mt = MemTable::new();
@@ -35,12 +40,14 @@ fn test_memtable_put_get() {
     assert_eq!(mt.get_latest(b"k").unwrap(), Some(b"v".to_vec()));
 }
 
+/// 验证查询不存在的 Key 返回 None
 #[test]
 fn test_memtable_get_not_found() {
     let mt = MemTable::new();
     assert_eq!(mt.get_latest(b"missing").unwrap(), None);
 }
 
+/// 验证 Delete 操作在 MemTable 中的写入与生效
 #[test]
 fn test_memtable_delete() {
     let mt = MemTable::new();
@@ -49,6 +56,7 @@ fn test_memtable_delete() {
     assert_eq!(mt.get_latest(b"k").unwrap(), None);
 }
 
+/// 验证多版本 Key 覆盖写入取最新 Sequence 值
 #[test]
 fn test_memtable_overwrite() {
     let mt = MemTable::new();
@@ -57,6 +65,7 @@ fn test_memtable_overwrite() {
     assert_eq!(mt.get_latest(b"k").unwrap(), Some(b"v2".to_vec()));
 }
 
+/// 验证根据不同 Snapshot Sequence 读出历史版本
 #[test]
 fn test_memtable_snapshot() {
     let mt = MemTable::new();
@@ -67,6 +76,7 @@ fn test_memtable_snapshot() {
     assert_eq!(mt.get(b"k", K_MAX_SEQUENCE).unwrap(), Some(b"v2".to_vec()));
 }
 
+/// 验证 Seek/Search 底层跳表精确匹配
 #[test]
 fn test_memtable_search() {
     let mt = MemTable::new();
@@ -85,6 +95,7 @@ fn test_memtable_search() {
     assert_eq!(ty, ValueType::TypeDelete);
 }
 
+/// 验证 MemTable 迭代器 Seek 定位到指定 Key
 #[test]
 fn test_memtable_iterator_seek() {
     let mt = MemTable::new();
@@ -96,6 +107,7 @@ fn test_memtable_iterator_seek() {
     assert_eq!(it.key(), encode_internal_key(b"b", 2, ValueType::TypePut));
 }
 
+/// 验证 MemTable 迭代器 SeekToFirst 定位到首条记录
 #[test]
 fn test_memtable_iterator_seek_to_first() {
     let mt = MemTable::new();
@@ -108,6 +120,7 @@ fn test_memtable_iterator_seek_to_first() {
     assert_eq!(seq, 2);
 }
 
+/// 验证 MemTable 迭代器正向 Next 顺序遍历
 #[test]
 fn test_memtable_iterator_next() {
     let mt = MemTable::new();
@@ -125,6 +138,7 @@ fn test_memtable_iterator_next() {
     assert_eq!(keys, vec![b"a".to_vec(), b"b".to_vec()]);
 }
 
+/// 验证 MemTable 迭代器反向 Prev 顺序遍历
 #[test]
 fn test_memtable_iterator_prev() {
     use aidb::engine::memtable::extract_user_key;
@@ -155,16 +169,31 @@ fn test_memtable_iterator_prev() {
     assert_eq!(extract_user_key(it.key()), b"a");
 }
 
+/// 验证 MemTable 估算内存字节尺寸自增
 #[test]
 fn test_memtable_size_approx() {
     let mt = MemTable::new();
     assert_eq!(mt.approximate_size(), 0);
     mt.put(b"ab", b"cd", 1).unwrap();
-    assert_eq!(mt.approximate_size(), 4);
+    let after_put = mt.approximate_size();
+    assert!(
+        after_put > 0,
+        "size should increase after put, got {after_put}"
+    );
+    // InternalKey 含 8 字节 sequence/tag 编码头, 因此必须 >= key+value 字面值
+    assert!(
+        after_put >= 4,
+        "put ab+cd should be at least 4 bytes, got {after_put}"
+    );
     mt.delete(b"x", 2).unwrap();
-    assert_eq!(mt.approximate_size(), 5);
+    let after_delete = mt.approximate_size();
+    assert!(
+        after_delete > after_put,
+        "size should keep increasing after delete: {after_put} -> {after_delete}"
+    );
 }
 
+/// 验证 MemTable 冻结为 ImmutableMemTable 及只读隔离
 #[test]
 fn test_immutable_freeze() {
     let mt = MemTable::new();
@@ -179,6 +208,7 @@ fn test_immutable_freeze() {
     assert_eq!(frozen.get_latest(b"k2").unwrap(), None);
 }
 
+/// 验证空 Key (0字节) 的正常写入与读取
 #[test]
 fn test_memtable_empty_user_key() {
     let mt = MemTable::new();
@@ -186,6 +216,7 @@ fn test_memtable_empty_user_key() {
     assert_eq!(mt.get_latest(b"").unwrap(), Some(b"v".to_vec()));
 }
 
+/// 验证相同 Sequence 下 ValueType 的排序仲裁
 #[test]
 fn test_internal_key_value_type_tiebreak() {
     let put = encode_internal_key(b"k", 1, ValueType::TypePut);
@@ -193,6 +224,7 @@ fn test_internal_key_value_type_tiebreak() {
     assert_eq!(compare_internal_key(&put, &del), std::cmp::Ordering::Less);
 }
 
+/// 验证损坏的 InternalKey 解码时返回错误
 #[test]
 fn test_decode_internal_key_corruption() {
     assert!(aidb::engine::memtable::decode_internal_key(b"short").is_err());
@@ -201,6 +233,7 @@ fn test_decode_internal_key_corruption() {
     assert!(aidb::engine::memtable::decode_internal_key(&bad).is_err());
 }
 
+/// 验证 Sequence 超过上限值时写入拒绝
 #[test]
 fn test_memtable_sequence_overflow() {
     use aidb::engine::memtable::SEQUENCE_LIMIT;

@@ -12,8 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ 数据库已创建");
 
     // 写入
-    db.put(b"hello", b"world")?;
-    db.put(b"foo", b"bar")?;
+    let _ = db.put(b"hello", b"world")?;
+    let _ = db.put(b"foo", b"bar")?;
     println!("✅ 写入 2 个 key");
 
     // 读取
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     batch.put(b"batch1", b"value1");
     batch.put(b"batch2", b"value2");
     batch.put(b"batch3", b"value3");
-    db.write(&batch)?;
+    let _ = db.write(&batch)?;
     println!("✅ 批量写入 3 个 key");
 
     // 范围扫描

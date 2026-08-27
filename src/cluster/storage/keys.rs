@@ -1,4 +1,26 @@
-//! Raft / state-machine key encoding for AiDb cluster mode.
+//! Raft / 状态机 key 编码 — 每 Group 独立 DB 内的全部内部 key 布局 (与
+//! `docs/modules/03-cluster.md` "DB key 空间" 对齐). group_id 一律 8 字节大端.
+//!
+//! # 布局
+//!
+//! ```text
+//! \x00raft/{gid}/vote|log/{idx:8B}|last_log_id|last_purged_log_id|membership|snapshot_meta|last_applied
+//! \x01sm/{gid}/{user_key}                  # 数据面状态机 KV
+//! \x00meta_raft/cluster_meta|slot_table|migration_state|migration_epoch    # 仅 MetaRaft DB (gid=0)
+//! \x02mig/{gid}/{epoch}/ts/{user_key}|tip  # 迁移 oplog (tombstone/tip)
+//! \x02snapshot_temp/{temp_id}/             # snapshot 临时安装 (保留)
+//! ```
+//!
+//! 前缀按 `\x00 < \x01 < \x02` 排序; range 上界用 `'0'` (0x30) > `'/'` (0x2f)
+//! 收窄 (如 `sm_range_end` = `\x01sm/{gid}0`).
+//!
+//! # Invariant
+//!
+//! - `\x02mig/` 独立于 `\x01sm/` — SCAN / COUNTKEYSINSLOT 只扫 `sm_range_start..end`,
+//!   迁移 key 绝不混入用户数据, 也不与 user key 冲突.
+//! - `mig/` 区间按 `(gid, epoch)` 划分, 不同 group / 不同 epoch 互不重叠.
+//! - `\x00raft/` 低于 `\x01sm/`, 保证 Raft 元数据在 DB 扫描序中先于数据面.
+//! - Meta key 仅存在于 gid=0 的 DB.
 
 /// P12 单 Group 测试默认 group_id (0 预留给 MetaRaft).
 pub const DEFAULT_GROUP_ID: u64 = 1;

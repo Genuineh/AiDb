@@ -1,4 +1,17 @@
-//! MemTable — 内存写入缓冲 (SkipMap).
+//! MemTable — 内存写入缓冲: 以 InternalKey 有序的 SkipMap 承载最新写入, 冻结后转为只读.
+//!
+//! # 结构
+//!
+//! - `MemTable`: 可变写缓冲; `rep` (SkipMap) 按 InternalKey 有序, `range_index` 单独索引
+//!   range tombstone (`[start, end)` + seq), 避免 GET 时扫描全表.
+//! - `ImmutableMemTable`: `freeze(self, flush_seq)` 消费可变表得到; 无 put/delete, 仅读;
+//!   `flush_seq` = 冻结时刻 sequence, flush 成 SST 时使用.
+//!
+//! # Invariant
+//!
+//! - 读路径以 `encode_internal_key(key, max_seq, TypePut)` 构造 seek key, 只返回
+//!   `seq <= max_seq` 的版本 (get / point_state / search).
+//! - freeze 后不可再写入, 新写入进入新的 active MemTable.
 
 use super::internal_key::{
     check_sequence, encode_internal_key, encode_internal_key_arc, extract_sequence,
@@ -129,7 +142,7 @@ impl MemTable {
         Ok(())
     }
 
-    #[tracing::instrument(name = "mem_delete", skip(self, key))]
+    #[tracing::instrument(level = "debug", name = "mem_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8], sequence: u64) -> Result<()> {
         check_sequence(sequence)?;
         let ik = InternalKeyBytes(encode_internal_key_arc(

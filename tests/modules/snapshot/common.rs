@@ -1,4 +1,5 @@
 //! Snapshot 测试共享配置
+//! @component aidb-snapshot
 
 use std::sync::Arc;
 

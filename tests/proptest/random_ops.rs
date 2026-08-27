@@ -1,4 +1,5 @@
 //! 随机 put/delete/flush/compact/writebatch 与线性模型一致.
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::WriteBatch;
@@ -104,7 +105,7 @@ proptest! {
       for (k, v) in kvs {
         wb.put([*k], [*v]);
       }
-      db.write(&wb).unwrap();
+      let _ = db.write(&wb).unwrap();
       apply_model(&mut model, batch_kvs);
     }
 

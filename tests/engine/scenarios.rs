@@ -1,4 +1,5 @@
 //! DB 全链路: flush / reopen / batch / scan / 并发 (roadmap 5.9)
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::{WriteBatch, DB};
@@ -49,7 +50,7 @@ fn test_integration_write_batch_reopen() {
         batch.put(b"w1", b"a");
         batch.put(b"w2", b"b");
         batch.delete(b"w1");
-        db.write(&batch).unwrap();
+        let _ = db.write(&batch).unwrap();
         db.close().unwrap();
     }
     let db = DB::open(dir.path(), opts()).unwrap();

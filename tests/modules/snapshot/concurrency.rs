@@ -1,4 +1,5 @@
 //! Snapshot: 并发读写 / flush / compaction
+//! @component aidb-engine
 
 use std::sync::Arc;
 use std::thread;
@@ -6,6 +7,7 @@ use std::time::Duration;
 
 use super::common::{temp_db, temp_db_compaction};
 
+/// 验证并发高频写入下 Snapshot 读隔离与锁视图正常
 #[test]
 fn test_snapshot_concurrent_write() {
     let (_dir, db) = temp_db();
@@ -27,6 +29,7 @@ fn test_snapshot_concurrent_write() {
     db.close().unwrap();
 }
 
+/// 验证并发 Flush 刷盘过程中 Snapshot 读隔离正确
 #[test]
 fn test_snapshot_flush_concurrent() {
     let (_dir, db) = temp_db();
@@ -47,6 +50,7 @@ fn test_snapshot_flush_concurrent() {
     db.close().unwrap();
 }
 
+/// 验证并发 Compaction 压缩过程中 Snapshot 的隔离
 #[test]
 fn test_snapshot_compaction_concurrent() {
     let (_dir, db) = temp_db_compaction();
@@ -73,6 +77,7 @@ fn test_snapshot_compaction_concurrent() {
     db.close().unwrap();
 }
 
+/// 验证 Snapshot 支持 Send + Sync 跨线程传递
 #[test]
 fn test_snapshot_send_sync() {
     let (_dir, db) = temp_db();
@@ -106,8 +111,8 @@ fn test_snapshot_long_hold_heavy_write() {
 /// 释放 write_lock 之前完成 `snapshots.register(seq)`, 否则在"读到 seq"和
 /// "注册保护"之间存在窗口 —— 一次恰好插进这个窗口的并发写入 + compaction
 /// 可能在 snapshot 尚未注册时把它需要的旧版本当作"无人保护"直接 GC 掉,
-/// 导致该 snapshot 存活期间前后两次读到不一致的结果。用持续高频的并发写 +
-/// flush + compaction 施加压力, 并对每个存活 snapshot 反复重读比对。
+/// 导致该 snapshot 存活期间前后两次读到不一致的结果. 用持续高频的并发写 +
+/// flush + compaction 施加压力, 并对每个存活 snapshot 反复重读比对.
 #[test]
 fn test_snapshot_register_race_with_concurrent_write_and_compaction() {
     let (_dir, db) = temp_db_compaction();

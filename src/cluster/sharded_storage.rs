@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::Options;
-use crate::engine::compaction::CompactionFilter;
+use crate::engine::compaction::{CompactionFilter, CompactionRemovalListener};
 use crate::error::Result;
 use crate::DB;
 
@@ -71,5 +71,13 @@ impl ShardedStorage {
     /// 设置 compaction 过滤器, 在下次 compaction 时生效.
     pub fn set_compaction_filter(&self, filter: Option<Arc<dyn CompactionFilter>>) {
         self.db.set_compaction_filter(filter);
+    }
+
+    /// 设置 filter Remove (最新 Put) 监听器.
+    pub fn set_compaction_removal_listener(
+        &self,
+        listener: Option<Arc<dyn CompactionRemovalListener>>,
+    ) {
+        self.db.set_compaction_removal_listener(listener);
     }
 }

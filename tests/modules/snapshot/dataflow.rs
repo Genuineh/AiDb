@@ -1,4 +1,5 @@
 //! Snapshot 可观测性: `db_snapshot` span + `db.snapshot.create` event
+//! @component aidb-engine
 
 use tempfile::tempdir;
 
@@ -8,6 +9,7 @@ use crate::common::observability::{capture_events_under_lock, tracing_test_lock}
 use super::common::snapshot_opts;
 use aidb::DB;
 
+/// 验证 Snapshot 创建时的 Tracing span 与 db.snapshot.create 事件
 #[test]
 fn test_snapshot_observability() {
     let _lock = tracing_test_lock();

@@ -1,4 +1,5 @@
 //! WAL 功能测试 — 编解码/写入/读取/恢复/清理
+//! @component aidb-wal
 
 use aidb::config::Options;
 use aidb::engine::wal::manager::WALManager;
@@ -14,6 +15,7 @@ fn test_opts() -> Arc<Options> {
 
 // ---- 基础写入/读取 ----
 
+/// 验证 Writer 同步刷新数据到磁盘
 #[test]
 fn test_writer_sync() {
     let d = tempdir().unwrap();
@@ -25,6 +27,7 @@ fn test_writer_sync() {
     assert!(std::fs::metadata(&path).unwrap().len() >= 16);
 }
 
+/// 验证读取器跳过 0 字节长度空记录
 #[test]
 fn test_zero_length_record_skipped() {
     let d = tempdir().unwrap();
@@ -39,6 +42,7 @@ fn test_zero_length_record_skipped() {
     }
 }
 
+/// 验证最大 64KB 键长度下 WAL 条目的编解码正确性
 #[test]
 fn test_max_key_value() {
     let k = vec![0xAB; 65535];
@@ -52,6 +56,7 @@ fn test_max_key_value() {
     assert_eq!(WalEntry::decode(&e.encode()).unwrap().key.len(), 65535);
 }
 
+/// 验证 Block 尾部 Padding 的跳过与续读逻辑
 #[test]
 fn test_block_trailer_skip() {
     let d = tempdir().unwrap();
@@ -73,6 +78,7 @@ fn test_block_trailer_skip() {
     }
 }
 
+/// 验证严格模式下发生 CRC/数据损坏时抛出 Fatal 错误
 #[test]
 fn test_strict_wal_recovery() {
     let d = tempdir().unwrap();
@@ -94,6 +100,7 @@ fn test_strict_wal_recovery() {
 
 // ---- WALManager / 生命周期 ----
 
+/// 验证拒绝解析版本号不符的 WAL 文件头
 #[test]
 fn test_file_header_version_reject() {
     let d = tempdir().unwrap();
@@ -120,6 +127,7 @@ fn test_file_header_version_reject() {
     assert!(WALManager::recover(d.path(), test_opts()).is_err());
 }
 
+/// 验证空写入 Batch 不产生无效文件字节
 #[test]
 fn test_empty_write_batch() {
     let d = tempdir().unwrap();
@@ -131,6 +139,7 @@ fn test_empty_write_batch() {
     assert_eq!(s, 0);
 }
 
+/// 验证 WALManager 依据序列号清理旧 WAL 文件的边界
 #[test]
 fn test_wal_cleanup_boundary() {
     let d = tempdir().unwrap();
@@ -163,6 +172,7 @@ fn del(s: u64, k: &[u8]) -> WalEntry {
     }
 }
 
+/// 验证正常关闭后重启, 旧 WAL 日志记录的重放与恢复
 #[test]
 fn test_wal_replay_after_clean_close() {
     let d = tempdir().unwrap();
@@ -177,6 +187,7 @@ fn test_wal_replay_after_clean_close() {
     assert_eq!(r.max_sequence, 101);
 }
 
+/// 验证未正常关闭 (Crash) 场景下的数据同步与日志恢复
 #[test]
 fn test_crash_recovery() {
     let d = tempdir().unwrap();
@@ -194,6 +205,7 @@ fn test_crash_recovery() {
     );
 }
 
+/// 验证发生多轮 WAL 文件轮转后 Crash 的数据全量恢复
 #[test]
 fn test_crash_with_rotation() {
     let d = tempdir().unwrap();
@@ -214,6 +226,7 @@ fn test_crash_with_rotation() {
     );
 }
 
+/// 验证按序列号按序重放多个历史 WAL 文件
 #[test]
 fn test_multiple_wals_replay() {
     let d = tempdir().unwrap();
@@ -235,6 +248,7 @@ fn test_multiple_wals_replay() {
     );
 }
 
+/// 验证 WAL 删除标记 (TypeDelete) 的正确重放与记录
 #[test]
 fn test_delete_replay() {
     let d = tempdir().unwrap();
@@ -250,6 +264,7 @@ fn test_delete_replay() {
     );
 }
 
+/// 验证空 WAL 文件的正常重放, 且无任何有效数据条目
 #[test]
 fn test_empty_wal_replay() {
     let d = tempdir().unwrap();
@@ -266,6 +281,7 @@ fn test_empty_wal_replay() {
     );
 }
 
+/// 验证 BatchStart 事务批次记录的重放逻辑
 #[test]
 fn test_batch_entry_replay() {
     let batch = WalEntry {
@@ -290,6 +306,7 @@ fn test_batch_entry_replay() {
     );
 }
 
+/// 验证 WALManager 物理删除指定 Sequence 之前的历史 WAL 文件
 #[test]
 fn test_wal_cleanup() {
     let d = tempdir().unwrap();
@@ -303,6 +320,7 @@ fn test_wal_cleanup() {
 
 // ---- 专项验证测试 ----
 
+/// 验证跨多代 WAL 文件回填并伴随 Crash 场景下的数据完整恢复
 #[test]
 fn test_backfill_crash_recovery() {
     let d = tempdir().unwrap();
@@ -324,6 +342,7 @@ fn test_backfill_crash_recovery() {
     assert_eq!(r.max_sequence, 200);
 }
 
+/// 验证 WAL 文件排他锁防多进程并发打开
 #[test]
 fn test_lock_file() {
     let d = tempdir().unwrap();
@@ -341,6 +360,7 @@ fn test_lock_file() {
     }
 }
 
+/// 验证不完整 Batch 事务因尾部截断而自动回滚
 #[test]
 fn test_batch_truncated_rollback() {
     let d = tempdir().unwrap();

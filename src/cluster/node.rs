@@ -1,4 +1,38 @@
-//! OpenRaft node wrapper.
+//! 通用 OpenRaft 节点封装 — 把 `openraft::Raft` 与 `OpenRaftStorage` 组合成
+//! 单 Group 的读写入口. MetaRaft 控制面与数据 Group 都复用本类型
+//! (`meta_raft_node.rs` 是它的 gid=0 特化).
+//!
+//! # 数据流
+//!
+//! ```text
+//! propose(request)
+//!   ├─ check_entry_size (超限 InvalidConfig)
+//!   └─ raft.client_write (重试 ≤3)
+//!        ├─ Ok -> 返回 Response.data; track_proposed_bytes (F-008 size snapshot)
+//!        └─ ForwardToLeader -> 注册 leader 地址 -> gRPC remote_propose 转发到 leader
+//!             └─ 仍失败 -> ClusterError::NotLeader (is_ask=false)
+//!
+//! change_membership(members)
+//!   ├─ 屏障 1: wait_members_catch_up — 所有成员已连接且 matched 落后 ≤5 (30s 超时)
+//!   ├─ raft.change_membership (joint consensus)
+//!   └─ 屏障 2: confirm_replication — 至少一个其他 voter matched ≥ last_log,
+//!        再等 3×heartbeat 让 commit_index 传播
+//! ```
+//!
+//! 读路径 `get` / `get_migration_tip` / `get_migration_tombstone` 共用
+//! `ensure_leader_for_linear_read`: `linearizable_read=true` 时走 LeaseRead
+//! (lease 内本地读零 RTT, 失去多数派且无法续租时快速失败返回
+//! `ForwardToLeader::empty()` → `NotLeader`), 否则本地 leader check
+//! (FIX-0056-A1 合并读线性点依赖此语义).
+//!
+//! # Invariant
+//!
+//! - 成员变更双屏障: catch-up + replication confirm — 防 leader 在
+//!   change_membership 提交后、commit_index 传播前崩溃导致的新成员缺日志.
+//! - Raft 模式必须 `db.use_wal() == true`, 否则 `ClusterError::InvalidConfig`.
+//! - ForwardToLeader 的转发地址来自 wire 上的 leader addr, 必须注册进 network
+//!   factory 才能触达.
+//! - `initialize` 仅用于首节点单 voter bootstrap; 已有 Raft 状态时 openraft 拒绝.
 
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -7,7 +41,7 @@ use std::time::Duration;
 
 use openraft::error::{ForwardToLeader, RaftError};
 use openraft::type_config::async_runtime::WatchReceiver;
-use openraft::{Config, Raft, RaftMetrics, TryAsRef};
+use openraft::{Config, Raft, RaftMetrics, RaftNetworkFactory, TryAsRef};
 use tracing::instrument;
 
 use crate::cluster::log_committer::spawn_committer;
@@ -359,7 +393,7 @@ impl OpenRaftNode {
             match self.raft.client_write(request.clone()).await {
                 Ok(response) => {
                     let elapsed = t0.elapsed();
-                    tracing::info!(
+                    tracing::debug!(
                         target: "perf",
                         group_id = self.group_id,
                         total_us = elapsed.as_micros(),
@@ -380,6 +414,39 @@ impl OpenRaftNode {
                                 .write()
                                 .add_node(leader_id, addr.clone());
                         }
+                        // 本地不是 leader 时, 通过 gRPC remote_propose 把请求真正
+                        // 转发到当前 leader 节点执行, 而不是只重试本地 client_write.
+                        // 这使 MetaRaft 的 leader_watcher / 集群命令能在任意节点上
+                        // 完成控制面更新, 数据面 follower 也获得同一兜底.
+                        if let (Some(leader_id), Some(addr)) = (ftl.leader_id, leader_addr.clone())
+                        {
+                            match self
+                                .forward_propose_to_leader(leader_id, &addr, &request)
+                                .await
+                            {
+                                Ok(resp) => return Ok(resp),
+                                Err(forward_err) => {
+                                    tracing::warn!(
+                                        group_id = self.group_id,
+                                        leader_id,
+                                        error = %forward_err,
+                                        attempt,
+                                        "forward propose to leader failed, will retry"
+                                    );
+                                    if attempt < 2 {
+                                        tokio::time::sleep(std::time::Duration::from_millis(200))
+                                            .await;
+                                        continue;
+                                    }
+                                    // 远端仍返回 ForwardToLeader Display 串时, 归一成 NotLeader.
+                                    return Err(normalize_forward_like_error(
+                                        forward_err,
+                                        ftl.leader_id,
+                                        leader_addr.clone(),
+                                    ));
+                                }
+                            }
+                        }
                         if attempt < 2 {
                             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                             continue;
@@ -390,11 +457,48 @@ impl OpenRaftNode {
                             is_ask: false,
                         }));
                     }
-                    return Err(Error::Cluster(ClusterError::Raft(e.to_string())));
+                    // 部分 openraft 错误 Display 含 "has to forward" 但 forward_to_leader()
+                    // 抽不出结构体 — 仍按 NotLeader 处理, 避免 CLUSTER MEET 等直接致命失败.
+                    let msg = e.to_string();
+                    if msg.contains("has to forward request to") {
+                        return Err(Error::Cluster(ClusterError::NotLeader {
+                            leader: None,
+                            leader_addr: None,
+                            is_ask: false,
+                        }));
+                    }
+                    return Err(Error::Cluster(ClusterError::Raft(msg)));
                 }
             }
         }
         unreachable!()
+    }
+
+    /// 将 propose 请求经 gRPC `remote_propose` 转发到目标 leader 节点执行.
+    ///
+    /// 服务端 `remote_propose` 把请求路由到对应 group 的 `OpenRaftNode` 后
+    /// 本地 propose; 若该节点也已不再是 leader, 它自己会继续转发/重试,
+    /// 最终收敛到当前 leader. 客户端复用 network factory 的连接池.
+    async fn forward_propose_to_leader(
+        &self,
+        leader_id: NodeId,
+        addr: &str,
+        request: &Request,
+    ) -> Result<Response> {
+        let mut factory = self
+            .network_factory
+            .read()
+            .clone()
+            .with_group_id(self.group_id);
+        let mut client = factory
+            .new_client(
+                leader_id,
+                &openraft::BasicNode {
+                    addr: addr.to_string(),
+                },
+            )
+            .await;
+        client.remote_propose(self.group_id, request).await
     }
 
     /// 累加 propose 成功的字节预估数, 超阈值时异步触发 snapshot (F-008).
@@ -434,11 +538,11 @@ impl OpenRaftNode {
 
     pub async fn write_batch(&self, batch: ThinWriteBatch) -> Result<()> {
         match self.propose(Request::WriteBatch(batch)).await? {
-            Response::Ok => Ok(()),
+            Response::Ok | Response::WriteStats { .. } => Ok(()),
             Response::Error(msg) => Err(Error::Cluster(ClusterError::Internal(msg))),
-            _ => Err(Error::Cluster(ClusterError::Internal(
-                "unexpected write_batch response".into(),
-            ))),
+            other => Err(Error::Cluster(ClusterError::Internal(format!(
+                "unexpected write_batch response: {other}"
+            )))),
         }
     }
 
@@ -486,9 +590,10 @@ impl OpenRaftNode {
     /// 共用同一语义, 不允许落后 follower 冒充最新读.
     async fn ensure_leader_for_linear_read(&self) -> Result<()> {
         if self.linearizable_read {
-            // Linearizable read: quorum 确认当前仍是 leader + wait applied index
+            // Linearizable read: lease 有效期内本地读零 RTT, 过期 (失去多数派
+            // 且无法续租) 时快速失败返回 ForwardToLeader::empty() → NotLeader.
             self.raft
-                .ensure_linearizable(openraft::ReadPolicy::ReadIndex)
+                .ensure_linearizable(openraft::ReadPolicy::LeaseRead)
                 .await
                 .map_err(map_linearizable_error)?;
         } else {
@@ -564,7 +669,6 @@ impl OpenRaftNode {
     ) -> Result<()> {
         use raft_rpc::raft_service_server::RaftServiceServer;
         use tokio::net::TcpListener;
-        use tokio_stream::wrappers::TcpListenerStream;
 
         let listener = TcpListener::bind(addr)
             .await
@@ -576,15 +680,21 @@ impl OpenRaftNode {
             .max_decoding_message_size(max_message_size as usize)
             .max_encoding_message_size(max_message_size as usize);
 
-        tonic::transport::Server::builder()
+        crate::cluster::network::raft_server()
             .add_service(server)
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(crate::cluster::network::tcp_incoming(listener))
             .await
             .map_err(|e| Error::Cluster(ClusterError::Raft(e.to_string())))?;
         Ok(())
     }
 
     pub async fn shutdown(&self) -> Result<()> {
+        // 先停 LogCommitter actor (确保其持有的 Arc<DB> 释放), 再停 raft.
+        // 自愈重开路径依赖此顺序: 不先退出 committer, 底层 WAL LOCK 不会被
+        // 释放, `create_group_inner` 重开会报 `Database already in use`.
+        if let Some(ref committer) = self.storage.committer {
+            committer.shutdown().await;
+        }
         self.raft
             .shutdown()
             .await
@@ -598,6 +708,25 @@ impl OpenRaftNode {
 
     pub fn add_node_address(&self, node_id: NodeId, address: String) {
         self.network_factory.write().add_node(node_id, address);
+    }
+}
+
+/// 转发失败时若仍是 ForwardToLeader 语义, 归一为 `NotLeader`.
+fn normalize_forward_like_error(
+    err: Error,
+    leader: Option<NodeId>,
+    leader_addr: Option<String>,
+) -> Error {
+    match err {
+        Error::Cluster(ClusterError::NotLeader { .. }) => err,
+        Error::Cluster(ClusterError::Raft(msg)) if msg.contains("has to forward request to") => {
+            Error::Cluster(ClusterError::NotLeader {
+                leader,
+                leader_addr,
+                is_ask: false,
+            })
+        }
+        other => other,
     }
 }
 
@@ -629,7 +758,18 @@ fn map_linearizable_error(
                     is_ask: false,
                 });
             }
-            _ => {}
+            // Lease 过期且无已知 leader 可转发 (分区隔离的旧 leader): openraft
+            // 返回 ForwardToLeader::empty(). 映射为 NotLeader { leader: None },
+            // 与 Redis CLUSTERDOWN 语义对齐 (客户端不再收到滞后值/内部错误).
+            ForwardToLeader {
+                leader_id: None, ..
+            } => {
+                return Error::Cluster(ClusterError::NotLeader {
+                    leader: None,
+                    leader_addr: None,
+                    is_ask: false,
+                });
+            }
         }
     }
     Error::Cluster(ClusterError::Internal(format!(

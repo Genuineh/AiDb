@@ -1,4 +1,5 @@
 //! Unit tests for cluster ops components (Phase 15).
+//! @component aidb-cluster_ops
 //!
 //! These tests verify ReplicaAllocator, MembershipCoordinator data structures,
 //! and SlotMigrationManager types using in-memory MetaRaft mocks.

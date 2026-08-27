@@ -1,0 +1,45 @@
+name: Feature
+description: "Propose a new feature or a public API change (commit type: feat)"
+labels: ["feat"]
+title: "[feat] Summary"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution. Name who is affected and the concrete
+        use case. For non-trivial work, discuss the approach in this issue before landing it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem are you solving? Who is affected — users, other modules, or both?
+      placeholder: Concrete scenario and pain point
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A sketch of the user-facing API or behavior; the more concrete, the easier to discuss
+      placeholder: Interface / behavior / scope
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed and why you discarded them
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: Best guess at the size of this change
+      options:
+        - Small — fits in one PR, no design doc needed
+        - Medium — touches public API or one subsystem
+        - Large — cross-cutting or a new subsystem
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Related issues, prior discussion, reference implementations

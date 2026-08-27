@@ -1,4 +1,5 @@
 //! 可靠性: 未 close 崩溃、多轮 restart (roadmap 5.10)
+//! @component aidb-engine
 
 use aidb::config::Options;
 use aidb::DB;

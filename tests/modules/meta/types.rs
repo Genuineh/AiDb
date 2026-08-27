@@ -1,3 +1,5 @@
+//! @component aidb-cluster
+
 use std::collections::HashMap;
 
 use aidb::cluster::types::LogEntry;

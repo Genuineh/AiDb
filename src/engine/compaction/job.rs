@@ -1,10 +1,28 @@
-//! Compaction 执行: 归并 → 新 SSTable.
+//! Compaction 执行: 将多个输入 SST 归并去重后写出新 SSTable (`CompactionJob::run`).
+//! 支持 subcompaction 分裂: 大 compaction 按 key 区间拆成多个并行子任务,
+//! 使用 `std::thread::scope` 并行执行, 每个子任务负责 `[range_start, range_end)`.
 //!
-//! 支持 subcompaction 分裂: 将大 compaction 拆分为多个并行子任务,
-//! 每个子任务负责一个 key 区间, 使用 std::thread::scope 并行执行.
+//! # 数据流
+//!
+//! ```text
+//! inputs + expanded_inputs → MergeIterator (堆归并)
+//!   → 同一 user_key 分组: 最新版本无条件保留, 其余按 SnapshotDedupTracker 丢弃
+//!   → RangeTombstoneTracker 过滤被覆盖的点条目
+//!   → output_level > 0: 丢弃 TypeDelete tombstone
+//!   → SSTableBuilder → .sst → CompactionResult (entry_count == 0 时 abandon)
+//! ```
+//!
+//! # Invariant
+//!
+//! - 同一 user_key 保留最高 sequence 版本; 从新到旧扫描, 一旦遇到 `seq <= min_snapshot_sequence`
+//!   的 "边界穿越版本" 即保留之, 更老版本一律丢弃 (保证所有活跃 Snapshot 可见性).
+//! - 输出到 L1+ 时丢弃 `TypeDelete` tombstone: tombstone 作为某 user_key 的最新版本
+//!   (即无更新的存活点版本) 被跳过, 该 key 更老的重复版本也随之清除.
+//! - 0 entry 的子任务输出空 `CompactionResult` (file_number = 0), 上层跳过 AddFile.
 
 use super::helpers::user_key_from_internal;
 use super::merge::MergeIterator;
+use super::trackers::{RangeTombstoneTracker, SnapshotDedupTracker};
 use crate::config::CompressionType;
 use crate::engine::compaction::filter::{CompactionFilter, FilterDecision};
 use crate::engine::memtable::{extract_sequence, extract_value_type, ValueType};
@@ -12,80 +30,6 @@ use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableReader};
 use crate::error::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-/// 追踪同一个 user_key 分组内是否已经保留过"跨越 `min_snapshot_sequence`
-/// 边界"的版本 (即 sequence <= `min_snapshot_sequence` 的版本)。
-///
-/// 正确的多版本保留规则是: 对同一个 user_key, 从最新版本开始往老版本扫描,
-/// 一旦保留了某个 sequence <= min_snapshot_sequence 的版本, 该版本就是所有
-/// 活跃快照 (其边界 >= min_snapshot_sequence) 都能落到的"边界穿越版本",
-/// 更老的版本无论 sequence 是多少都不再被任何快照需要, 可以安全丢弃。
-///
-/// 之前的实现用 `sequence >= min_snapshot_sequence` 作为无状态的逐条判断,
-/// 语义反了: 会保留边界*以上*、其实没有任何快照需要的冗余版本, 却在
-/// snapshot 边界与该 key 自身版本不精确对齐时 (只要期间有别的 key 写入,
-/// 全局 sequence 前进但这个 key 没变, 这种情况在真实工作负载里几乎必然
-/// 发生), 把边界*以下*那个真正被需要的版本当成"不受保护"直接丢弃,
-/// 导致存活的 snapshot 在 compaction 后读到错误结果 (缺失或读到更新版本)。
-#[derive(Default)]
-struct SnapshotDedupTracker {
-    crossed: bool,
-}
-
-impl SnapshotDedupTracker {
-    /// 开始处理一个新的 user_key 分组 (遇到和上一条不同的 user_key 时调用).
-    fn start_key(&mut self) {
-        self.crossed = false;
-    }
-
-    /// 本条 entry (无论是否被保留进输出) 是否已经跨过快照保护边界:
-    /// 一旦某条 sequence <= min_snapshot_sequence 的版本被观察到, 同一个
-    /// user_key 分组内更老的版本都不再需要保留.
-    fn observe(&mut self, sequence: u64, min_snapshot_sequence: u64) {
-        if sequence <= min_snapshot_sequence {
-            self.crossed = true;
-        }
-    }
-
-    /// 是否已经跨过边界 (跨过之后, 后续更老的重复版本应直接丢弃).
-    fn already_crossed(&self) -> bool {
-        self.crossed
-    }
-}
-
-/// 追踪 compaction 归并时的活跃 range tombstone.
-#[derive(Default)]
-struct RangeTombstoneTracker {
-    items: Vec<RangeTombstoneItem>,
-}
-
-struct RangeTombstoneItem {
-    start: Vec<u8>,
-    end: Vec<u8>,
-    sequence: u64,
-}
-
-impl RangeTombstoneTracker {
-    fn add(&mut self, start: Vec<u8>, end: Vec<u8>, sequence: u64) {
-        self.items.push(RangeTombstoneItem {
-            start,
-            end,
-            sequence,
-        });
-    }
-
-    fn advance_past(&mut self, user_key: &[u8]) {
-        self.items.retain(|item| item.end.as_slice() > user_key);
-    }
-
-    fn covers(&self, user_key: &[u8], sequence: u64) -> bool {
-        self.items.iter().any(|item| {
-            item.start.as_slice() <= user_key
-                && user_key < item.end.as_slice()
-                && item.sequence >= sequence
-        })
-    }
-}
 
 pub struct CompactionJob {
     pub inputs: Vec<Arc<SSTableReader>>,
@@ -109,6 +53,8 @@ pub struct CompactionResult {
     pub smallest_key: Vec<u8>,
     pub largest_key: Vec<u8>,
     pub file_size: u64,
+    /// 本子任务中因 filter 丢弃的最新 Put 的 user_key (去重前由调用方合并).
+    pub filter_removed_user_keys: Vec<Vec<u8>>,
 }
 
 impl CompactionJob {
@@ -304,6 +250,7 @@ impl CompactionJob {
         }
 
         let mut merge_iter = MergeIterator::new(self.all_inputs())?;
+        let mut filter_removed: Vec<Vec<u8>> = Vec::new();
         let mut entry_count = 0usize;
         let mut last_user_key: Option<Vec<u8>> = None;
         let mut smallest_key: Option<Vec<u8>> = None;
@@ -369,6 +316,9 @@ impl CompactionJob {
             if !self.should_filter(&key, &value) {
                 builder.add(&key, &value)?;
                 entry_count += 1;
+            } else if value_type == ValueType::TypePut {
+                // 记录; Version 安装后再通知 listener (见 DB::run_compaction_once).
+                filter_removed.push(user_key.to_vec());
             }
             last_user_key = Some(user_key.to_vec());
             tracker.observe(seq, self.min_snapshot_sequence);
@@ -387,6 +337,7 @@ impl CompactionJob {
                 smallest_key: vec![],
                 largest_key: vec![],
                 file_size: 0,
+                filter_removed_user_keys: filter_removed,
             });
         }
 
@@ -405,6 +356,7 @@ impl CompactionJob {
             smallest_key: smallest_key.unwrap_or_default(),
             largest_key: largest_key.unwrap_or_default(),
             file_size,
+            filter_removed_user_keys: filter_removed,
         })
     }
 
@@ -421,6 +373,7 @@ impl CompactionJob {
                 smallest_key: vec![],
                 largest_key: vec![],
                 file_size: 0,
+                filter_removed_user_keys: vec![],
             }]);
         }
 
@@ -434,7 +387,6 @@ impl CompactionJob {
         let bloom_fpr = self.bloom_false_positive_rate;
         let min_snap_seq = self.min_snapshot_sequence;
         let compaction_filter = self.compaction_filter.clone();
-
         let results: Vec<Result<CompactionResult>> = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(split_keys.len() + 1);
 
@@ -473,7 +425,7 @@ impl CompactionJob {
                         bloom_fpr,
                         min_snap_seq,
                         expected,
-                        filter.clone(),
+                        filter,
                     )
                 }));
             }
@@ -530,6 +482,7 @@ fn write_sub_compaction(
             smallest_key: vec![],
             largest_key: vec![],
             file_size: 0,
+            filter_removed_user_keys: vec![],
         });
     }
 
@@ -550,6 +503,7 @@ fn write_sub_compaction(
         MergeIterator::new(readers.to_vec())?
     };
 
+    let mut filter_removed: Vec<Vec<u8>> = Vec::new();
     let mut entry_count = 0usize;
     let mut last_user_key: Option<Vec<u8>> = None;
     let mut smallest_key: Option<Vec<u8>> = None;
@@ -622,6 +576,8 @@ fn write_sub_compaction(
         if !should_filter_impl(&compaction_filter, output_level, &key, &value) {
             builder.add(&key, &value)?;
             entry_count += 1;
+        } else if value_type == ValueType::TypePut {
+            filter_removed.push(user_key.to_vec());
         }
         last_user_key = Some(user_key.to_vec());
         tracker.observe(seq, min_snap_seq);
@@ -640,6 +596,7 @@ fn write_sub_compaction(
             smallest_key: vec![],
             largest_key: vec![],
             file_size: 0,
+            filter_removed_user_keys: filter_removed,
         });
     }
 
@@ -651,6 +608,7 @@ fn write_sub_compaction(
         smallest_key: smallest_key.unwrap_or_default(),
         largest_key: largest_key.unwrap_or_default(),
         file_size,
+        filter_removed_user_keys: filter_removed,
     })
 }
 
@@ -730,6 +688,43 @@ mod tests {
         let out = job.run(&[11]).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].entry_count, 1);
+    }
+
+    #[test]
+    fn test_filter_removed_user_keys_recorded() {
+        use crate::engine::compaction::{CompactionFilter, FilterDecision};
+
+        struct DropPuts;
+        impl CompactionFilter for DropPuts {
+            fn filter(&self, _: usize, _: &[u8], _: &[u8]) -> FilterDecision {
+                FilterDecision::Remove
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let a = sst(
+            dir.path(),
+            1,
+            0,
+            &[
+                (b"k", 2, ValueType::TypePut, b"v2"),
+                (b"k", 1, ValueType::TypePut, b"v1"),
+            ],
+        );
+        let job = CompactionJob::new(
+            vec![a],
+            vec![],
+            1,
+            dir.path().to_path_buf(),
+            512,
+            16,
+            CompressionType::None,
+            0.0,
+        )
+        .with_filter(Some(Arc::new(DropPuts)));
+        let out = job.run(&[20]).unwrap();
+        assert_eq!(out[0].entry_count, 0);
+        assert_eq!(out[0].filter_removed_user_keys, vec![b"k".to_vec()]);
     }
 
     #[test]

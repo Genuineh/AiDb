@@ -1,0 +1,26 @@
+# 文档外链健康检查: 防止 Markdown 链接腐烂
+# 与本地 pre-commit hook (check-docs-links.sh) 分工: CI 管外链, hook 管相对路径
+name: docs-link-check
+on:
+  # 仅当变更包含 .md 文件时触发
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.md'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lychee-link-check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # --exclude '^file://': 跳过本地 file:// 链接 (在 GitHub 上必然无效)
+          # --exclude-all-private: 跳过 localhost / 内网 IP 等私有地址
+          # '**/*.md': 仅检查 Markdown 文件, 避免误伤其他文件类型
+          args: --no-progress --exclude '^file://' --exclude-all-private '**/*.md'

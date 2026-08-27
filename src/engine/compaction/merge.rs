@@ -1,4 +1,13 @@
-//! 多路归并迭代器 (Compaction / 有序合并).
+//! 多路归并迭代器 (compaction 专用): 多个 SST 输入按 InternalKey 顺序做堆归并 (`BinaryHeap`),
+//! 供 `CompactionJob` 统一遍历全部输入文件.
+//!
+//! 排序规则: 先按 user_key 升序, 同一 user_key 内再按完整 InternalKey 排序 (高 sequence 在前),
+//! 因此同一 user_key 的多个版本会相邻出现, 由上层 `CompactionJob` 做 dedup.
+//!
+//! # Invariant
+//!
+//! - 仅用于 compaction 路径; 读路径 (跨 MemTable + SSTable) 使用 `db::iterator::DBIterator`,
+//!   二者勿混用 (见 `docs/modules/02-engine-storage.md`).
 
 use crate::engine::memtable::extract_user_key;
 use crate::engine::sstable::{SSTableIterator, SSTableReader};
@@ -100,7 +109,7 @@ impl MergeIterator {
         })
     }
 
-    #[tracing::instrument(name = "cmp_merge", skip(self))]
+    #[tracing::instrument(level = "debug", name = "cmp_merge", skip(self))]
     pub fn next_entry(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
         while let Some(entry) = self.heap.pop() {
             if let Some(ref end) = self.range_end {

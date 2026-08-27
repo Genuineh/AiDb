@@ -1,4 +1,5 @@
 //! 集成测试: 集群副本自动对账.
+//! @component aidb-cluster
 //!
 //! 验证 LifecycleManager + MultiRaftNode 的 drift 检测和成员变更流程.
 

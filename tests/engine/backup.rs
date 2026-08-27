@@ -1,5 +1,6 @@
-//! 备份模块端到端集成测试。
-//! 覆盖跨模块场景：空数据库备份、完整 roundtrip、并发写入一致性。
+//! 备份模块端到端集成测试.
+//! @component aidb-engine
+//! 覆盖跨模块场景: 空数据库备份、完整 roundtrip、并发写入一致性.
 
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -24,7 +25,7 @@ fn test_backup_empty_db() {
     let info = manager.get_backup_info(id).unwrap();
     assert_eq!(info.id, id);
 
-    // 备份完整性可验证（即使空数据库也有元数据文件）
+    // 备份完整性可验证 (即使空数据库也有元数据文件)
     let recovery = RecoveryManager::new(storage);
     assert!(recovery.verify_backup(id).unwrap());
 }
@@ -62,7 +63,7 @@ fn test_backup_during_concurrent_writes() {
     let dir = tempdir().unwrap();
     let db = DB::open(dir.path(), Options::for_testing()).unwrap();
 
-    // 先写入一批数据（零填充确保字典序）
+    // 先写入一批数据 (零填充确保字典序)
     for i in 0u32..50 {
         db.put(format!("k{i:02}").as_bytes(), b"before").unwrap();
     }
@@ -73,7 +74,7 @@ fn test_backup_during_concurrent_writes() {
     let manager = BackupManager::new(storage.clone(), RetentionPolicy::default());
     let _id = manager.create_backup(&db).unwrap();
 
-    // 备份后继续写入（模拟备份期间的并发写入）
+    // 备份后继续写入 (模拟备份期间的并发写入)
     for i in 50u32..100 {
         db.put(format!("k{i:02}").as_bytes(), b"after").unwrap();
     }

@@ -1,4 +1,5 @@
 //! Bloom Filter 模块级 dataflow — SST read path bloom_check event
+//! @component aidb-filter
 
 use aidb::config::CompressionType;
 use aidb::engine::memtable::{encode_internal_key, ValueType};
@@ -18,6 +19,7 @@ fn build_bloom_sst(dir: &std::path::Path, file_num: u64) -> std::path::PathBuf {
     path
 }
 
+/// 验证 Bloom Filter 可观测性 (hit=false 假阳性过滤事件跟踪)
 #[test]
 fn test_filter_bloom_observability() {
     let _lock = tracing_test_lock();

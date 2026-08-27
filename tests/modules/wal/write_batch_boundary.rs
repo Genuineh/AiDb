@@ -1,6 +1,6 @@
 //! ISSUE-001 / ISSUE-002 — WriteBatch 与 WAL rotate 边界 (B1.2 模板)
+//! @component aidb-wal
 //!
-//! 规格: `WiQunTools/docs/wiqun-db-inventory/01-wal.md`
 
 use aidb::config::Options;
 use aidb::engine::wal::manager::WALManager;
@@ -35,7 +35,7 @@ fn write_test_batch(db: &DB, batch_size: usize, value: &[u8]) {
     for i in 0..batch_size {
         batch.put(format!("k{i}").as_bytes(), value);
     }
-    db.write(&batch).unwrap();
+    let _ = db.write(&batch).unwrap();
 }
 
 fn count_recovered_puts(result: &aidb::engine::wal::manager::RecoveryResult) -> usize {

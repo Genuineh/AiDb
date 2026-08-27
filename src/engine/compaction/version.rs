@@ -1,4 +1,23 @@
-//! Version / MANIFEST / CURRENT 管理.
+//! Version / MANIFEST / CURRENT 管理: 维护当前 `Version` (各层 SSTable 元数据列表),
+//! 所有文件增删以 `VersionEdit` 追加写入 MANIFEST, 并用 `CURRENT` 原子指向活跃 MANIFEST.
+//!
+//! # 架构
+//!
+//! ```text
+//! open_new            → 新库: MANIFEST-000001 + CURRENT
+//! recover             → 读 CURRENT → replay MANIFEST → 重建 Version
+//! bootstrap_from_scan → 无 CURRENT 遗留库: 目录扫描生成 edits 后重建
+//! apply_edit          → MANIFEST append (crc32 + len + postcard payload) → 更新内存 Version
+//!                     → 超过 max_manifest_size 时 rotate_manifest
+//! rotate_manifest     → 当前 Version 全量快照写入新 MANIFEST, 原子写 CURRENT
+//! ```
+//!
+//! # Invariant
+//!
+//! - `CURRENT` 始终指向活跃 `MANIFEST-*`, 经 `CURRENT.tmp` + rename 原子切换 (见
+//!   `docs/modules/02-engine-storage.md`).
+//! - `VersionEdit` 先写 MANIFEST 并 sync 落盘, 后才更新内存 Version.
+//! - 遗留库扫描 / 加载损坏文件时降级跳过 (warn), 不阻断 open.
 
 use super::helpers::user_key_from_internal;
 use crate::engine::sstable::{parse_sstable_filename, sstable_path, SSTableReader};
@@ -421,7 +440,7 @@ fn parse_manifest_number(name: &str) -> Result<u64> {
 }
 
 fn write_manifest_record(writer: &mut impl Write, edit: &VersionEdit) -> Result<()> {
-    let payload = bincode::serialize(edit)
+    let payload = postcard::to_allocvec(edit)
         .map_err(|e| Error::Corruption(format!("serialize VersionEdit: {e}")))?;
     let len = payload.len() as u32;
     let mut crc_input = Vec::with_capacity(4 + payload.len());
@@ -457,7 +476,7 @@ fn read_manifest_record(reader: &mut impl Read) -> Result<Option<VersionEdit>> {
     if expected != actual {
         return Err(Error::Corruption("MANIFEST CRC mismatch".into()));
     }
-    let edit: VersionEdit = bincode::deserialize(&payload)
+    let edit: VersionEdit = postcard::from_bytes(&payload)
         .map_err(|e| Error::Corruption(format!("deserialize VersionEdit: {e}")))?;
     Ok(Some(edit))
 }

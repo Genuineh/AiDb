@@ -1,4 +1,5 @@
 //! Compaction picker / job / merge 测试.
+//! @component aidb-compaction
 
 use aidb::config::CompressionType;
 use aidb::config::Options;
@@ -23,6 +24,7 @@ fn sst(
     Arc::new(SSTableReader::open(&path, None).unwrap())
 }
 
+/// 验证 MergeIterator 处理跨 SSTable 重叠 Key 的版本合并
 #[test]
 fn test_merge_iterator_overlapping_keys() {
     let dir = tempdir().unwrap();
@@ -33,6 +35,7 @@ fn test_merge_iterator_overlapping_keys() {
     assert_eq!(first.1, b"new");
 }
 
+/// 验证 CompactionJob 在 Level 1 压实中清理 Delete Tombstone
 #[test]
 fn test_compaction_job_removes_tombstone_at_level1() {
     let dir = tempdir().unwrap();

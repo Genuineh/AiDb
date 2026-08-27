@@ -1,4 +1,22 @@
-//! Replica allocation and rebalancing (Phase 15).
+//! 副本与 slot 分配算法 (纯计算) — 根据 `ClusterMeta` 当前拓扑计算新 Group 的
+//! primary / replicas / slot ranges, 或生成 rebalance 计划; 自身不写任何状态,
+//! 结果由调用方经 MetaRaft 落地.
+//!
+//! # 算法
+//!
+//! - `allocate_group`: 过滤 Online 节点 -> 按负载 (Balanced = 组数, Weighted =
+//!   组数/权重) 选最低者做 primary -> 其余最低负载者补齐 replicas ->
+//!   `suggest_slot_allocation_for_group` 分配首个空闲 slot 区间.
+//! - `rebalance_replicas`: 按负载标准差判定失衡, 把 overloaded 节点的组迁往
+//!   underloaded 节点 (仅当目标未持有该组), 生成 `ReplicaRebalancePlan`.
+//! - `suggest_slot_allocation`: 把 `SLOT_COUNT = 16384` 均分到 N 个 Group
+//!   (余数均摊给前几组).
+//!
+//! # Invariant
+//!
+//! - 纯计算、无副作用: 输出只是建议, 必须由调用方走 MetaRaft 共识生效.
+//! - `replication_factor` 超过可用节点数时降级为可用节点数 (warn).
+//! - 只分配 Online 节点; 无可用节点 / 无空闲 slot 时返回错误.
 
 use std::collections::HashMap;
 

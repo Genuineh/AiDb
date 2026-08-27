@@ -1,4 +1,19 @@
-//! InternalKey 编码与比较 (MemTable / SSTable / MergeIterator 共用).
+//! InternalKey 编码与比较 — MemTable / SSTable / MergeIterator 共用.
+//!
+//! # 8B 尾部布局
+//!
+//! ```text
+//! InternalKey = [user_key][~seq_hi:7B][value_type:1B]
+//!               sequence 56 位大端写入高 7 字节, 逐位取反
+//! ```
+//!
+//! 比较规则 `compare_internal_key`: (user_key asc, sequence desc, value_type asc) — 同 key 下
+//! 新版本 (seq 大) 排前, seek 到首个 `seq <= max_seq` 即最新可见版本.
+//!
+//! # Invariant
+//!
+//! - `sequence < 2^56`; 超界 → `Error::InvalidState` (`check_sequence`).
+//! - `K_TYPE_SEEK = 0` (TypePut) 为全类型最小值, 用作 seek 目标 key.
 
 use crate::error::{Error, Result};
 use std::cmp::Ordering;
@@ -83,8 +98,8 @@ where
     }
 }
 
-/// encode_internal_key 的 `Arc<[u8]>` 变体。通过 `Vec::into()` 一步到位, 免去
-/// 调用方手动 `from_slice` 产生的中间变量和重复解引用 (F-019)。
+/// encode_internal_key 的 `Arc<[u8]>` 变体. 通过 `Vec::into()` 一步到位, 免去
+/// 调用方手动 `from_slice` 产生的中间变量和重复解引用 (F-019).
 pub fn encode_internal_key_arc(user_key: &[u8], sequence: u64, value_type: ValueType) -> Arc<[u8]> {
     encode_internal_key(user_key, sequence, value_type).into()
 }
@@ -150,6 +165,7 @@ pub fn extract_sequence(internal_key: &[u8]) -> Result<u64> {
 mod tests {
     use super::*;
 
+    /// 验证 InternalKey 编码与解码 Roundtrip
     #[test]
     fn test_internal_key_encode_decode() {
         let enc = encode_internal_key(b"foo", 100, ValueType::TypePut);
@@ -159,6 +175,7 @@ mod tests {
         assert_eq!(ty, ValueType::TypePut);
     }
 
+    /// 验证 InternalKey 相同 UserKey 下高 SequenceNumber (新版本) 排序在前
     #[test]
     fn test_internal_key_ordering() {
         let k1 = encode_internal_key(b"k", 1, ValueType::TypePut);
@@ -168,6 +185,7 @@ mod tests {
         assert_eq!(compare_internal_key(&k1, &k2), Ordering::Greater);
     }
 
+    /// 验证 InternalKey 按 UserKey 字典序升序排列
     #[test]
     fn test_compare_internal_key_user_key_order() {
         let a = encode_internal_key(b"a", 99, ValueType::TypePut);
@@ -175,6 +193,7 @@ mod tests {
         assert_eq!(compare_internal_key(&a, &b), Ordering::Less);
     }
 
+    /// 验证 RangeDelete/Delete/Put 在相同 Seq 下的操作类型优先级排序
     #[test]
     fn test_range_delete_ordering() {
         let put = encode_internal_key(b"k", 100, ValueType::TypePut);
@@ -185,6 +204,7 @@ mod tests {
         assert_eq!(compare_internal_key(&put, &rng), Ordering::Less);
     }
 
+    /// 验证 TypeRangeDelete 操作类型编解码解析
     #[test]
     fn test_range_delete_decode() {
         let enc = encode_internal_key(b"k", 100, ValueType::TypeRangeDelete);

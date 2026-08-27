@@ -1,4 +1,5 @@
 //! OTel 指标 wiring 验证
+//! @component aidb-metrics
 
 use aidb::config::Options;
 use aidb::engine::cache::{BlockCache, CacheKey};
