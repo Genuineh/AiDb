@@ -9,8 +9,15 @@ concurrency:
 on:
   push:
     branches: [main]
+    # 文档变更不影响 lockfile / CVE 面, 交给 docs-link-check; 每日 cron 仍会扫描
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   # 每天 UTC 0:00 (北京时间 8:00) 自动跑, 及时捕获依赖生态新发布的漏洞
   schedule:
     - cron: "0 0 * * *"

@@ -5,7 +5,7 @@
 - 项目架构与分层设计见 [ARCHITECTURE.md](ARCHITECTURE.md);
 - 部署与配置调优见 [docs/deployment.md](docs/deployment.md);
 - 设计决策与技术权衡见 [docs/design.md](docs/design.md);
-- 完整 CI 架构见 [.github/README.md](.github/README.md).
+- 完整 CI 架构见 [.github/CI.md](.github/CI.md).
 
 ```mermaid
 flowchart LR
@@ -206,4 +206,4 @@ Fixes #42
 
 ### CI 门禁
 
-PR 提交后将自动触发 GitHub Actions CI 检查. 所有流水线 (Lint、Test、Security、Docs Link Check) 全绿后方可进入代码审查与合并. 详细的 CI Job 编排与说明见 [`.github/README.md`](.github/README.md).
+PR 提交后将自动触发 GitHub Actions CI 检查. 所有流水线 (Lint、Test、Security、Docs Link Check) 全绿后方可进入代码审查与合并. 详细的 CI Job 编排与说明见 [`.github/CI.md`](.github/CI.md).

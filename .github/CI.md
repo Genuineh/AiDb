@@ -52,7 +52,7 @@ aidb/
 ├── rustfmt.toml         # rustfmt 配置 (4 空格)
 ├── .editorconfig        # 编辑器格式
 └── .github/
-    ├── README.md        # 说明文档
+    ├── CI.md            # CI / hooks 说明 (不命名 README, 避免盖过仓库首页)
     ├── ISSUE_TEMPLATE/  # Issue 类型模板 (feat/fix/refactor/test/docs/chore/perf)
     │   ├── feat.yml
     │   ├── fix.yml
@@ -79,6 +79,7 @@ aidb/
 | Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny`   |
 | Local  | `[deny.toml](../deny.toml)`                                      | cargo deny 策略 (许可证/来源)                                |
 | Local  | `[hooks/commit-msg](../hooks/commit-msg)`                        | Conventional Commits 提交说明校验                            |
+| GitHub | `[CI.md](CI.md)`                                                 | CI / hooks 说明 (不命名 README, 避免盖过仓库首页)           |
 | GitHub | `[ISSUE_TEMPLATE/feat.yml](ISSUE_TEMPLATE/feat.yml)`             | Issue 模板: 新功能                                          |
 | GitHub | `[ISSUE_TEMPLATE/fix.yml](ISSUE_TEMPLATE/fix.yml)`               | Issue 模板: bug 修复                                        |
 | GitHub | `[ISSUE_TEMPLATE/refactor.yml](ISSUE_TEMPLATE/refactor.yml)`     | Issue 模板: 重构                                            |
@@ -89,6 +90,6 @@ aidb/
 | GitHub | `[ISSUE_TEMPLATE/config.yml](ISSUE_TEMPLATE/config.yml)`         | 禁用空白 Issue                                              |
 | GitHub | `[PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md)`           | PR 描述模板                                                 |
 | GitHub | `[workflows/ci.yml](workflows/ci.yml)`                           | 主 CI (lint → test → slow/bench, cluster/compression 并行)  |
-| GitHub | `[workflows/security.yml](workflows/security.yml)`               | 安全扫描 (audit + deny, push/PR/定时)                        |
+| GitHub | `[workflows/security.yml](workflows/security.yml)`               | 安全扫描 (audit + deny; 非文档的 push/PR + 定时)              |
 | GitHub | `[workflows/docs-link-check.yml](workflows/docs-link-check.yml)` | 文档外链检查 (lychee, push/PR 含 `.md`)                      |
 | GitHub | `[workflows/issue-lint.yml](workflows/issue-lint.yml)`           | 提醒 PR 关联 GitHub Issue (PR opened/edited)                |
