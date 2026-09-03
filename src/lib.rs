@@ -18,5 +18,8 @@ pub use engine::checkpoint::Checkpoint;
 pub use engine::db::{DbIterGuard, EngineWriteStats, Snapshot, WriteBatch, WriteOp, DB};
 pub use error::{Error, Result};
 
+pub mod statistics;
+pub use statistics::Statistics;
+
 #[cfg(feature = "cluster")]
 pub mod cluster;

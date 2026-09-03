@@ -10,3 +10,6 @@ mod prometheus;
 #[cfg(not(feature = "monitoring"))]
 #[path = "modules/metrics/placeholder.rs"]
 mod placeholder;
+
+#[path = "modules/metrics/statistics_test.rs"]
+mod statistics_test;
