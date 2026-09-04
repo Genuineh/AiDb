@@ -35,3 +35,7 @@ mod write_stall_test;
 
 #[path = "modules/metrics/pending_compaction_test.rs"]
 mod pending_compaction_test;
+
+#[cfg(feature = "monitoring")]
+#[path = "modules/metrics/otel_export_test.rs"]
+mod otel_export_test;

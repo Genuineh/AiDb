@@ -35,6 +35,10 @@ const ATTR_RAFT_RESTART_OUTCOME: &str = "aidb.raft.group.restart.outcome";
 const ATTR_DB_SYSTEM: &str = "db.system";
 #[cfg(feature = "monitoring")]
 const ATTR_DB_OPERATION: &str = "db.operation.name";
+#[cfg(feature = "monitoring")]
+const ATTR_WRITE_STALL_CAUSE: &str = "aidb_write_stall_cause";
+#[cfg(feature = "monitoring")]
+const ATTR_WRITE_STALL_TYPE: &str = "aidb_write_stall_type";
 
 #[cfg(feature = "monitoring")]
 struct OtelMetrics {
@@ -68,6 +72,18 @@ struct OtelMetrics {
     raft_group_fatal_total: Counter<u64>,
     #[cfg(feature = "cluster")]
     raft_group_restart_total: Counter<u64>,
+    wal_written_bytes_total: Counter<u64>,
+    flush_written_bytes_total: Counter<u64>,
+    compaction_written_bytes_total: Counter<u64>,
+    logical_write_bytes_total: Counter<u64>,
+    block_read_bytes_total: Counter<u64>,
+    logical_read_bytes_total: Counter<u64>,
+    compaction_read_bytes_total: Counter<u64>,
+    bloom_useful_total: Counter<u64>,
+    write_stall_requests_total: Counter<u64>,
+    write_stall_duration_seconds: Histogram<f64>,
+    write_stall_max_duration_seconds: Gauge<f64>,
+    compaction_pending_bytes: Gauge<f64>,
 }
 
 #[cfg(feature = "monitoring")]
@@ -216,6 +232,67 @@ impl OtelMetrics {
                 .u64_counter("aidb_raft_group_restart_total")
                 .with_description("Raft group 自愈重启尝试次数 (按结果分类)")
                 .with_unit("1")
+                .build(),
+            wal_written_bytes_total: meter
+                .u64_counter("aidb_wal_written_bytes_total")
+                .with_description("WAL 写入字节总数")
+                .with_unit("By")
+                .build(),
+            flush_written_bytes_total: meter
+                .u64_counter("aidb_flush_written_bytes_total")
+                .with_description("Flush 生成 SSTable 写入字节总数")
+                .with_unit("By")
+                .build(),
+            compaction_written_bytes_total: meter
+                .u64_counter("aidb_compaction_written_bytes_total")
+                .with_description("Compaction 生成 SSTable 写入字节总数")
+                .with_unit("By")
+                .build(),
+            logical_write_bytes_total: meter
+                .u64_counter("aidb_logical_write_bytes_total")
+                .with_description("用户写入逻辑字节总数 (key + value)")
+                .with_unit("By")
+                .build(),
+            block_read_bytes_total: meter
+                .u64_counter("aidb_block_read_bytes_total")
+                .with_description("点查与迭代读盘物理字节总数")
+                .with_unit("By")
+                .build(),
+            logical_read_bytes_total: meter
+                .u64_counter("aidb_logical_read_bytes_total")
+                .with_description("用户点查与迭代消费逻辑字节总数")
+                .with_unit("By")
+                .build(),
+            compaction_read_bytes_total: meter
+                .u64_counter("aidb_compaction_read_bytes_total")
+                .with_description("Compaction 输入读取字节总数")
+                .with_unit("By")
+                .build(),
+            bloom_useful_total: meter
+                .u64_counter("aidb_bloom_useful_total")
+                .with_description("Bloom Filter 成功判定 key 不存在 (真阴性 TN) 次数")
+                .with_unit("1")
+                .build(),
+            write_stall_requests_total: meter
+                .u64_counter("aidb_write_stall_requests_total")
+                .with_description("受写停顿 (Write Stall) 影响的写入请求次数")
+                .with_unit("1")
+                .build(),
+            write_stall_duration_seconds: meter
+                .f64_histogram("aidb_write_stall_duration_seconds")
+                .with_description("写停顿 (Write Stall) 单次耗时分布")
+                .with_unit("s")
+                .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0])
+                .build(),
+            write_stall_max_duration_seconds: meter
+                .f64_gauge("aidb_write_stall_max_duration_seconds")
+                .with_description("单次最大写停顿耗时 (秒)")
+                .with_unit("s")
+                .build(),
+            compaction_pending_bytes: meter
+                .f64_gauge("aidb_compaction_pending_bytes")
+                .with_description("当前待 Compaction 积压量 (字节)")
+                .with_unit("By")
                 .build(),
         }
     }
@@ -484,7 +561,87 @@ pub fn sync_to_otel(stats: &crate::statistics::Statistics) {
         }
     }
 
-    // 8. 推进基线
+    // 8. 读写放大、Write Stall 与 Compaction 积压指标
+    let wal_written_delta = current
+        .wal_written_bytes
+        .saturating_sub(baseline.wal_written_bytes);
+    if wal_written_delta > 0 {
+        m.wal_written_bytes_total.add(wal_written_delta, &[]);
+    }
+    let flush_written_delta = current
+        .flush_written_bytes
+        .saturating_sub(baseline.flush_written_bytes);
+    if flush_written_delta > 0 {
+        m.flush_written_bytes_total.add(flush_written_delta, &[]);
+    }
+    let comp_written_delta = current
+        .compaction_written_bytes
+        .saturating_sub(baseline.compaction_written_bytes);
+    if comp_written_delta > 0 {
+        m.compaction_written_bytes_total
+            .add(comp_written_delta, &[]);
+    }
+    let logical_write_delta = current
+        .logical_write_bytes
+        .saturating_sub(baseline.logical_write_bytes);
+    if logical_write_delta > 0 {
+        m.logical_write_bytes_total.add(logical_write_delta, &[]);
+    }
+    let block_read_delta = current
+        .block_read_bytes
+        .saturating_sub(baseline.block_read_bytes);
+    if block_read_delta > 0 {
+        m.block_read_bytes_total.add(block_read_delta, &[]);
+    }
+    let logical_read_delta = current
+        .logical_read_bytes
+        .saturating_sub(baseline.logical_read_bytes);
+    if logical_read_delta > 0 {
+        m.logical_read_bytes_total.add(logical_read_delta, &[]);
+    }
+    let comp_read_delta = current
+        .compaction_read_bytes
+        .saturating_sub(baseline.compaction_read_bytes);
+    if comp_read_delta > 0 {
+        m.compaction_read_bytes_total.add(comp_read_delta, &[]);
+    }
+    let bloom_useful_delta = current.bloom_useful.saturating_sub(baseline.bloom_useful);
+    if bloom_useful_delta > 0 {
+        m.bloom_useful_total.add(bloom_useful_delta, &[]);
+    }
+
+    for kind in crate::statistics::WriteStallKind::ALL {
+        let idx = kind as usize;
+        let (cause, stall_type) = kind.cause_and_type();
+        let attrs = [
+            kv(ATTR_WRITE_STALL_CAUSE, cause),
+            kv(ATTR_WRITE_STALL_TYPE, stall_type),
+        ];
+        let req_delta =
+            current.write_stall_requests[idx].saturating_sub(baseline.write_stall_requests[idx]);
+        if req_delta > 0 {
+            m.write_stall_requests_total.add(req_delta, &attrs);
+        }
+        for b in 0..NUM_HISTOGRAM_BUCKETS {
+            let b_delta = current.write_stall_duration_buckets[idx][b]
+                .saturating_sub(baseline.write_stall_duration_buckets[idx][b]);
+            if b_delta > 0 {
+                let rep_val = histogram_bucket_rep_val_secs(b);
+                for _ in 0..b_delta {
+                    m.write_stall_duration_seconds.record(rep_val, &attrs);
+                }
+            }
+        }
+    }
+
+    m.write_stall_max_duration_seconds.record(
+        current.write_stall_max_duration_us as f64 / 1_000_000.0,
+        &[],
+    );
+    m.compaction_pending_bytes
+        .record(current.compaction_pending_bytes as f64, &[]);
+
+    // 9. 推进基线
     *baseline = current;
 }
 
