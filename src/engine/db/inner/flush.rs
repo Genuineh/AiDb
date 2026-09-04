@@ -107,6 +107,9 @@ impl DB {
             return Ok(());
         }
         let file_size = builder.finish()?;
+        self.stats
+            .flush_written_bytes
+            .fetch_add(file_size, AtomicOrdering::Relaxed);
         let reader = Arc::new(SSTableReader::open_with_stats(
             &path,
             Some(Arc::clone(&self.block_cache)),

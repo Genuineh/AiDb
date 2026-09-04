@@ -109,6 +109,11 @@ impl DB {
         .with_filter(self.compaction_filter.read().clone())
         .run(&file_numbers)?;
 
+        let written_bytes: u64 = results.iter().map(|r| r.file_size).sum();
+        self.stats
+            .compaction_written_bytes
+            .fetch_add(written_bytes, AtomicOrdering::Relaxed);
+
         self.stats.compaction_phases[CompactionPhase::Run as usize]
             .fetch_add(1, AtomicOrdering::Relaxed);
         self.stats.compaction_durations[CompactionPhase::Run as usize]

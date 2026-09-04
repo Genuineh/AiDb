@@ -161,6 +161,9 @@ impl DB {
         Self::validate_user_key(key)?;
         self.check_write_stall();
         self.stats.operations[DbOp::Put as usize].fetch_add(1, AtomicOrdering::Relaxed);
+        self.stats
+            .logical_write_bytes
+            .fetch_add((key.len() + value.len()) as u64, AtomicOrdering::Relaxed);
 
         // Phase 1: WAL append (in write_lock, no sync)
         let seq;
@@ -202,6 +205,9 @@ impl DB {
         Self::validate_user_key(key)?;
         self.check_write_stall();
         self.stats.operations[DbOp::Delete as usize].fetch_add(1, AtomicOrdering::Relaxed);
+        self.stats
+            .logical_write_bytes
+            .fetch_add(key.len() as u64, AtomicOrdering::Relaxed);
 
         let existed = self.get(key)?.is_some();
 
@@ -251,6 +257,16 @@ impl DB {
         self.check_not_closed()?;
         self.check_write_stall();
         self.stats.operations[DbOp::WriteBatch as usize].fetch_add(1, AtomicOrdering::Relaxed);
+        let mut batch_bytes = 0u64;
+        for op in &batch.operations {
+            match op {
+                WriteOp::Put { key, value } => batch_bytes += (key.len() + value.len()) as u64,
+                WriteOp::Delete { key } => batch_bytes += key.len() as u64,
+            }
+        }
+        self.stats
+            .logical_write_bytes
+            .fetch_add(batch_bytes, AtomicOrdering::Relaxed);
 
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
@@ -332,6 +348,16 @@ impl DB {
         self.check_not_closed()?;
         self.check_write_stall();
         self.stats.operations[DbOp::WriteBatchNoWal as usize].fetch_add(1, AtomicOrdering::Relaxed);
+        let mut batch_bytes = 0u64;
+        for op in &batch.operations {
+            match op {
+                WriteOp::Put { key, value } => batch_bytes += (key.len() + value.len()) as u64,
+                WriteOp::Delete { key } => batch_bytes += key.len() as u64,
+            }
+        }
+        self.stats
+            .logical_write_bytes
+            .fetch_add(batch_bytes, AtomicOrdering::Relaxed);
 
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();

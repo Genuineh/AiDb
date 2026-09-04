@@ -23,3 +23,6 @@ mod lifecycle_test;
 
 #[path = "modules/metrics/engine_stats_test.rs"]
 mod engine_stats_test;
+
+#[path = "modules/metrics/wa_bytes_test.rs"]
+mod wa_bytes_test;

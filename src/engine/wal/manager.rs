@@ -205,9 +205,12 @@ impl WALManager {
     }
 
     fn append_record(&mut self, data: &[u8]) -> Result<()> {
+        let start_offset = self.writer.block_offset();
         self.writer.write_record(RecordType::Full, data)?;
+        let (disk_bytes, _) = Writer::estimated_record_disk_bytes(data, start_offset);
 
         if let Some(ref s) = self.stats {
+            s.wal_written_bytes.fetch_add(disk_bytes, Ordering::Relaxed);
             s.wal_size_bytes
                 .store(self.writer.file_size().unwrap_or(0), Ordering::Relaxed);
         }
