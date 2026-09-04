@@ -21,6 +21,7 @@ fn cache_key(file_number: u64, offset: u64) -> CacheKey {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_block_cache_otel_counters_and_size() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
@@ -62,6 +63,7 @@ fn test_block_cache_otel_counters_and_size() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_bloom_false_positive_otel_counter() {
     let exporter = testutil::init_in_memory();
     let dir = tempdir().unwrap();
@@ -102,6 +104,7 @@ fn test_bloom_false_positive_otel_counter() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_db_operation_and_flush_duration_histograms() {
     let exporter = testutil::init_in_memory();
     let dir = tempdir().unwrap();

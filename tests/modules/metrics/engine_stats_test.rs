@@ -70,6 +70,7 @@ fn test_read_write_hotpath_atomic_stats() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_bloom_false_positive_reader_stats_injection() {
     let dir = TempDir::new().unwrap();
     let opts = Options {

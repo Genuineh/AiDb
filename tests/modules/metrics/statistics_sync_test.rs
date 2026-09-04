@@ -6,6 +6,7 @@ use aidb::metrics::testutil;
 use aidb::statistics::{DbOp, Statistics};
 
 #[test]
+#[serial_test::serial]
 fn test_sync_to_otel_counter_difference() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
@@ -30,6 +31,7 @@ fn test_sync_to_otel_counter_difference() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_sync_to_otel_histogram_replay_and_twin_instrument() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
@@ -68,6 +70,7 @@ fn test_sync_to_otel_histogram_replay_and_twin_instrument() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_sync_to_otel_histogram_overflow_bucket_2s() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
@@ -90,6 +93,7 @@ fn test_sync_to_otel_histogram_overflow_bucket_2s() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_sync_to_otel_reset_and_second_round_net_increment() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
@@ -120,6 +124,7 @@ fn test_sync_to_otel_reset_and_second_round_net_increment() {
 
 #[cfg(feature = "cluster")]
 #[test]
+#[serial_test::serial]
 fn test_sync_to_otel_cluster_raft_counters() {
     let exporter = testutil::init_in_memory();
     let stats = Arc::new(Statistics::default());
