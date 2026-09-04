@@ -66,6 +66,7 @@ pub(super) use crate::engine::sstable::{sstable_path, SSTableBuilder, SSTableRea
 pub(super) use crate::engine::wal::manager::WALManager;
 pub(super) use crate::engine::wal::record::{OpType, WalEntry};
 pub(super) use crate::error::{Error, Result};
+pub(super) use crate::statistics::Statistics;
 pub(super) use crossbeam_channel::{Receiver, Sender};
 pub(super) use parking_lot::{Mutex, RwLock};
 pub(super) use std::collections::HashSet;
@@ -119,12 +120,35 @@ pub struct DB {
     /// L0 SSTable count for lock-free stall checks (F-050/051/054).
     /// Maintained atomically inside all `sstables.write()` critical sections.
     l0_sstable_count: AtomicUsize,
+    pub(crate) stats: Arc<Statistics>,
 }
 
 impl DB {
+    /// 访问当前 DB 实例绑定的无锁原子指标集合
+    pub fn statistics(&self) -> Arc<Statistics> {
+        Arc::clone(&self.stats)
+    }
+
     #[tracing::instrument(name = "db_open", skip(path, options), fields(path = %path.as_ref().display()))]
     pub fn open(path: impl AsRef<Path>, options: Options) -> Result<Arc<Self>> {
         options.validate()?;
+
+        // 校验外部注入的 statistics 层数一致性契约, 避免后续越界访问
+        if let Some(ref stats) = options.statistics {
+            if stats.sstable_count.len() != options.max_levels {
+                return Err(Error::InvalidArgument(format!(
+                    "statistics.sstable_count.len() ({}) must equal options.max_levels ({})",
+                    stats.sstable_count.len(),
+                    options.max_levels
+                )));
+            }
+        }
+
+        let stats = options
+            .statistics
+            .clone()
+            .unwrap_or_else(|| Arc::new(Statistics::new(options.max_levels)));
+
         let path = path.as_ref().to_path_buf();
         let options = Arc::new(options);
 
@@ -143,11 +167,14 @@ impl DB {
 
         let next_wal = scan_next_wal_file_number(&path);
         let max_levels = options.max_levels;
-        let block_cache = Arc::new(BlockCache::new(options.block_cache_size));
+        let block_cache = Arc::new(BlockCache::new_with_stats(
+            options.block_cache_size,
+            Some(Arc::clone(&stats)),
+        ));
         let cache_for_open = Some(Arc::clone(&block_cache));
 
         let recovery = WALManager::recover(&path, Arc::clone(&options))?;
-        let memtable = MemTable::new();
+        let memtable = MemTable::new_with_stats(Some(Arc::clone(&stats)));
         replay_entries(&memtable, &recovery.entries)?;
         let mut last_sequence = recovery.max_sequence;
         last_sequence = last_sequence.max(max_sequence_in_memtable(&memtable));
@@ -187,12 +214,13 @@ impl DB {
             .map(|_| crossbeam_channel::bounded(options.compaction_channel_size))
             .unzip();
 
+        stats.sequence.store(last_sequence, AtomicOrdering::Relaxed);
+        update_sstable_metrics(&sstables, &stats);
         #[cfg(feature = "monitoring")]
         {
             crate::metrics::init();
             crate::metrics::set_sequence(last_sequence);
             crate::metrics::set_block_cache_size(0);
-            update_sstable_metrics(&sstables);
         }
 
         let l0_sstable_count_init = sstables[0].len();
@@ -226,6 +254,7 @@ impl DB {
             group_commit_lock: Mutex::new(()),
             group_commit_synced_seq: AtomicU64::new(0),
             l0_sstable_count: AtomicUsize::new(l0_sstable_count_init),
+            stats: Arc::clone(&stats),
         });
 
         db.start_flush_thread();
@@ -484,9 +513,16 @@ fn max_sequence_in_sstables(sstables: &[Vec<Arc<SSTableReader>>]) -> u64 {
     max
 }
 
-fn update_sstable_metrics(_sstables: &[Vec<Arc<SSTableReader>>]) {
+pub(crate) fn update_sstable_metrics(sstables: &[Vec<Arc<SSTableReader>>], stats: &Statistics) {
+    for (level, readers) in sstables.iter().enumerate() {
+        if level < stats.sstable_count.len() {
+            let total: u64 = readers.iter().map(|r| r.file_size()).sum();
+            stats.sstable_count[level].store(readers.len() as u64, AtomicOrdering::Relaxed);
+            stats.sstable_size_bytes[level].store(total, AtomicOrdering::Relaxed);
+        }
+    }
     #[cfg(feature = "monitoring")]
-    for (level, readers) in _sstables.iter().enumerate() {
+    for (level, readers) in sstables.iter().enumerate() {
         let label = level.to_string();
         let total: u64 = readers.iter().map(|r| r.file_size()).sum();
         crate::metrics::set_sstable_level(&label, readers.len() as i64, total as i64);

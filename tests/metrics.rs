@@ -13,3 +13,6 @@ mod placeholder;
 
 #[path = "modules/metrics/statistics_test.rs"]
 mod statistics_test;
+
+#[path = "modules/metrics/lifecycle_test.rs"]
+mod lifecycle_test;

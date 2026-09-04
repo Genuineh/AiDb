@@ -185,7 +185,7 @@ impl DB {
             }
         }
 
-        update_sstable_metrics(&self.sstables.read());
+        update_sstable_metrics(&self.sstables.read(), &self.stats);
 
         // Version 已切换: 再通知 listener, 便于上层用 get==None 安全扣减.
         if let Some(listener) = self.compaction_removal_listener.read().clone() {
@@ -294,7 +294,7 @@ impl DB {
             }
         }
 
-        update_sstable_metrics(&self.sstables.read());
+        update_sstable_metrics(&self.sstables.read(), &self.stats);
 
         self.release_files(&task);
         Ok(true)

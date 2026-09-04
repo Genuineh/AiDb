@@ -23,8 +23,10 @@ use super::range_tombstone::{max_covering_range_tombstone_seq, RangeTombstoneRec
 use super::rep::MemTableRep;
 use super::skiplist_rep::SkipMapRep;
 use crate::error::Result;
+use crate::statistics::Statistics;
 use parking_lot::RwLock;
 use std::ops::Bound;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// 同 user_key 的 point 状态 (不含 range tombstone).
@@ -99,6 +101,7 @@ pub struct MemTable {
     rep: SkipMapRep,
     /// Range tombstone 索引 — 仅含 delete_range 写入, 避免 GET 扫描全表.
     range_index: RwLock<Vec<RangeTombstoneRecord>>,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl Default for MemTable {
@@ -109,9 +112,14 @@ impl Default for MemTable {
 
 impl MemTable {
     pub fn new() -> Self {
+        Self::new_with_stats(None)
+    }
+
+    pub fn new_with_stats(stats: Option<Arc<Statistics>>) -> Self {
         Self {
             rep: SkipMapRep::new(),
             range_index: RwLock::new(Vec::new()),
+            stats,
         }
     }
 
@@ -271,8 +279,10 @@ impl MemTable {
   )]
     pub fn freeze(self, flush_seq: u64) -> ImmutableMemTable {
         tracing::info!(target: "mem", "mem.freeze");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::memtable_on_freeze(self.approximate_size());
+        if let Some(ref s) = self.stats {
+            s.memtable_size_bytes[0].store(0, Ordering::Relaxed);
+            s.memtable_size_bytes[1].fetch_add(self.approximate_size() as u64, Ordering::Relaxed);
+        }
         ImmutableMemTable {
             table: self,
             flush_seq,
@@ -280,8 +290,9 @@ impl MemTable {
     }
 
     fn sync_active_metric(&self) {
-        #[cfg(feature = "monitoring")]
-        crate::metrics::memtable_set_active(self.approximate_size());
+        if let Some(ref s) = self.stats {
+            s.memtable_size_bytes[0].store(self.approximate_size() as u64, Ordering::Relaxed);
+        }
     }
 
     pub fn iter(&self) -> MemTableIterator<'_> {

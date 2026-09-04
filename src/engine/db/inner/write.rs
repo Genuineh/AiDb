@@ -4,8 +4,8 @@
 //! 冻结逻辑 (`maybe_freeze` / `wait_for_memtable_slot`) 也在此维护.
 
 use super::{
-    AtomicOrdering, CompactionPicker, Duration, EngineWriteStats, Error, OpType, Result, WalEntry,
-    WriteBatch, WriteOp, DB, SEQUENCE_LIMIT,
+    Arc, AtomicOrdering, CompactionPicker, Duration, EngineWriteStats, Error, MemTable, OpType,
+    Result, WalEntry, WriteBatch, WriteOp, DB, SEQUENCE_LIMIT,
 };
 use std::collections::HashMap;
 
@@ -607,7 +607,10 @@ impl DB {
             return Ok(());
         }
         let flush_seq = self.sequence.load(AtomicOrdering::SeqCst);
-        let old = std::mem::take(&mut *mem);
+        let old = std::mem::replace(
+            &mut *mem,
+            MemTable::new_with_stats(Some(Arc::clone(&self.stats))),
+        );
         self.immutable_memtables.write().push(old.freeze(flush_seq));
         Ok(())
     }

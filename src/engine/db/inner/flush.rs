@@ -58,8 +58,17 @@ impl DB {
                 let imm = self.immutable_memtables.read();
                 self.flush_memtable_to_sstable(imm[0].inner())?;
             }
-            self.immutable_memtables.write().remove(0);
+            let removed = self.immutable_memtables.write().remove(0);
+            let removed_size = removed.approximate_size() as u64;
+            let _ = self.stats.memtable_size_bytes[1].fetch_update(
+                AtomicOrdering::Relaxed,
+                AtomicOrdering::Relaxed,
+                |cur| Some(cur.saturating_sub(removed_size)),
+            );
             flushed += 1;
+        }
+        if self.immutable_memtables.read().is_empty() {
+            self.stats.memtable_size_bytes[1].store(0, AtomicOrdering::Relaxed);
         }
         if flushed > 0 {
             #[cfg(feature = "monitoring")]
@@ -114,7 +123,7 @@ impl DB {
                 largest_key: reader.largest_key().to_vec(),
             })?;
         }
-        update_sstable_metrics(&self.sstables.read());
+        update_sstable_metrics(&self.sstables.read(), &self.stats);
         tracing::info!(target: "db", file_number, file_size, "db.flush.complete");
         #[cfg(feature = "monitoring")]
         crate::metrics::record_flush_duration(flush_start.elapsed().as_secs_f64());
