@@ -13,25 +13,50 @@ use std::sync::Arc;
 
 impl DB {
     /// 完整存在性判定: key 在当前 sequence 下是否可见为 Put (不物化 Value).
+    /// 此为用户公开 API，走用户读口径（记入 block_read_bytes，计入 BlockCache）。
     #[tracing::instrument(level = "debug", name = "db_key_exists", skip(self, key))]
     pub fn key_exists(&self, key: &[u8]) -> Result<bool> {
         self.check_not_closed()?;
         Self::validate_user_key(key)?;
         let max_seq = self.sequence.load(AtomicOrdering::SeqCst);
-        self.key_exists_at_sequence(key, max_seq)
+        self.key_exists_internal(key, max_seq, true)
+    }
+
+    /// 内部写路径专用存在性判定: 不物化 Value, 绕过 BlockCache, 不累加 block_read_bytes 与 bloom 统计.
+    pub(crate) fn key_exists_for_write(&self, key: &[u8]) -> Result<bool> {
+        self.check_not_closed()?;
+        Self::validate_user_key(key)?;
+        let max_seq = self.sequence.load(AtomicOrdering::SeqCst);
+        self.key_exists_internal(key, max_seq, false)
     }
 
     /// 在给定 `max_seq` 边界下判定 key 是否存在 (不物化 Value).
+    #[allow(dead_code)]
     pub(crate) fn key_exists_at_sequence(&self, key: &[u8], max_seq: u64) -> Result<bool> {
+        self.key_exists_internal(key, max_seq, true)
+    }
+
+    /// 内部统一存在性判定, 由 `record_stats` 参数控制是否经过 BlockCache 与累加 stats.
+    pub(crate) fn key_exists_internal(
+        &self,
+        key: &[u8],
+        max_seq: u64,
+        record_stats: bool,
+    ) -> Result<bool> {
         if self.has_active_range_tombstones() {
-            self.key_exists_at_sequence_with_range_tombstones(key, max_seq)
+            self.key_exists_at_sequence_with_range_tombstones(key, max_seq, record_stats)
         } else {
-            self.key_exists_at_sequence_fast(key, max_seq)
+            self.key_exists_at_sequence_fast(key, max_seq, record_stats)
         }
     }
 
     /// 无 range tombstone 时: mem → imm → sst, 只看 `ValueType`.
-    fn key_exists_at_sequence_fast(&self, key: &[u8], max_seq: u64) -> Result<bool> {
+    fn key_exists_at_sequence_fast(
+        &self,
+        key: &[u8],
+        max_seq: u64,
+        record_stats: bool,
+    ) -> Result<bool> {
         let mut hit: Option<bool> = None;
         let mut err: Option<Error> = None;
 
@@ -69,20 +94,25 @@ impl DB {
             return Ok(exists);
         }
 
-        self.key_exists_from_sstables(key, max_seq)
+        self.key_exists_from_sstables(key, max_seq, record_stats)
     }
 
-    fn key_exists_from_sstables(&self, key: &[u8], max_seq: u64) -> Result<bool> {
+    fn key_exists_from_sstables(
+        &self,
+        key: &[u8],
+        max_seq: u64,
+        record_stats: bool,
+    ) -> Result<bool> {
         encode_internal_key_buffered(key, max_seq, ValueType::TypePut, |seek_key| {
             let tables = self.sstables.read();
             for reader in &tables[0] {
-                if let Some(ty) = reader.value_type(seek_key)? {
+                if let Some(ty) = reader.value_type_opt(seek_key, record_stats)? {
                     return Ok(matches!(ty, ValueType::TypePut));
                 }
             }
             for level in tables.iter().skip(1) {
                 if let Some(reader) = find_sstable_for_key(level, key) {
-                    if let Some(ty) = reader.value_type(seek_key)? {
+                    if let Some(ty) = reader.value_type_opt(seek_key, record_stats)? {
                         return Ok(matches!(ty, ValueType::TypePut));
                     }
                 }
@@ -97,6 +127,7 @@ impl DB {
         &self,
         key: &[u8],
         max_seq: u64,
+        record_stats: bool,
     ) -> Result<bool> {
         let mut best_put: Option<u64> = None;
         let mut best_delete: Option<u64> = None;
@@ -141,12 +172,12 @@ impl DB {
         }
 
         for reader in &l0_readers {
-            absorb_point(reader.point_state(key, max_seq)?);
+            absorb_point(reader.point_state_opt(key, max_seq, record_stats)?);
             absorb_range(reader.max_range_tombstone_seq(key, max_seq));
         }
         for level in &l1_plus_readers {
             if let Some(reader) = find_sstable_for_key(level, key) {
-                absorb_point(reader.point_state(key, max_seq)?);
+                absorb_point(reader.point_state_opt(key, max_seq, record_stats)?);
                 absorb_range(reader.max_range_tombstone_seq(key, max_seq));
             }
         }

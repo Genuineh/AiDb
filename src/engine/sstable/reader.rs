@@ -235,6 +235,12 @@ impl SSTableReader {
     fields(file_number = self.file_number, level = self.level)
   )]
     pub fn value_type(&self, seek_key: &[u8]) -> Result<Option<ValueType>> {
+        self.value_type_opt(seek_key, true)
+    }
+
+    /// 点查只返回 `ValueType`, 可选是否累加 stats 并经过 BlockCache.
+    /// 当 `record_stats == false` 时 (写路径内部存在性检查), 绕过 BlockCache 且不累加 block_read_bytes / bloom 指标.
+    pub fn value_type_opt(&self, seek_key: &[u8], record_stats: bool) -> Result<Option<ValueType>> {
         let target_user = extract_user_key(seek_key);
 
         let bloom_passed = if let Some(ref filter) = self.bloom_filter {
@@ -246,8 +252,10 @@ impl SSTableReader {
               "bloom_check"
             );
             if !hit {
-                if let Some(ref s) = self.stats {
-                    s.bloom_useful.fetch_add(1, AtomicOrdering::Relaxed);
+                if record_stats {
+                    if let Some(ref s) = self.stats {
+                        s.bloom_useful.fetch_add(1, AtomicOrdering::Relaxed);
+                    }
                 }
                 tracing::debug!(target: "sst", found = false, "sst.value_type.result");
                 return Ok(None);
@@ -258,13 +266,12 @@ impl SSTableReader {
         };
 
         let handle = find_block_handle(&self.index_entries, seek_key)?;
-        let block_data = read_block_cached(
-            &self.file,
-            self.file_number,
-            &handle,
-            self.block_cache.as_ref(),
-            self.stats.as_ref(),
-        )?;
+        let (cache, stats) = if record_stats {
+            (self.block_cache.as_ref(), self.stats.as_ref())
+        } else {
+            (None, None)
+        };
+        let block_data = read_block_cached(&self.file, self.file_number, &handle, cache, stats)?;
         let block = Block::new(block_data)?;
         let mut it = block.iter();
         let seek_seq = extract_sequence(seek_key)?;
@@ -293,7 +300,7 @@ impl SSTableReader {
             }
         }
         tracing::debug!(target: "sst", found = false, "sst.value_type.result");
-        if bloom_passed {
+        if bloom_passed && record_stats {
             if let Some(ref s) = self.stats {
                 s.bloom_false_positive
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -305,6 +312,16 @@ impl SSTableReader {
 
     /// 同 user_key 在 `max_seq` 下的 point 状态 (单文件内最新).
     pub fn point_state(&self, key: &[u8], max_seq: u64) -> Result<PointState> {
+        self.point_state_opt(key, max_seq, true)
+    }
+
+    /// 同 user_key 在 `max_seq` 下的 point 状态, 可选是否累加 stats 并经过 BlockCache.
+    pub fn point_state_opt(
+        &self,
+        key: &[u8],
+        max_seq: u64,
+        record_stats: bool,
+    ) -> Result<PointState> {
         let seek_key = encode_internal_key(key, max_seq, ValueType::TypePut);
         let target_user = extract_user_key(&seek_key);
         let seek_seq = extract_sequence(&seek_key)?;
@@ -313,13 +330,12 @@ impl SSTableReader {
             Ok(h) => h,
             Err(_) => return Ok(PointState::Absent),
         };
-        let block_data = read_block_cached(
-            &self.file,
-            self.file_number,
-            &handle,
-            self.block_cache.as_ref(),
-            self.stats.as_ref(),
-        )?;
+        let (cache, stats) = if record_stats {
+            (self.block_cache.as_ref(), self.stats.as_ref())
+        } else {
+            (None, None)
+        };
+        let block_data = read_block_cached(&self.file, self.file_number, &handle, cache, stats)?;
         let block = Block::new(block_data)?;
         let mut it = block.iter();
         let mut best = PointState::Absent;

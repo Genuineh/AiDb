@@ -168,3 +168,60 @@ fn test_compaction_cache_isolation() {
         "Compaction must accumulate compaction_read_bytes"
     );
 }
+
+#[test]
+fn test_write_path_key_exists_does_not_pollute_read_bytes_or_cache() {
+    let dir = TempDir::new().unwrap();
+    let opts = Options {
+        block_size: 256,
+        bloom_false_positive_rate: 0.0, // 关闭 bloom 确保查 SST 一定读 data block
+        ..Default::default()
+    };
+    let db = DB::open(dir.path(), opts).unwrap();
+    let stats = db.statistics();
+
+    // 1. 写入 key 并 flush 到 SSTable
+    let target_key = b"target_key_for_exists";
+    db.put(target_key, b"value_1").unwrap();
+    db.flush().unwrap();
+
+    // 清空缓存与指标干扰
+    db.clear_cache();
+    stats.block_read_bytes.store(0, Ordering::Relaxed);
+    assert_eq!(db.block_cache_size(), 0);
+
+    // 2. 正向验证: 写路径 put / delete 已存在的 key (强制写路径 key_exists 查 SST)
+    db.put(target_key, b"value_2_updated").unwrap();
+
+    let block_read_after_write = stats.block_read_bytes.load(Ordering::Relaxed);
+    let cache_size_after_write = db.block_cache_size();
+
+    assert_eq!(
+        block_read_after_write, 0,
+        "Write path key_exists must NOT increment block_read_bytes (got {block_read_after_write})"
+    );
+    assert_eq!(
+        cache_size_after_write, 0,
+        "Write path key_exists must NOT insert into BlockCache (got {cache_size_after_write})"
+    );
+
+    // 3. 反向验证: 用户公开 API db.key_exists 必须正常读盘并进缓存
+    // 先 flush 确保最新版本落入 SSTable (而非留在 memtable 中命中), 并清空缓存
+    db.flush().unwrap();
+    db.clear_cache();
+    stats.block_read_bytes.store(0, Ordering::Relaxed);
+
+    let exists = db.key_exists(target_key).unwrap();
+    assert!(exists, "target_key should exist in SSTable");
+
+    let block_read_after_user = stats.block_read_bytes.load(Ordering::Relaxed);
+    let cache_size_after_user = db.block_cache_size();
+    assert!(
+        block_read_after_user > 0,
+        "User db.key_exists must increment block_read_bytes (got {block_read_after_user})"
+    );
+    assert!(
+        cache_size_after_user > 0,
+        "User db.key_exists must populate BlockCache (got {cache_size_after_user})"
+    );
+}

@@ -23,9 +23,10 @@ description: AiDb 全量 OTel 指标总表 (仅当前已存在指标). 查指标
   - 快照直读 (`INFO storage`): 返回无 `_total` 后缀的即时快照值 (如 `aidb_wal_written_bytes`, `aidb_write_stall_requests`), 适合压测前后单轮差分计算.
   - OTel 导出: 返回符合 Prometheus 命名规范的单调 Counter (`_total`), 标签化 Histogram (`_seconds_bucket`) 与 Gauge.
   - 对账一致性: `INFO storage` 的 stall 汇总指标等于 OTel 分维度指标之和 (`requests = sum(requests_total)`, `duration_us ≈ duration_seconds_sum * 1e6`, `max_duration_us = max_duration_seconds * 1e6`).
-- 缓存卫生与读放大隔离 (`iter_uncached`):
+- 缓存卫生与读放大隔离 (`iter_uncached` 与 `key_exists_for_write`):
   - Compaction 遍历 SSTable 全面改走 `iter_uncached()`, 绕过 BlockCache, 杜绝后台大范围 I/O 冲刷用户热数据并污染缓存命中率.
   - Reader 打开阶段的 `load_range_tombstones()` 同样以未缓存模式读取, 确保只在用户业务读路径发生实际缓存填充与命中统计.
+  - 写路径内部存在性检查 (`put`/`delete`/`classify_ops_with_overlay`/`cluster apply`) 全面改走 `key_exists_for_write()`, 绕过 BlockCache 且不累加 `block_read_bytes` / bloom 指标, 杜绝写路径干扰读放大与冲刷 LRU 缓存.
 - 表格列说明:
   - **标签与基数**: 标注关键标签名, 枚举值范围及预期基数, 便于防范高基数风险.
   - **数据源与代码位置**: 保留准确的更新方式与源码行号, 便于研发定位调用与开销.
@@ -53,11 +54,11 @@ description: AiDb 全量 OTel 指标总表 (仅当前已存在指标). 查指标
 | `aidb_compaction_duration_seconds` | Histogram | s | `aidb_compaction_phase(同上)`<br>基数 3 | Compaction 各阶段耗时原子记录<br>`stats.compaction_durations`; 同上 | 桶边界 0.001~5.0 s | Compaction 耗时分布 / 后台 I/O 归因:<br>`histogram_quantile(0.95, sum by (le, aidb_compaction_phase) (rate(aidb_compaction_duration_seconds_bucket[5m])))` |
 | `aidb_compaction_pending_bytes` | Gauge | By | — (基数 1) | DB open / flush / compaction apply 后通过 `compaction_pending_bytes()` 现算<br>`stats.compaction_pending_bytes`; `engine/compaction/version.rs` | L0 降序最老超额文件大小之和 + L1+ 超过 target_size 的超额字节; 零 I/O 内存计算 | Compaction 积压水位 / Write stall 前兆预警:<br>`aidb_compaction_pending_bytes` |
 | `aidb_logical_read_bytes_total` | Counter | By | — (基数 1) | 点查命中时原子累加 user_key + value 字节<br>`stats.logical_read_bytes`; `engine/db/inner/read.rs` | 用户业务读取有效字节 | 读放大 (RA) 分母:<br>`rate(aidb_logical_read_bytes_total[1m])` |
-| `aidb_block_read_bytes_total` | Counter | By | — (基数 1) | 用户读路径 cache miss 穿透读盘时累加数据块与索引块字节<br>`stats.block_read_bytes`; `engine/sstable/reader.rs` | 用户物理读盘字节; **Compaction 读已改走 `iter_uncached` 物理隔离, 不计入本指标** | 读放大 (RA) 分子:<br>`rate(aidb_block_read_bytes_total[1m])` |
+| `aidb_block_read_bytes_total` | Counter | By | — (基数 1) | 用户读路径 cache miss 穿透读盘时累加数据块与索引块字节<br>`stats.block_read_bytes`; `engine/sstable/reader.rs` | **纯用户读口径**: 仅由用户显式点查/迭代/存在性查询触发; Compaction 改走 `iter_uncached`, 写路径内部存在性检查改走 `key_exists_for_write` (零读盘统计、零缓存插入), 彻底消除污染 | 读放大 (RA) 分子:<br>`rate(aidb_block_read_bytes_total[1m])` |
 | `aidb_block_cache_size_bytes` | Gauge | By | — (基数 1) | BlockCache 插入/淘汰时更新原子值<br>`stats.block_cache_size`; `engine/cache/block_cache.rs` | 16 分片 LRU 当前占用 | 缓存内存占用 (MB):<br>`aidb_block_cache_size_bytes / 1024 / 1024` |
 | `aidb_block_cache_capacity_bytes` | Gauge | By | — (基数 1) | BlockCache 构造时设置<br>`stats.block_cache_capacity`; `block_cache.rs` | 总容量上限 | 缓存水位 (使用率 %):<br>`aidb_block_cache_size_bytes / aidb_block_cache_capacity_bytes * 100` |
-| `aidb_block_cache_hits_total` | Counter | 1 | — (基数 1) | BlockCache 读取命中原子累加<br>`stats.block_cache_hits`; `block_cache.rs` | **纯正用户读口径**: Compaction 已改走 `iter_uncached` 绕过 BlockCache; `load_range_tombstones` 同样不经缓存, 彻底消除缓存污染 | 读缓存命中率分子:<br>`rate(aidb_block_cache_hits_total[1m]) / (rate(aidb_block_cache_hits_total[1m]) + rate(aidb_block_cache_misses_total[1m]))` |
-| `aidb_block_cache_misses_total` | Counter | 1 | — (基数 1) | BlockCache 读取未命中原子累加<br>`stats.block_cache_misses`; `block_cache.rs` | 同上 (纯正用户读未命中口径, 不受 compaction 污染) | 读缓存未命中率分母项 (同上) |
+| `aidb_block_cache_hits_total` | Counter | 1 | — (基数 1) | BlockCache 读取命中原子累加<br>`stats.block_cache_hits`; `block_cache.rs` | **纯正用户读口径**: Compaction 改走 `iter_uncached`, 写路径内部检查改走 `key_exists_for_write`, `load_range_tombstones` 同样不经缓存, 彻底消除缓存污染与热块冲刷 | 读缓存命中率分子:<br>`rate(aidb_block_cache_hits_total[1m]) / (rate(aidb_block_cache_hits_total[1m]) + rate(aidb_block_cache_misses_total[1m]))` |
+| `aidb_block_cache_misses_total` | Counter | 1 | — (基数 1) | BlockCache 读取未命中原子累加<br>`stats.block_cache_misses`; `block_cache.rs` | 同上 (纯正用户读未命中口径, 不受 compaction 与写检查污染) | 读缓存未命中率分母项 (同上) |
 | `aidb_bloom_false_positive_total` | Counter | 1 | — (基数 1) | Bloom 假阳性穿透判定原子累加<br>`stats.bloom_false_positive`; `engine/sstable/reader.rs` | Bloom 假阳性 (FP) 次数; 可结合 `aidb_bloom_useful_total` (TN) 精确计算 FPR; 活跃 Range Tombstone 下点查走 `point_state()` 无 bloom 检查 | Bloom 假阳性穿透频次:<br>`rate(aidb_bloom_false_positive_total[1m])` |
 | `aidb_bloom_useful_total` | Counter | 1 | — (基数 1) | Bloom 检查返回 false 提前返回时原子累加<br>`stats.bloom_useful`; `engine/sstable/reader.rs` | Bloom 真阴性 (TN) 次数 (成功过滤掉磁盘 I/O); 覆盖 seek 与 value_type 路径 | 精确 Bloom 假阳性率 (FPR):<br>`rate(aidb_bloom_false_positive_total[1m]) / (rate(aidb_bloom_false_positive_total[1m]) + rate(aidb_bloom_useful_total[1m]))` |
 | `aidb_write_stall_requests_total` | Counter | 1 | `aidb_write_stall_cause(3: memtable\|l0\|level_size)`<br>`aidb_write_stall_type(2: slowdown\|stop)`<br>基数 6 | 发生写停顿写入入口原子累加<br>`stats.write_stall_requests`; `engine/db/inner/write.rs` | 经历写停顿的写请求数; `sleep_ms == 0` 时不记录; 成对记录耗时与最大值 | Stall 请求比率:<br>`sum(rate(aidb_write_stall_requests_total[1m])) / rate(aidb_operations_total{aidb_operation_name=~"put\|delete\|write_batch"}[1m])` |

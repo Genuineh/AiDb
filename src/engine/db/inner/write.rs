@@ -217,7 +217,7 @@ impl DB {
         }
 
         // Phase 3: MemTable (after WAL is durable)
-        let existed = self.key_exists(key)?;
+        let existed = self.key_exists_for_write(key)?;
         self.memtable.read().put(key, value, seq)?;
         self.committed_sequence
             .fetch_max(seq, AtomicOrdering::SeqCst);
@@ -247,7 +247,7 @@ impl DB {
             .logical_write_bytes
             .fetch_add(key.len() as u64, AtomicOrdering::Relaxed);
 
-        let existed = self.key_exists(key)?;
+        let existed = self.key_exists_for_write(key)?;
 
         // Phase 1: WAL append (in write_lock, no sync)
         let seq;
@@ -452,7 +452,7 @@ impl DB {
         for (key, kind) in ops {
             let existed = match overlay.get(key) {
                 Some(present) => *present,
-                None => self.key_exists(key)?,
+                None => self.key_exists_for_write(key)?,
             };
             match kind {
                 ClassifyOp::Put => {
