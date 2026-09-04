@@ -31,6 +31,7 @@ use crate::engine::memtable::{
     PointState, ValueType,
 };
 use crate::error::{Error, Result};
+use crate::statistics::Statistics;
 
 use super::block::Block;
 use super::block_io::{read_block_cached, read_block_from_file};
@@ -60,10 +61,19 @@ pub struct SSTableReader {
     properties: Option<SstProperties>,
     block_cache: Option<Arc<BlockCache>>,
     range_tombstones: Arc<Vec<RangeTombstoneEntry>>,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl SSTableReader {
     pub fn open(path: &Path, block_cache: Option<Arc<BlockCache>>) -> Result<Self> {
+        Self::open_with_stats(path, block_cache, None)
+    }
+
+    pub fn open_with_stats(
+        path: &Path,
+        block_cache: Option<Arc<BlockCache>>,
+        stats: Option<Arc<Statistics>>,
+    ) -> Result<Self> {
         let file = Arc::new(File::open(path)?);
         let file_size = file.metadata()?.len();
         if file_size < FOOTER_SIZE as u64 {
@@ -107,6 +117,7 @@ impl SSTableReader {
             properties,
             block_cache,
             range_tombstones,
+            stats,
         })
     }
 
@@ -203,6 +214,10 @@ impl SSTableReader {
         }
         tracing::debug!(target: "sst", found = false, "sst.seek.result");
         if bloom_passed {
+            if let Some(ref s) = self.stats {
+                s.bloom_false_positive
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             record_bloom_false_positive();
         }
         Ok(None)
@@ -271,6 +286,10 @@ impl SSTableReader {
         }
         tracing::debug!(target: "sst", found = false, "sst.value_type.result");
         if bloom_passed {
+            if let Some(ref s) = self.stats {
+                s.bloom_false_positive
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             record_bloom_false_positive();
         }
         Ok(None)

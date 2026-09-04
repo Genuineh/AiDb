@@ -1,8 +1,8 @@
 //! BackupManager: 备份创建、列举、删除、保留策略.
 
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-#[cfg(feature = "monitoring")]
 use std::time::Instant;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,7 @@ use crate::backup::storage::BackupStorage;
 use crate::backup::util;
 use crate::engine::checkpoint::Checkpoint;
 use crate::error::{Error, Result};
+use crate::statistics::{BackupOp, Statistics};
 use crate::DB;
 
 /// 备份 ID, 基于时间戳生成.
@@ -124,11 +125,24 @@ impl RetentionPolicy {
 pub struct BackupManager {
     storage: Arc<dyn BackupStorage>,
     policy: RetentionPolicy,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl BackupManager {
     pub fn new(storage: Arc<dyn BackupStorage>, policy: RetentionPolicy) -> Self {
-        Self { storage, policy }
+        Self::new_with_stats(storage, policy, None)
+    }
+
+    pub fn new_with_stats(
+        storage: Arc<dyn BackupStorage>,
+        policy: RetentionPolicy,
+        stats: Option<Arc<Statistics>>,
+    ) -> Self {
+        Self {
+            storage,
+            policy,
+            stats,
+        }
     }
 
     pub fn create_backup(&self, db: &DB) -> Result<BackupId> {
@@ -144,7 +158,6 @@ impl BackupManager {
         use std::fs;
 
         let backup_id = timestamp_nanos();
-        #[cfg(feature = "monitoring")]
         let start = Instant::now();
 
         // 在临时位置创建 checkpoint
@@ -233,8 +246,14 @@ impl BackupManager {
 
         tracing::Span::current().record("backup_id", backup_id);
 
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_backup_create(total_data_size, start.elapsed().as_secs_f64());
+        let stats = self.stats.clone().unwrap_or_else(|| db.statistics());
+        stats.backup_total[BackupOp::Create as usize].fetch_add(1, Ordering::Relaxed);
+        stats
+            .backup_size_bytes
+            .store(total_data_size, Ordering::Relaxed);
+        stats
+            .backup_duration
+            .record(start.elapsed().as_micros() as u64);
 
         tracing::event!(
             tracing::Level::INFO,
@@ -284,8 +303,9 @@ impl BackupManager {
     pub fn delete_backup(&self, id: BackupId) -> Result<()> {
         let path = self.storage.backup_path(id);
         let result = self.storage.delete(&path);
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_backup_delete();
+        if let Some(ref s) = self.stats {
+            s.backup_total[BackupOp::Delete as usize].fetch_add(1, Ordering::Relaxed);
+        }
         tracing::info!(backup_id = id, "backup.delete");
         result
     }

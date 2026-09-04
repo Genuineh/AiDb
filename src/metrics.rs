@@ -16,14 +16,19 @@ use opentelemetry::KeyValue;
 static METRICS: RwLock<Option<Arc<OtelMetrics>>> = RwLock::new(None);
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_OP: &str = "aidb.operation.name";
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_COMPACTION_PHASE: &str = "aidb.compaction.phase";
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_MEMTABLE_STATE: &str = "aidb.memtable.state";
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_SSTABLE_LEVEL: &str = "aidb.sstable.level";
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_BACKUP_OP: &str = "aidb.backup.operation";
 #[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_RPC_TYPE: &str = "aidb.raft.rpc.type";
@@ -39,6 +44,7 @@ const ATTR_DB_SYSTEM: &str = "db.system";
 const ATTR_DB_OPERATION: &str = "db.operation.name";
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 struct OtelMetrics {
     wal_size_bytes: Gauge<f64>,
     memtable_size_bytes: Gauge<f64>,
@@ -224,11 +230,13 @@ impl OtelMetrics {
 }
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn metrics() -> Option<Arc<OtelMetrics>> {
     METRICS.read().clone()
 }
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn db_client_attrs(op: &str) -> [KeyValue; 2] {
     [
         kv_static(ATTR_DB_SYSTEM, "aidb"),
@@ -237,11 +245,13 @@ fn db_client_attrs(op: &str) -> [KeyValue; 2] {
 }
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn kv_static(label: &str, value: impl Into<String>) -> KeyValue {
     KeyValue::new(label.to_string(), value.into())
 }
 
 #[cfg(feature = "monitoring")]
+#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn kv(label: &str, value: impl Into<String>) -> KeyValue {
     KeyValue::new(label.to_string(), value.into())
 }
@@ -260,160 +270,6 @@ pub fn init() {
             let meter = opentelemetry::global::meter("aidb");
             init_otel(meter);
         }
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_wal_size(bytes: u64) {
-    if let Some(m) = metrics() {
-        m.wal_size_bytes.record(bytes as f64, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_operation(op: &str) {
-    if let Some(m) = metrics() {
-        m.operations_total.add(1, &[kv(ATTR_OP, op)]);
-        m.db_client_operations.add(1, &db_client_attrs(op));
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_operation_duration(op: &str, secs: f64) {
-    if let Some(m) = metrics() {
-        m.operation_duration_seconds
-            .record(secs, &[kv(ATTR_OP, op)]);
-        m.db_client_operation_duration
-            .record(secs, &db_client_attrs(op));
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_flush() {
-    if let Some(m) = metrics() {
-        m.flush_total.add(1, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_flush_duration(secs: f64) {
-    if let Some(m) = metrics() {
-        m.flush_duration_seconds.record(secs, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_block_cache_size(bytes: u64) {
-    if let Some(m) = metrics() {
-        m.block_cache_size_bytes.record(bytes as f64, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_block_cache_capacity(bytes: u64) {
-    if let Some(m) = metrics() {
-        m.block_cache_capacity_bytes.record(bytes as f64, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_block_cache_hit() {
-    if let Some(m) = metrics() {
-        m.block_cache_hits_total.add(1, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_block_cache_miss() {
-    if let Some(m) = metrics() {
-        m.block_cache_misses_total.add(1, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_bloom_false_positive() {
-    if let Some(m) = metrics() {
-        m.bloom_false_positive_total.add(1, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_sequence(seq: u64) {
-    if let Some(m) = metrics() {
-        m.sequence.record(seq as f64, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_total_key_count(count: usize) {
-    if let Some(m) = metrics() {
-        m.total_key_count.record(count as f64, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn memtable_set_active(bytes: usize) {
-    if let Some(m) = metrics() {
-        m.memtable_size_bytes
-            .record(bytes as f64, &[kv(ATTR_MEMTABLE_STATE, "active")]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_compaction(phase: &str) {
-    if let Some(m) = metrics() {
-        m.compaction_total
-            .add(1, &[kv(ATTR_COMPACTION_PHASE, phase)]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_compaction_duration(phase: &str, secs: f64) {
-    if let Some(m) = metrics() {
-        m.compaction_duration_seconds
-            .record(secs, &[kv(ATTR_COMPACTION_PHASE, phase)]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn memtable_on_freeze(frozen_bytes: usize) {
-    if let Some(m) = metrics() {
-        m.memtable_size_bytes
-            .record(frozen_bytes as f64, &[kv(ATTR_MEMTABLE_STATE, "frozen")]);
-        m.memtable_size_bytes
-            .record(0.0, &[kv(ATTR_MEMTABLE_STATE, "active")]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn set_sstable_level(level: &str, count: i64, size_bytes: i64) {
-    if let Some(m) = metrics() {
-        let attrs = [kv(ATTR_SSTABLE_LEVEL, level)];
-        m.sstable_count.record(count as f64, &attrs);
-        m.sstable_size_bytes.record(size_bytes as f64, &attrs);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_backup_create(size_bytes: u64, duration_secs: f64) {
-    if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "create")]);
-        m.backup_size_bytes.record(size_bytes as f64, &[]);
-        m.backup_duration_seconds.record(duration_secs, &[]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_backup_delete() {
-    if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "delete")]);
-    }
-}
-
-#[cfg(feature = "monitoring")]
-pub fn record_backup_restore() {
-    if let Some(m) = metrics() {
-        m.backup_total.add(1, &[kv(ATTR_BACKUP_OP, "restore")]);
     }
 }
 

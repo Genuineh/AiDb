@@ -1,6 +1,7 @@
 //! RecoveryManager: 从备份恢复数据目录.
 
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tracing::instrument;
@@ -10,16 +11,22 @@ use crate::backup::storage::BackupStorage;
 use crate::backup::util;
 use crate::config::Options;
 use crate::error::{Error, Result};
+use crate::statistics::{BackupOp, Statistics};
 use crate::DB;
 
 /// 恢复管理器.
 pub struct RecoveryManager {
     storage: Arc<dyn BackupStorage>,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl RecoveryManager {
     pub fn new(storage: Arc<dyn BackupStorage>) -> Self {
-        Self { storage }
+        Self::new_with_stats(storage, None)
+    }
+
+    pub fn new_with_stats(storage: Arc<dyn BackupStorage>, stats: Option<Arc<Statistics>>) -> Self {
+        Self { storage, stats }
     }
 
     /// 从备份恢复数据目录.
@@ -132,8 +139,9 @@ impl RecoveryManager {
             }
         }
 
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_backup_restore();
+        if let Some(ref stats) = self.stats {
+            stats.backup_total[BackupOp::Restore as usize].fetch_add(1, Ordering::Relaxed);
+        }
         tracing::info!(backup_id = id, "backup.restore.complete");
 
         Ok(())

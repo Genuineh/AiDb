@@ -149,6 +149,11 @@ impl DB {
             .clone()
             .unwrap_or_else(|| Arc::new(Statistics::new(options.max_levels)));
 
+        let mut options = options;
+        if options.statistics.is_none() {
+            options.statistics = Some(Arc::clone(&stats));
+        }
+
         let path = path.as_ref().to_path_buf();
         let options = Arc::new(options);
 
@@ -182,7 +187,12 @@ impl DB {
         let version_set = if current_exists(&path) {
             VersionSet::recover(&path, max_levels, options.max_manifest_size)?
         } else {
-            let edits = scan_version_edits_from_dir(&path, max_levels, cache_for_open.clone())?;
+            let edits = scan_version_edits_from_dir(
+                &path,
+                max_levels,
+                cache_for_open.clone(),
+                Some(Arc::clone(&stats)),
+            )?;
             if edits.is_empty() {
                 VersionSet::open_new(&path, max_levels, options.max_manifest_size)?
             } else {
@@ -194,7 +204,12 @@ impl DB {
                 )?
             }
         };
-        let sstables = load_sstables_from_version(&path, version_set.current(), cache_for_open)?;
+        let sstables = load_sstables_from_version(
+            &path,
+            version_set.current(),
+            cache_for_open,
+            Some(Arc::clone(&stats)),
+        )?;
         remove_orphan_sstables(&path, version_set.current())?;
         last_sequence = last_sequence.max(max_sequence_in_sstables(&sstables));
 
@@ -215,12 +230,11 @@ impl DB {
             .unzip();
 
         stats.sequence.store(last_sequence, AtomicOrdering::Relaxed);
+        stats.block_cache_size.store(0, AtomicOrdering::Relaxed);
         update_sstable_metrics(&sstables, &stats);
         #[cfg(feature = "monitoring")]
         {
             crate::metrics::init();
-            crate::metrics::set_sequence(last_sequence);
-            crate::metrics::set_block_cache_size(0);
         }
 
         let l0_sstable_count_init = sstables[0].len();
@@ -520,12 +534,6 @@ pub(crate) fn update_sstable_metrics(sstables: &[Vec<Arc<SSTableReader>>], stats
             stats.sstable_count[level].store(readers.len() as u64, AtomicOrdering::Relaxed);
             stats.sstable_size_bytes[level].store(total, AtomicOrdering::Relaxed);
         }
-    }
-    #[cfg(feature = "monitoring")]
-    for (level, readers) in sstables.iter().enumerate() {
-        let label = level.to_string();
-        let total: u64 = readers.iter().map(|r| r.file_size()).sum();
-        crate::metrics::set_sstable_level(&label, readers.len() as i64, total as i64);
     }
 }
 

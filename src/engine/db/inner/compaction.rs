@@ -6,6 +6,7 @@ use super::{
     sstable_path, update_sstable_metrics, AtomicBool, AtomicOrdering, CompactionJob,
     CompactionTask, Duration, Error, Receiver, Result, SSTableReader, VersionEdit, Weak, DB,
 };
+use crate::statistics::CompactionPhase;
 use std::sync::Arc;
 
 impl DB {
@@ -49,18 +50,16 @@ impl DB {
         if self.checkpoint_in_progress.load(AtomicOrdering::Acquire) {
             return Ok(false);
         }
-        #[cfg(feature = "monitoring")]
         let pick_start = std::time::Instant::now();
         let levels: Vec<Vec<Arc<SSTableReader>>> = self.sstables.read().iter().cloned().collect();
         let task = match self.compaction_picker.pick_compaction(&levels) {
             Some(t) => t,
             None => return Ok(false),
         };
-        #[cfg(feature = "monitoring")]
-        {
-            crate::metrics::record_compaction("pick");
-            crate::metrics::record_compaction_duration("pick", pick_start.elapsed().as_secs_f64());
-        }
+        self.stats.compaction_phases[CompactionPhase::Pick as usize]
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        self.stats.compaction_durations[CompactionPhase::Pick as usize]
+            .record(pick_start.elapsed().as_micros() as u64);
 
         // Claim files to prevent overlapping compactions from different threads
         if !self.try_claim_files(&task) {
@@ -73,7 +72,6 @@ impl DB {
         }
         // --- END TRIVIAL MOVE ---
 
-        #[cfg(feature = "monitoring")]
         let run_start = std::time::Instant::now();
         // "Pin": 读取 min_snapshot_sequence() 时短暂持有 write_lock, 和
         // snapshot() 内"读 seq + register"共享同一把锁, 二者之间就有了严格
@@ -111,13 +109,11 @@ impl DB {
         .with_filter(self.compaction_filter.read().clone())
         .run(&file_numbers)?;
 
-        #[cfg(feature = "monitoring")]
-        {
-            crate::metrics::record_compaction("run");
-            crate::metrics::record_compaction_duration("run", run_start.elapsed().as_secs_f64());
-        }
+        self.stats.compaction_phases[CompactionPhase::Run as usize]
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        self.stats.compaction_durations[CompactionPhase::Run as usize]
+            .record(run_start.elapsed().as_micros() as u64);
 
-        #[cfg(feature = "monitoring")]
         let apply_start = std::time::Instant::now();
 
         {
@@ -126,9 +122,10 @@ impl DB {
 
             for result in &results {
                 if result.entry_count > 0 {
-                    let reader = Arc::new(SSTableReader::open(
+                    let reader = Arc::new(SSTableReader::open_with_stats(
                         &result.output_path,
                         Some(Arc::clone(&self.block_cache)),
+                        Some(Arc::clone(&self.stats)),
                     )?);
                     if task.output_level == 0 {
                         sst_guard[task.output_level].insert(0, reader);
@@ -175,14 +172,10 @@ impl DB {
                 self.l0_sstable_count
                     .fetch_add(l0_output_count, AtomicOrdering::Relaxed);
             }
-            #[cfg(feature = "monitoring")]
-            {
-                crate::metrics::record_compaction("apply");
-                crate::metrics::record_compaction_duration(
-                    "apply",
-                    apply_start.elapsed().as_secs_f64(),
-                );
-            }
+            self.stats.compaction_phases[CompactionPhase::Apply as usize]
+                .fetch_add(1, AtomicOrdering::Relaxed);
+            self.stats.compaction_durations[CompactionPhase::Apply as usize]
+                .record(apply_start.elapsed().as_micros() as u64);
         }
 
         update_sstable_metrics(&self.sstables.read(), &self.stats);
@@ -251,7 +244,11 @@ impl DB {
         })?;
 
         // Re-open at the new path (file content unchanged, just new level in name)
-        let reader = match SSTableReader::open(&new_path, Some(Arc::clone(&self.block_cache))) {
+        let reader = match SSTableReader::open_with_stats(
+            &new_path,
+            Some(Arc::clone(&self.block_cache)),
+            Some(Arc::clone(&self.stats)),
+        ) {
             Ok(r) => Arc::new(r),
             Err(e) => {
                 // Rollback: move the file back to its original location

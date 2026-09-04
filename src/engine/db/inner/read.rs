@@ -7,22 +7,21 @@ use super::{
     encode_internal_key_buffered, extract_sequence, AtomicOrdering, DbIterGuard, Error, MemTable,
     PointState, Result, SSTableReader, Snapshot, ValueType, DB,
 };
+use crate::statistics::DbOp;
 use std::sync::Arc;
 
 impl DB {
     #[tracing::instrument(level = "debug", name = "db_get", skip(self, key))]
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
         Self::validate_user_key(key)?;
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("get");
+        self.stats.operations[DbOp::Get as usize].fetch_add(1, AtomicOrdering::Relaxed);
         let max_seq = self.sequence.load(AtomicOrdering::SeqCst);
         let r = self.get_at_sequence(key, max_seq)?;
         tracing::debug!(target: "db", found = r.is_some(), "db.get.result");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration("get", op_start.elapsed().as_secs_f64());
+        self.stats.operation_durations[DbOp::Get as usize]
+            .record(op_start.elapsed().as_micros() as u64);
         Ok(r)
     }
 
@@ -219,8 +218,7 @@ impl DB {
         // 里看到这个 seq.
         let snapshot_id = self.snapshots.register(seq);
         drop(_guard);
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("snapshot");
+        self.stats.operations[DbOp::Snapshot as usize].fetch_add(1, AtomicOrdering::Relaxed);
         tracing::Span::current().record("sequence", seq);
         tracing::debug!(target: "db", sequence = seq, id = snapshot_id, "db.snapshot.create");
         Ok(Snapshot::new(Arc::clone(self), seq, snapshot_id))

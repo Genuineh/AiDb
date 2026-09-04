@@ -22,6 +22,7 @@
 use super::helpers::user_key_from_internal;
 use crate::engine::sstable::{parse_sstable_filename, sstable_path, SSTableReader};
 use crate::error::{Error, Result};
+use crate::statistics::Statistics;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -318,13 +319,14 @@ pub fn load_sstables_from_version(
     db_path: &Path,
     version: &Version,
     block_cache: Option<Arc<crate::engine::cache::BlockCache>>,
+    stats: Option<Arc<Statistics>>,
 ) -> Result<Vec<Vec<Arc<SSTableReader>>>> {
     let mut sstables = vec![Vec::new(); version.levels.len()];
     for (level, files) in version.levels.iter().enumerate() {
         let mut opened: Vec<(u64, Arc<SSTableReader>)> = Vec::new();
         for meta in files {
             let path = sstable_path(db_path, meta.file_number, level);
-            match SSTableReader::open(&path, block_cache.clone()) {
+            match SSTableReader::open_with_stats(&path, block_cache.clone(), stats.clone()) {
                 Ok(reader) => opened.push((meta.file_number, Arc::new(reader))),
                 Err(e) => {
                     tracing::warn!(
@@ -355,6 +357,7 @@ pub fn scan_version_edits_from_dir(
     db_path: &Path,
     max_levels: usize,
     block_cache: Option<Arc<crate::engine::cache::BlockCache>>,
+    stats: Option<Arc<Statistics>>,
 ) -> Result<Vec<VersionEdit>> {
     let mut edits = Vec::new();
     if let Ok(dir) = fs::read_dir(db_path) {
@@ -366,7 +369,7 @@ pub fn scan_version_edits_from_dir(
                     continue;
                 }
                 let path = entry.path();
-                match SSTableReader::open(&path, block_cache.clone()) {
+                match SSTableReader::open_with_stats(&path, block_cache.clone(), stats.clone()) {
                     Ok(reader) => {
                         let _ = user_key_from_internal(reader.smallest_key())?;
                         let _ = user_key_from_internal(reader.largest_key())?;

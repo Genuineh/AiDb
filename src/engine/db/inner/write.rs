@@ -7,6 +7,7 @@ use super::{
     Arc, AtomicOrdering, CompactionPicker, Duration, EngineWriteStats, Error, MemTable, OpType,
     Result, WalEntry, WriteBatch, WriteOp, DB, SEQUENCE_LIMIT,
 };
+use crate::statistics::DbOp;
 use std::collections::HashMap;
 
 /// 批内分类用的操作种类 (key 为 DB 中实际 key).
@@ -23,8 +24,7 @@ impl DB {
         if last >= SEQUENCE_LIMIT {
             return Err(Error::InvalidState("sequence overflow".into()));
         }
-        #[cfg(feature = "monitoring")]
-        crate::metrics::set_sequence(last + 1);
+        self.stats.sequence.store(last + 1, AtomicOrdering::Relaxed);
         Ok(base)
     }
 
@@ -96,8 +96,7 @@ impl DB {
 
         // stop: 轮询等待 until L0 回到 slowdown 阈值以下
         if l0_count >= opts.level0_stop_writes_trigger {
-            #[cfg(feature = "monitoring")]
-            crate::metrics::record_operation("stall_stop");
+            self.stats.operations[DbOp::StallStop as usize].fetch_add(1, AtomicOrdering::Relaxed);
             while self.sstables.read()[0].len() >= opts.level0_slowdown_writes_trigger {
                 std::thread::sleep(std::time::Duration::from_millis(opts.write_stall_poll_ms));
                 self.maybe_trigger_compaction();
@@ -107,8 +106,8 @@ impl DB {
 
         // slowdown: 按超出比例 sleep
         if l0_count > opts.level0_slowdown_writes_trigger {
-            #[cfg(feature = "monitoring")]
-            crate::metrics::record_operation("stall_slowdown");
+            self.stats.operations[DbOp::StallSlowdown as usize]
+                .fetch_add(1, AtomicOrdering::Relaxed);
             let excess = l0_count - opts.level0_slowdown_writes_trigger;
             let cap = opts.level0_stop_writes_trigger - opts.level0_slowdown_writes_trigger;
             let sleep_ms =
@@ -157,13 +156,11 @@ impl DB {
 
     #[tracing::instrument(level = "debug", name = "db_put", skip(self, key, value))]
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<bool> {
-        #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
         Self::validate_user_key(key)?;
         self.check_write_stall();
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("put");
+        self.stats.operations[DbOp::Put as usize].fetch_add(1, AtomicOrdering::Relaxed);
 
         // Phase 1: WAL append (in write_lock, no sync)
         let seq;
@@ -186,26 +183,25 @@ impl DB {
 
         let inserted = !existed;
         if inserted {
-            self.total_key_count.fetch_add(1, AtomicOrdering::Relaxed);
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+            let count = self.total_key_count.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+            self.stats
+                .total_key_count
+                .store(count as u64, AtomicOrdering::Relaxed);
         }
         self.maybe_freeze()?;
         tracing::debug!(target: "db", "db.put");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration("put", op_start.elapsed().as_secs_f64());
+        self.stats.operation_durations[DbOp::Put as usize]
+            .record(op_start.elapsed().as_micros() as u64);
         Ok(inserted)
     }
 
     #[tracing::instrument(level = "debug", name = "db_delete", skip(self, key))]
     pub fn delete(&self, key: &[u8]) -> Result<()> {
-        #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
         Self::validate_user_key(key)?;
         self.check_write_stall();
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("delete");
+        self.stats.operations[DbOp::Delete as usize].fetch_add(1, AtomicOrdering::Relaxed);
 
         let existed = self.get(key)?.is_some();
 
@@ -228,18 +224,20 @@ impl DB {
             .fetch_max(seq, AtomicOrdering::SeqCst);
 
         if existed {
-            self.total_key_count
-                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
-                    Some(c.saturating_sub(1))
-                })
-                .ok();
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+            if let Ok(prev) = self.total_key_count.fetch_update(
+                AtomicOrdering::Relaxed,
+                AtomicOrdering::Relaxed,
+                |c| Some(c.saturating_sub(1)),
+            ) {
+                self.stats
+                    .total_key_count
+                    .store(prev.saturating_sub(1) as u64, AtomicOrdering::Relaxed);
+            }
         }
         self.maybe_freeze()?;
         tracing::debug!(target: "db", "db.delete");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration("delete", op_start.elapsed().as_secs_f64());
+        self.stats.operation_durations[DbOp::Delete as usize]
+            .record(op_start.elapsed().as_micros() as u64);
         Ok(())
     }
 
@@ -249,12 +247,10 @@ impl DB {
             return Ok(EngineWriteStats::default());
         }
         let t0 = std::time::Instant::now();
-        #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
         self.check_write_stall();
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("write_batch");
+        self.stats.operations[DbOp::WriteBatch as usize].fetch_add(1, AtomicOrdering::Relaxed);
 
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
@@ -320,8 +316,8 @@ impl DB {
             "db_write_done"
         );
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration("write_batch", op_start.elapsed().as_secs_f64());
+        self.stats.operation_durations[DbOp::WriteBatch as usize]
+            .record(op_start.elapsed().as_micros() as u64);
         Ok(stats)
     }
 
@@ -332,12 +328,10 @@ impl DB {
             return Ok(EngineWriteStats::default());
         }
         let t0 = std::time::Instant::now();
-        #[cfg(feature = "monitoring")]
         let op_start = std::time::Instant::now();
         self.check_not_closed()?;
         self.check_write_stall();
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation("write_batch_no_wal");
+        self.stats.operations[DbOp::WriteBatchNoWal as usize].fetch_add(1, AtomicOrdering::Relaxed);
 
         let n = batch.len() as u64;
         let _guard = self.write_lock.lock();
@@ -379,11 +373,8 @@ impl DB {
             "db_write_no_wal_done"
         );
         tracing::debug!(target: "db", op_count = batch.len(), "db.write_batch_no_wal");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_operation_duration(
-            "write_batch_no_wal",
-            op_start.elapsed().as_secs_f64(),
-        );
+        self.stats.operation_durations[DbOp::WriteBatchNoWal as usize]
+            .record(op_start.elapsed().as_micros() as u64);
         Ok(stats)
     }
 
@@ -420,19 +411,24 @@ impl DB {
     fn apply_key_count_delta(&self, stats: &EngineWriteStats) {
         let key_delta = stats.inserted as i64 - stats.deleted as i64;
         if key_delta > 0 {
-            self.total_key_count
-                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed);
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+            let count = self
+                .total_key_count
+                .fetch_add(key_delta as usize, AtomicOrdering::Relaxed)
+                + key_delta as usize;
+            self.stats
+                .total_key_count
+                .store(count as u64, AtomicOrdering::Relaxed);
         } else if key_delta < 0 {
             let sub = (-key_delta) as usize;
-            self.total_key_count
-                .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |c| {
-                    Some(c.saturating_sub(sub))
-                })
-                .ok();
-            #[cfg(feature = "monitoring")]
-            crate::metrics::set_total_key_count(self.total_key_count.load(AtomicOrdering::Relaxed));
+            if let Ok(prev) = self.total_key_count.fetch_update(
+                AtomicOrdering::Relaxed,
+                AtomicOrdering::Relaxed,
+                |c| Some(c.saturating_sub(sub)),
+            ) {
+                self.stats
+                    .total_key_count
+                    .store(prev.saturating_sub(sub) as u64, AtomicOrdering::Relaxed);
+            }
         }
     }
 

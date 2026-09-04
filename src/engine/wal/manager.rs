@@ -25,8 +25,10 @@ use super::record::{OpType, RecordType, WalEntry};
 use super::writer::Writer;
 use crate::config::Options;
 use crate::error::{Error, Result};
+use crate::statistics::Statistics;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -79,6 +81,7 @@ pub struct WALManager {
     #[expect(dead_code)]
     lock_file: std::fs::File,
     options: Arc<Options>,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl WALManager {
@@ -122,8 +125,11 @@ impl WALManager {
         writer.write_record(RecordType::Full, &file_header)?;
         writer.sync_data()?;
 
-        #[cfg(feature = "monitoring")]
-        crate::metrics::set_wal_size(writer.file_size().unwrap_or(0));
+        let stats = options.statistics.clone();
+        if let Some(ref s) = stats {
+            s.wal_size_bytes
+                .store(writer.file_size().unwrap_or(0), Ordering::Relaxed);
+        }
 
         Ok(WALManager {
             writer,
@@ -134,6 +140,7 @@ impl WALManager {
             wals: existing,
             lock_file,
             options,
+            stats,
         })
     }
 
@@ -200,8 +207,10 @@ impl WALManager {
     fn append_record(&mut self, data: &[u8]) -> Result<()> {
         self.writer.write_record(RecordType::Full, data)?;
 
-        #[cfg(feature = "monitoring")]
-        crate::metrics::set_wal_size(self.writer.file_size().unwrap_or(0));
+        if let Some(ref s) = self.stats {
+            s.wal_size_bytes
+                .store(self.writer.file_size().unwrap_or(0), Ordering::Relaxed);
+        }
 
         Ok(())
     }
@@ -281,8 +290,10 @@ impl WALManager {
         self.writer.write_record(RecordType::Full, &file_header)?;
         self.writer.sync_data()?;
 
-        #[cfg(feature = "monitoring")]
-        crate::metrics::set_wal_size(self.writer.file_size().unwrap_or(0));
+        if let Some(ref s) = self.stats {
+            s.wal_size_bytes
+                .store(self.writer.file_size().unwrap_or(0), Ordering::Relaxed);
+        }
 
         self.file_number = new_file_number;
         self.min_seq = next_sequence;

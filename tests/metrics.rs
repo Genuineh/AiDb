@@ -16,3 +16,6 @@ mod statistics_test;
 
 #[path = "modules/metrics/lifecycle_test.rs"]
 mod lifecycle_test;
+
+#[path = "modules/metrics/engine_stats_test.rs"]
+mod engine_stats_test;

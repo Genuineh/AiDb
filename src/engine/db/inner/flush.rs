@@ -71,15 +71,15 @@ impl DB {
             self.stats.memtable_size_bytes[1].store(0, AtomicOrdering::Relaxed);
         }
         if flushed > 0 {
-            #[cfg(feature = "monitoring")]
-            crate::metrics::record_flush();
+            self.stats
+                .flush_total
+                .fetch_add(flushed as u64, AtomicOrdering::Relaxed);
         }
         Ok(flushed)
     }
 
     #[tracing::instrument(name = "db_flush_sst", skip(self, table))]
     fn flush_memtable_to_sstable(&self, table: &MemTable) -> Result<()> {
-        #[cfg(feature = "monitoring")]
         let flush_start = std::time::Instant::now();
         let mut count = 0u64;
         let file_number = self.version_set.read().allocate_file_number();
@@ -101,14 +101,16 @@ impl DB {
         }
         if count == 0 {
             builder.abandon()?;
-            #[cfg(feature = "monitoring")]
-            crate::metrics::record_flush_duration(flush_start.elapsed().as_secs_f64());
+            self.stats
+                .flush_duration
+                .record(flush_start.elapsed().as_micros() as u64);
             return Ok(());
         }
         let file_size = builder.finish()?;
-        let reader = Arc::new(SSTableReader::open(
+        let reader = Arc::new(SSTableReader::open_with_stats(
             &path,
             Some(Arc::clone(&self.block_cache)),
+            Some(Arc::clone(&self.stats)),
         )?);
         {
             let mut tables = self.sstables.write();
@@ -125,8 +127,9 @@ impl DB {
         }
         update_sstable_metrics(&self.sstables.read(), &self.stats);
         tracing::info!(target: "db", file_number, file_size, "db.flush.complete");
-        #[cfg(feature = "monitoring")]
-        crate::metrics::record_flush_duration(flush_start.elapsed().as_secs_f64());
+        self.stats
+            .flush_duration
+            .record(flush_start.elapsed().as_micros() as u64);
         Ok(())
     }
 
