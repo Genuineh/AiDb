@@ -24,6 +24,8 @@ use crate::engine::memtable::{
 };
 use crate::engine::sstable::{SSTableIterator, SSTableReader};
 use crate::error::Result;
+use crate::statistics::Statistics;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 struct LayerEntry {
@@ -248,6 +250,7 @@ pub struct DBIterator {
     layers: Vec<LayerIter>,
     end_key: Option<Vec<u8>>,
     range_tombstones: Vec<(Vec<u8>, Vec<u8>, u64)>,
+    stats: Option<Arc<Statistics>>,
 }
 
 fn collect_all_range_tombstones(
@@ -280,6 +283,7 @@ impl DBIterator {
         sequence: u64,
         start: Option<&[u8]>,
         end: Option<&[u8]>,
+        stats: Option<Arc<Statistics>>,
     ) -> Self {
         let mut layers = Vec::new();
         layers.push(LayerIter::from_mem_entries(memtable));
@@ -298,6 +302,7 @@ impl DBIterator {
             layers,
             end_key: end.map(|k| k.to_vec()),
             range_tombstones: collect_all_range_tombstones(memtable, immutables, sstables),
+            stats,
         };
         if let Some(start) = start {
             it.seek(start);
@@ -340,6 +345,14 @@ impl DBIterator {
         }
 
         self.load_prev_valid();
+        if self.valid() {
+            if let Some((ref k, ref v)) = self.current {
+                if let Some(ref s) = self.stats {
+                    s.logical_read_bytes
+                        .fetch_add((k.len() + v.len()) as u64, Ordering::Relaxed);
+                }
+            }
+        }
         self.valid()
     }
 
@@ -581,6 +594,12 @@ impl Iterator for DBIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.current.clone()?;
+        if let Some(ref s) = self.stats {
+            s.logical_read_bytes.fetch_add(
+                (current.0.len() + current.1.len()) as u64,
+                Ordering::Relaxed,
+            );
+        }
         self.load_next_valid();
         Some(Ok(current))
     }

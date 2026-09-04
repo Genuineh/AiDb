@@ -450,7 +450,13 @@ impl DB {
         let imm = self.immutable_memtables.read();
         let sst = self.sstables.read();
         Ok(super::iterator::DBIterator::new(
-            &mem, &imm, &sst, sequence, start, end,
+            &mem,
+            &imm,
+            &sst,
+            sequence,
+            start,
+            end,
+            Some(Arc::clone(&self.stats)),
         ))
     }
 

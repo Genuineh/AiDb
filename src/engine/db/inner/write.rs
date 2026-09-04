@@ -209,7 +209,7 @@ impl DB {
             .logical_write_bytes
             .fetch_add(key.len() as u64, AtomicOrdering::Relaxed);
 
-        let existed = self.get(key)?.is_some();
+        let existed = self.key_exists(key)?;
 
         // Phase 1: WAL append (in write_lock, no sync)
         let seq;

@@ -26,11 +26,16 @@ impl DB {
     }
 
     pub(crate) fn get_at_sequence(&self, key: &[u8], max_seq: u64) -> Result<Option<Vec<u8>>> {
-        if self.has_active_range_tombstones() {
-            self.get_at_sequence_with_range_tombstones(key, max_seq)
+        let r = if self.has_active_range_tombstones() {
+            self.get_at_sequence_with_range_tombstones(key, max_seq)?
         } else {
-            self.get_at_sequence_fast(key, max_seq)
-        }
+            self.get_at_sequence_fast(key, max_seq)?
+        };
+        let bytes = key.len() as u64 + r.as_ref().map(|v| v.len() as u64).unwrap_or(0);
+        self.stats
+            .logical_read_bytes
+            .fetch_add(bytes, AtomicOrdering::Relaxed);
+        Ok(r)
     }
 
     pub(super) fn has_active_range_tombstones(&self) -> bool {
@@ -232,7 +237,13 @@ impl DB {
         let imm = self.immutable_memtables.read();
         let sst = self.sstables.read();
         Ok(crate::engine::db::DBIterator::new(
-            &mem, &imm, &sst, seq, None, None,
+            &mem,
+            &imm,
+            &sst,
+            seq,
+            None,
+            None,
+            Some(Arc::clone(&self.stats)),
         ))
     }
 
@@ -245,7 +256,13 @@ impl DB {
         let sst = self.sstables.read();
         tracing::debug!(target: "db", "db.scan.complete");
         Ok(crate::engine::db::DBIterator::new(
-            &mem, &imm, &sst, seq, start, end,
+            &mem,
+            &imm,
+            &sst,
+            seq,
+            start,
+            end,
+            Some(Arc::clone(&self.stats)),
         ))
     }
 }

@@ -17,7 +17,7 @@ fn test_read_write_hotpath_atomic_stats() {
     // 2. Get
     let v = db.get(b"k1").unwrap();
     assert_eq!(v, Some(b"v1".to_vec()));
-    // 3. Delete (内部包含一次 get 来判断存在性)
+    // 3. Delete (内部使用 key_exists, 不调用 get, 避免污染 Get 计数与读放大指标)
     db.delete(b"k1").unwrap();
     // 4. Snapshot
     let _snap = db.snapshot();
@@ -27,10 +27,10 @@ fn test_read_write_hotpath_atomic_stats() {
         stats.operations[DbOp::Put as usize].load(Ordering::Relaxed),
         1
     );
-    // 1 次显式 get + 1 次 delete 内部为判断 existed 调用的 get = 2
+    // 仅 1 次显式 get (delete 内部改为 key_exists, 不计入 Get)
     assert_eq!(
         stats.operations[DbOp::Get as usize].load(Ordering::Relaxed),
-        2
+        1
     );
     assert_eq!(
         stats.operations[DbOp::Delete as usize].load(Ordering::Relaxed),
@@ -52,7 +52,7 @@ fn test_read_write_hotpath_atomic_stats() {
         stats.operation_durations[DbOp::Get as usize]
             .count
             .load(Ordering::Relaxed),
-        2
+        1
     );
     assert_eq!(
         stats.operation_durations[DbOp::Delete as usize]

@@ -20,6 +20,7 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -102,7 +103,6 @@ impl SSTableReader {
             &file,
             file_number,
             Arc::clone(&index_entries),
-            block_cache.clone(),
         )?);
 
         Ok(Self {
@@ -169,6 +169,9 @@ impl SSTableReader {
             let _span =
                 tracing::trace_span!("bloom_check", file_number = self.file_number, hit).entered();
             if !hit {
+                if let Some(ref s) = self.stats {
+                    s.bloom_useful.fetch_add(1, AtomicOrdering::Relaxed);
+                }
                 tracing::debug!(target: "sst", found = false, "sst.seek.result");
                 return Ok(None);
             }
@@ -183,6 +186,7 @@ impl SSTableReader {
             self.file_number,
             &handle,
             self.block_cache.as_ref(),
+            self.stats.as_ref(),
         )?;
         let block = Block::new(block_data)?;
         let mut it = block.iter();
@@ -242,6 +246,9 @@ impl SSTableReader {
               "bloom_check"
             );
             if !hit {
+                if let Some(ref s) = self.stats {
+                    s.bloom_useful.fetch_add(1, AtomicOrdering::Relaxed);
+                }
                 tracing::debug!(target: "sst", found = false, "sst.value_type.result");
                 return Ok(None);
             }
@@ -256,6 +263,7 @@ impl SSTableReader {
             self.file_number,
             &handle,
             self.block_cache.as_ref(),
+            self.stats.as_ref(),
         )?;
         let block = Block::new(block_data)?;
         let mut it = block.iter();
@@ -310,6 +318,7 @@ impl SSTableReader {
             self.file_number,
             &handle,
             self.block_cache.as_ref(),
+            self.stats.as_ref(),
         )?;
         let block = Block::new(block_data)?;
         let mut it = block.iter();
@@ -378,6 +387,17 @@ impl SSTableReader {
             self.file_number,
             Arc::clone(&self.index_entries),
             self.block_cache.clone(),
+            self.stats.clone(),
+        )
+    }
+
+    pub fn iter_uncached(&self) -> SSTableIterator {
+        SSTableIterator::new(
+            Arc::clone(&self.file),
+            self.file_number,
+            Arc::clone(&self.index_entries),
+            None,
+            None,
         )
     }
 }
@@ -449,7 +469,7 @@ fn read_key_range(
     if entries.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let first = read_block_cached(file, file_number, &entries[0].1, block_cache)?;
+    let first = read_block_cached(file, file_number, &entries[0].1, block_cache, None)?;
     let first_it = Block::new(first)?.iter();
     let smallest = if first_it.valid() {
         first_it.key().to_vec()
@@ -462,6 +482,7 @@ fn read_key_range(
         file_number,
         &entries[entries.len() - 1].1,
         block_cache,
+        None,
     )?;
     let block = Block::new(last)?;
     let mut it = block.iter();
@@ -479,13 +500,13 @@ fn load_range_tombstones(
     file: &File,
     file_number: u64,
     index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
-    block_cache: Option<Arc<BlockCache>>,
 ) -> Result<Vec<RangeTombstoneEntry>> {
     let mut it = SSTableIterator::new(
         Arc::new(file.try_clone()?),
         file_number,
         index_entries,
-        block_cache,
+        None,
+        None,
     );
     let mut out = Vec::new();
     while it.valid() {

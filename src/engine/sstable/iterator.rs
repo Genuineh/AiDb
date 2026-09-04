@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use crate::engine::cache::BlockCache;
 use crate::engine::memtable::compare_internal_key;
+use crate::statistics::Statistics;
 
 use super::block::{Block, BlockIterator};
 use super::block_io::read_block_cached;
@@ -24,6 +25,7 @@ pub struct SSTableIterator {
     file_number: u64,
     index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
     block_cache: Option<Arc<BlockCache>>,
+    stats: Option<Arc<Statistics>>,
     block_index: usize,
     block_iter: Option<BlockIterator>,
     valid: bool,
@@ -35,12 +37,14 @@ impl SSTableIterator {
         file_number: u64,
         index_entries: Arc<Vec<(Vec<u8>, BlockHandle)>>,
         block_cache: Option<Arc<BlockCache>>,
+        stats: Option<Arc<Statistics>>,
     ) -> Self {
         let mut it = Self {
             file,
             file_number,
             index_entries,
             block_cache,
+            stats,
             block_index: 0,
             block_iter: None,
             valid: false,
@@ -186,6 +190,7 @@ impl SSTableIterator {
             self.file_number,
             &handle,
             self.block_cache.as_ref(),
+            self.stats.as_ref(),
         ) {
             Ok(d) => d,
             Err(_) => {

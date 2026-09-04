@@ -57,7 +57,7 @@ impl MergeIterator {
         let mut heap = BinaryHeap::new();
         let mut iterators = Vec::with_capacity(readers.len());
         for (idx, reader) in readers.into_iter().enumerate() {
-            let iter = reader.iter();
+            let iter = reader.iter_uncached();
             if iter.valid() {
                 heap.push(MergeEntry {
                     key: iter.key().unwrap_or_default().to_vec(),
@@ -84,7 +84,7 @@ impl MergeIterator {
         let mut heap = BinaryHeap::new();
         let mut iterators = Vec::with_capacity(readers.len());
         for (idx, reader) in readers.into_iter().enumerate() {
-            let iter = reader.iter();
+            let iter = reader.iter_uncached();
             if iter.valid() {
                 let key = iter.key().unwrap_or_default().to_vec();
                 if let Some(ref end) = range_end {

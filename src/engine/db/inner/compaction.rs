@@ -114,6 +114,16 @@ impl DB {
             .compaction_written_bytes
             .fetch_add(written_bytes, AtomicOrdering::Relaxed);
 
+        let read_bytes: u64 = task
+            .inputs
+            .iter()
+            .chain(task.expanded_inputs.iter())
+            .map(|f| f.file_size())
+            .sum();
+        self.stats
+            .compaction_read_bytes
+            .fetch_add(read_bytes, AtomicOrdering::Relaxed);
+
         self.stats.compaction_phases[CompactionPhase::Run as usize]
             .fetch_add(1, AtomicOrdering::Relaxed);
         self.stats.compaction_durations[CompactionPhase::Run as usize]

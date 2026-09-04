@@ -1,6 +1,7 @@
 //! Block 落盘: compression type + CRC32 trailer.
 
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -9,6 +10,7 @@ use crc32fast::Hasher as Crc32Hasher;
 use crate::config::CompressionType;
 use crate::engine::cache::{BlockCache, CacheKey};
 use crate::error::{Error, Result};
+use crate::statistics::Statistics;
 
 use super::handle::BlockHandle;
 use super::BLOCK_TRAILER_SIZE;
@@ -52,6 +54,7 @@ pub fn read_block_cached(
     file_number: u64,
     handle: &BlockHandle,
     block_cache: Option<&Arc<BlockCache>>,
+    stats: Option<&Arc<Statistics>>,
 ) -> Result<Bytes> {
     let key = CacheKey {
         file_number,
@@ -64,6 +67,9 @@ pub fn read_block_cached(
     }
 
     let data = read_block_from_file_traced(file, handle)?;
+    if let Some(s) = stats {
+        s.block_read_bytes.fetch_add(handle.size, Ordering::Relaxed);
+    }
     let bytes = Bytes::from(data);
     if let Some(cache) = block_cache {
         cache.insert(key, bytes.clone());
