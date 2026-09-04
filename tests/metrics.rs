@@ -7,6 +7,10 @@
 #[path = "modules/metrics/prometheus.rs"]
 mod prometheus;
 
+#[cfg(feature = "monitoring")]
+#[path = "modules/metrics/statistics_sync_test.rs"]
+mod statistics_sync_test;
+
 #[cfg(not(feature = "monitoring"))]
 #[path = "modules/metrics/placeholder.rs"]
 mod placeholder;

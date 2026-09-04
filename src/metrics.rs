@@ -16,19 +16,14 @@ use opentelemetry::KeyValue;
 static METRICS: RwLock<Option<Arc<OtelMetrics>>> = RwLock::new(None);
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_OP: &str = "aidb.operation.name";
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_COMPACTION_PHASE: &str = "aidb.compaction.phase";
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_MEMTABLE_STATE: &str = "aidb.memtable.state";
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_SSTABLE_LEVEL: &str = "aidb.sstable.level";
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 const ATTR_BACKUP_OP: &str = "aidb.backup.operation";
 #[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_RPC_TYPE: &str = "aidb.raft.rpc.type";
@@ -44,7 +39,6 @@ const ATTR_DB_SYSTEM: &str = "db.system";
 const ATTR_DB_OPERATION: &str = "db.operation.name";
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 struct OtelMetrics {
     wal_size_bytes: Gauge<f64>,
     memtable_size_bytes: Gauge<f64>,
@@ -230,13 +224,11 @@ impl OtelMetrics {
 }
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn metrics() -> Option<Arc<OtelMetrics>> {
     METRICS.read().clone()
 }
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn db_client_attrs(op: &str) -> [KeyValue; 2] {
     [
         kv_static(ATTR_DB_SYSTEM, "aidb"),
@@ -245,13 +237,11 @@ fn db_client_attrs(op: &str) -> [KeyValue; 2] {
 }
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn kv_static(label: &str, value: impl Into<String>) -> KeyValue {
     KeyValue::new(label.to_string(), value.into())
 }
 
 #[cfg(feature = "monitoring")]
-#[allow(dead_code)] // Task 4 sync_to_otel 接管后移除
 fn kv(label: &str, value: impl Into<String>) -> KeyValue {
     KeyValue::new(label.to_string(), value.into())
 }
@@ -271,6 +261,233 @@ pub fn init() {
             init_otel(meter);
         }
     }
+}
+
+/// 将无锁原子 Statistics 差分同步至全局 OTel instruments.
+///
+/// 锁内全链路串行化:
+/// 1. 获取 `stats.sync_baseline` 锁;
+/// 2. 若全局 OTel 尚未初始化 (`metrics()` 为 None), 立即返回且不推进基线 (防数据未导出即丢);
+/// 3. 获取 `stats.snapshot()` 截面;
+/// 4. 遍历各项指标差分与 Gauge 导出至 OTel;
+/// 5. 原子推进基线 `*baseline = current`;
+#[inline]
+fn histogram_bucket_rep_val_secs(b: usize) -> f64 {
+    if let Some(&val) = crate::statistics::histogram::BUCKET_MID_POINTS_SECS.get(b) {
+        val
+    } else {
+        crate::statistics::histogram::OVERFLOW_BUCKET_VALUE_SECS
+    }
+}
+
+/// 将无锁原子 Statistics 差分同步至全局 OTel instruments.
+///
+/// 锁内全链路串行化:
+/// 1. 获取 `stats.sync_baseline` 锁;
+/// 2. 若全局 OTel 尚未初始化 (`metrics()` 为 None), 立即返回且不推进基线 (防数据未导出即丢);
+/// 3. 获取 `stats.snapshot()` 截面;
+/// 4. 遍历各项指标差分与 Gauge 导出至 OTel;
+/// 5. 原子推进基线 `*baseline = current`;
+/// 6. 释放锁.
+#[cfg(feature = "monitoring")]
+pub fn sync_to_otel(stats: &crate::statistics::Statistics) {
+    use crate::statistics::histogram::NUM_HISTOGRAM_BUCKETS;
+    use crate::statistics::types::{BackupOp, CompactionPhase, DbOp};
+
+    let mut baseline = stats.sync_baseline.lock();
+    let Some(m) = metrics() else {
+        return;
+    };
+    let current = stats.snapshot();
+
+    // 1. DB Operations Counters & Histograms
+    for op in DbOp::ALL {
+        let op_idx = op as usize;
+        let delta = current.operations[op_idx].saturating_sub(baseline.operations[op_idx]);
+        if delta > 0 {
+            let attr = kv(ATTR_OP, op.as_str());
+            m.operations_total.add(delta, &[attr]);
+            m.db_client_operations
+                .add(delta, &db_client_attrs(op.as_str()));
+        }
+
+        for b in 0..NUM_HISTOGRAM_BUCKETS {
+            let b_delta = current.operation_duration_buckets[op_idx][b]
+                .saturating_sub(baseline.operation_duration_buckets[op_idx][b]);
+            if b_delta > 0 {
+                let rep_val = histogram_bucket_rep_val_secs(b);
+                let attr = kv(ATTR_OP, op.as_str());
+                let client_attrs = db_client_attrs(op.as_str());
+                for _ in 0..b_delta {
+                    m.operation_duration_seconds
+                        .record(rep_val, std::slice::from_ref(&attr));
+                    m.db_client_operation_duration
+                        .record(rep_val, &client_attrs);
+                }
+            }
+        }
+    }
+
+    // 2. Flush Counter & Histogram
+    let flush_delta = current.flush_total.saturating_sub(baseline.flush_total);
+    if flush_delta > 0 {
+        m.flush_total.add(flush_delta, &[]);
+    }
+    for b in 0..NUM_HISTOGRAM_BUCKETS {
+        let b_delta =
+            current.flush_duration_buckets[b].saturating_sub(baseline.flush_duration_buckets[b]);
+        if b_delta > 0 {
+            let rep_val = histogram_bucket_rep_val_secs(b);
+            for _ in 0..b_delta {
+                m.flush_duration_seconds.record(rep_val, &[]);
+            }
+        }
+    }
+
+    // 3. Compaction Phases Counter & Histograms
+    for phase in CompactionPhase::ALL {
+        let p_idx = phase as usize;
+        let p_delta =
+            current.compaction_phases[p_idx].saturating_sub(baseline.compaction_phases[p_idx]);
+        if p_delta > 0 {
+            m.compaction_total
+                .add(p_delta, &[kv(ATTR_COMPACTION_PHASE, phase.as_str())]);
+        }
+
+        for b in 0..NUM_HISTOGRAM_BUCKETS {
+            let b_delta = current.compaction_duration_buckets[p_idx][b]
+                .saturating_sub(baseline.compaction_duration_buckets[p_idx][b]);
+            if b_delta > 0 {
+                let rep_val = histogram_bucket_rep_val_secs(b);
+                let attr = kv(ATTR_COMPACTION_PHASE, phase.as_str());
+                for _ in 0..b_delta {
+                    m.compaction_duration_seconds
+                        .record(rep_val, std::slice::from_ref(&attr));
+                }
+            }
+        }
+    }
+
+    // 4. Backup Counters, Histogram & Gauge
+    for op in BackupOp::ALL {
+        let b_idx = op as usize;
+        let delta = current.backup_total[b_idx].saturating_sub(baseline.backup_total[b_idx]);
+        if delta > 0 {
+            m.backup_total
+                .add(delta, &[kv(ATTR_BACKUP_OP, op.as_str())]);
+        }
+    }
+    for b in 0..NUM_HISTOGRAM_BUCKETS {
+        let b_delta =
+            current.backup_duration_buckets[b].saturating_sub(baseline.backup_duration_buckets[b]);
+        if b_delta > 0 {
+            let rep_val = histogram_bucket_rep_val_secs(b);
+            for _ in 0..b_delta {
+                m.backup_duration_seconds.record(rep_val, &[]);
+            }
+        }
+    }
+    m.backup_size_bytes
+        .record(current.backup_size_bytes as f64, &[]);
+
+    // 5. Block Cache & Bloom Filter
+    let hit_delta = current
+        .block_cache_hits
+        .saturating_sub(baseline.block_cache_hits);
+    if hit_delta > 0 {
+        m.block_cache_hits_total.add(hit_delta, &[]);
+    }
+    let miss_delta = current
+        .block_cache_misses
+        .saturating_sub(baseline.block_cache_misses);
+    if miss_delta > 0 {
+        m.block_cache_misses_total.add(miss_delta, &[]);
+    }
+    m.block_cache_size_bytes
+        .record(current.block_cache_size as f64, &[]);
+    m.block_cache_capacity_bytes
+        .record(current.block_cache_capacity as f64, &[]);
+
+    let bloom_delta = current
+        .bloom_false_positive
+        .saturating_sub(baseline.bloom_false_positive);
+    if bloom_delta > 0 {
+        m.bloom_false_positive_total.add(bloom_delta, &[]);
+    }
+
+    // 6. Gauges (物理绝对值直写)
+    m.wal_size_bytes.record(current.wal_size_bytes as f64, &[]);
+    m.memtable_size_bytes.record(
+        current.memtable_size_bytes[0] as f64,
+        &[kv(ATTR_MEMTABLE_STATE, "active")],
+    );
+    m.memtable_size_bytes.record(
+        current.memtable_size_bytes[1] as f64,
+        &[kv(ATTR_MEMTABLE_STATE, "frozen")],
+    );
+    m.sequence.record(current.sequence as f64, &[]);
+    m.total_key_count
+        .record(current.total_key_count as f64, &[]);
+
+    for (level, (&count, &size)) in current
+        .sstable_count
+        .iter()
+        .zip(current.sstable_size_bytes.iter())
+        .enumerate()
+    {
+        let attrs = [kv(ATTR_SSTABLE_LEVEL, level.to_string())];
+        m.sstable_count.record(count as f64, &attrs);
+        m.sstable_size_bytes.record(size as f64, &attrs);
+    }
+
+    // 7. Cluster Raft 指标差分同步 (feature = "cluster")
+    #[cfg(feature = "cluster")]
+    {
+        const RAFT_RPC_TYPES: [&str; 3] = ["append_entries", "vote", "install_snapshot"];
+        const RAFT_DIRECTIONS: [&str; 2] = ["incoming", "outgoing"];
+        for (t_idx, &t_name) in RAFT_RPC_TYPES.iter().enumerate() {
+            for (d_idx, &d_name) in RAFT_DIRECTIONS.iter().enumerate() {
+                let delta =
+                    current.raft_rpc[t_idx][d_idx].saturating_sub(baseline.raft_rpc[t_idx][d_idx]);
+                if delta > 0 {
+                    m.raft_rpc_total.add(
+                        delta,
+                        &[
+                            kv(ATTR_RAFT_RPC_TYPE, t_name),
+                            kv(ATTR_RAFT_DIRECTION, d_name),
+                        ],
+                    );
+                }
+            }
+        }
+
+        let log_delta = current
+            .raft_log_entries
+            .saturating_sub(baseline.raft_log_entries);
+        if log_delta > 0 {
+            m.raft_log_entries_total.add(log_delta, &[]);
+        }
+
+        let fatal_delta = current
+            .raft_group_fatal
+            .saturating_sub(baseline.raft_group_fatal);
+        if fatal_delta > 0 {
+            m.raft_group_fatal_total.add(fatal_delta, &[]);
+        }
+
+        const RESTART_OUTCOMES: [&str; 2] = ["success", "failure"];
+        for (i, &outcome) in RESTART_OUTCOMES.iter().enumerate() {
+            let delta =
+                current.raft_group_restart[i].saturating_sub(baseline.raft_group_restart[i]);
+            if delta > 0 {
+                m.raft_group_restart_total
+                    .add(delta, &[kv(ATTR_RAFT_RESTART_OUTCOME, outcome)]);
+            }
+        }
+    }
+
+    // 8. 推进基线
+    *baseline = current;
 }
 
 #[cfg(all(feature = "monitoring", feature = "cluster"))]
@@ -434,5 +651,45 @@ pub mod testutil {
             }
         }
         total
+    }
+
+    pub fn sync_and_get_counter(stats: &crate::statistics::Statistics, metric_name: &str) -> u64 {
+        super::sync_to_otel(stats);
+        let exporter = init_in_memory();
+        counter_sum(&exporter, metric_name)
+    }
+
+    pub fn histogram_bucket_counts(
+        exporter: &InMemoryMetricExporter,
+        name: &str,
+    ) -> Option<Vec<u64>> {
+        let metrics = latest_resource_metrics(exporter)?;
+        let rm = metrics.last()?;
+        let mut combined: Option<Vec<u64>> = None;
+        for sm in rm.scope_metrics() {
+            for m in sm.metrics() {
+                if m.name() != name {
+                    continue;
+                }
+                if let AggregatedMetrics::F64(MetricData::Histogram(h)) = m.data() {
+                    for dp in h.data_points() {
+                        let counts: Vec<u64> = dp.bucket_counts().collect();
+                        if let Some(ref mut existing) = combined {
+                            if existing.len() < counts.len() {
+                                existing.resize(counts.len(), 0);
+                            }
+                            for (i, &c) in counts.iter().enumerate() {
+                                if i < existing.len() {
+                                    existing[i] += c;
+                                }
+                            }
+                        } else {
+                            combined = Some(counts);
+                        }
+                    }
+                }
+            }
+        }
+        combined
     }
 }
