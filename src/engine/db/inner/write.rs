@@ -7,7 +7,7 @@ use super::{
     Arc, AtomicOrdering, CompactionPicker, Duration, EngineWriteStats, Error, MemTable, OpType,
     Result, WalEntry, WriteBatch, WriteOp, DB, SEQUENCE_LIMIT,
 };
-use crate::statistics::DbOp;
+use crate::statistics::{DbOp, WriteStallKind};
 use std::collections::HashMap;
 
 /// 批内分类用的操作种类 (key 为 DB 中实际 key).
@@ -34,6 +34,15 @@ impl DB {
     /// 现在也检查 MemTable 总内存 (F-020):
     /// - Slowdown 阶段始于 60% 的 `max_write_buffer_number * memtable_size`
     /// - Stop 阶段始于 80%, 优于 `wait_for_memtable_slot()` 的硬上限, 形成梯度保护.
+    fn record_write_stall(&self, kind: WriteStallKind, elapsed_us: u64) {
+        let idx = kind as usize;
+        self.stats.write_stall_requests[idx].fetch_add(1, AtomicOrdering::Relaxed);
+        self.stats.write_stall_durations[idx].record(elapsed_us);
+        self.stats
+            .write_stall_max_duration_us
+            .fetch_max(elapsed_us, AtomicOrdering::Relaxed);
+    }
+
     fn check_write_stall(&self) {
         if !self.options.background_compaction {
             return;
@@ -48,6 +57,7 @@ impl DB {
 
         if mt_mem > mt_limit.saturating_mul(4) / 5 {
             // stop: MemTable 总内存超过 80% 量级硬上限, 主动 freeze + flush 释放.
+            let start = std::time::Instant::now();
             let mut fail_count = 0u32;
             loop {
                 if self.memtable.read().approximate_size() > 0 {
@@ -74,6 +84,8 @@ impl DB {
                     self.options.write_stall_poll_ms,
                 ));
             }
+            let elapsed_us = start.elapsed().as_micros() as u64;
+            self.record_write_stall(WriteStallKind::MemTableStop, elapsed_us);
             return;
         }
 
@@ -87,7 +99,12 @@ impl DB {
             } else {
                 0
             };
-            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+            if sleep_ms > 0 {
+                let start = std::time::Instant::now();
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                let elapsed_us = start.elapsed().as_micros() as u64;
+                self.record_write_stall(WriteStallKind::MemTableSlowdown, elapsed_us);
+            }
         }
 
         // === L0 文件数 stall (现有逻辑不变) ===
@@ -96,23 +113,36 @@ impl DB {
 
         // stop: 轮询等待 until L0 回到 slowdown 阈值以下
         if l0_count >= opts.level0_stop_writes_trigger {
+            let start = std::time::Instant::now();
             self.stats.operations[DbOp::StallStop as usize].fetch_add(1, AtomicOrdering::Relaxed);
             while self.sstables.read()[0].len() >= opts.level0_slowdown_writes_trigger {
                 std::thread::sleep(std::time::Duration::from_millis(opts.write_stall_poll_ms));
                 self.maybe_trigger_compaction();
             }
+            let elapsed_us = start.elapsed().as_micros() as u64;
+            self.record_write_stall(WriteStallKind::L0FilesStop, elapsed_us);
             return;
         }
 
         // slowdown: 按超出比例 sleep
         if l0_count > opts.level0_slowdown_writes_trigger {
-            self.stats.operations[DbOp::StallSlowdown as usize]
-                .fetch_add(1, AtomicOrdering::Relaxed);
             let excess = l0_count - opts.level0_slowdown_writes_trigger;
-            let cap = opts.level0_stop_writes_trigger - opts.level0_slowdown_writes_trigger;
-            let sleep_ms =
-                (excess as f64 / cap as f64 * opts.write_stall_slowdown_max_ms as f64) as u64;
-            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+            let cap = opts
+                .level0_stop_writes_trigger
+                .saturating_sub(opts.level0_slowdown_writes_trigger);
+            let sleep_ms = if cap > 0 {
+                (excess as f64 / cap as f64 * opts.write_stall_slowdown_max_ms as f64) as u64
+            } else {
+                0
+            };
+            if sleep_ms > 0 {
+                self.stats.operations[DbOp::StallSlowdown as usize]
+                    .fetch_add(1, AtomicOrdering::Relaxed);
+                let start = std::time::Instant::now();
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                let elapsed_us = start.elapsed().as_micros() as u64;
+                self.record_write_stall(WriteStallKind::L0FilesSlowdown, elapsed_us);
+            }
         }
 
         // === L1+ level size stall (F-029) ===
@@ -127,6 +157,7 @@ impl DB {
             }
 
             if actual > target.saturating_mul(4) {
+                let start = std::time::Instant::now();
                 // stop: 轮询等待, 主动触发 compaction
                 while {
                     let tables = self.sstables.read();
@@ -136,6 +167,8 @@ impl DB {
                     std::thread::sleep(std::time::Duration::from_millis(opts.write_stall_poll_ms));
                     self.maybe_trigger_compaction();
                 }
+                let elapsed_us = start.elapsed().as_micros() as u64;
+                self.record_write_stall(WriteStallKind::LevelSizeStop, elapsed_us);
                 return;
             }
 
@@ -148,7 +181,12 @@ impl DB {
                 } else {
                     0
                 };
-                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                if sleep_ms > 0 {
+                    let start = std::time::Instant::now();
+                    std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                    let elapsed_us = start.elapsed().as_micros() as u64;
+                    self.record_write_stall(WriteStallKind::LevelSizeSlowdown, elapsed_us);
+                }
                 break; // 一次只 stall 最严重的一层
             }
         }

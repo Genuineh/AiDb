@@ -103,6 +103,28 @@ pub enum WriteStallKind {
 }
 pub const NUM_WRITE_STALL_KINDS: usize = 6;
 
+impl WriteStallKind {
+    pub const ALL: [WriteStallKind; NUM_WRITE_STALL_KINDS] = [
+        WriteStallKind::MemTableSlowdown,
+        WriteStallKind::MemTableStop,
+        WriteStallKind::L0FilesSlowdown,
+        WriteStallKind::L0FilesStop,
+        WriteStallKind::LevelSizeSlowdown,
+        WriteStallKind::LevelSizeStop,
+    ];
+
+    pub fn cause_and_type(&self) -> (&'static str, &'static str) {
+        match self {
+            WriteStallKind::MemTableSlowdown => ("memtable", "slowdown"),
+            WriteStallKind::MemTableStop => ("memtable", "stop"),
+            WriteStallKind::L0FilesSlowdown => ("l0", "slowdown"),
+            WriteStallKind::L0FilesStop => ("l0", "stop"),
+            WriteStallKind::LevelSizeSlowdown => ("level_size", "slowdown"),
+            WriteStallKind::LevelSizeStop => ("level_size", "stop"),
+        }
+    }
+}
+
 /// Raft RPC 类型枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]

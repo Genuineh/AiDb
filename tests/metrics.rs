@@ -29,3 +29,6 @@ mod wa_bytes_test;
 
 #[path = "modules/metrics/ra_bytes_test.rs"]
 mod ra_bytes_test;
+
+#[path = "modules/metrics/write_stall_test.rs"]
+mod write_stall_test;
