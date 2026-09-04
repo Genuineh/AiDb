@@ -41,6 +41,10 @@ impl CompactionPicker {
         }
     }
 
+    pub fn level0_compaction_trigger(&self) -> usize {
+        self.level0_compaction_trigger
+    }
+
     pub fn target_size_for_level(&self, level: usize) -> u64 {
         if level == 0 {
             return u64::MAX;

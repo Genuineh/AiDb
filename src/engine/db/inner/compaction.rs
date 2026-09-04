@@ -193,7 +193,8 @@ impl DB {
                 .record(apply_start.elapsed().as_micros() as u64);
         }
 
-        update_sstable_metrics(&self.sstables.read(), &self.stats);
+        let pending = self.pending_compaction_bytes();
+        update_sstable_metrics(&self.sstables.read(), &self.stats, pending);
 
         // Version 已切换: 再通知 listener, 便于上层用 get==None 安全扣减.
         if let Some(listener) = self.compaction_removal_listener.read().clone() {
@@ -306,7 +307,8 @@ impl DB {
             }
         }
 
-        update_sstable_metrics(&self.sstables.read(), &self.stats);
+        let pending = self.pending_compaction_bytes();
+        update_sstable_metrics(&self.sstables.read(), &self.stats, pending);
 
         self.release_files(&task);
         Ok(true)

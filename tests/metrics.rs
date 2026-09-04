@@ -32,3 +32,6 @@ mod ra_bytes_test;
 
 #[path = "modules/metrics/write_stall_test.rs"]
 mod write_stall_test;
+
+#[path = "modules/metrics/pending_compaction_test.rs"]
+mod pending_compaction_test;

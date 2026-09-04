@@ -20,6 +20,7 @@
 //! - 遗留库扫描 / 加载损坏文件时降级跳过 (warn), 不阻断 open.
 
 use super::helpers::user_key_from_internal;
+use super::picker::CompactionPicker;
 use crate::engine::sstable::{parse_sstable_filename, sstable_path, SSTableReader};
 use crate::error::{Error, Result};
 use crate::statistics::Statistics;
@@ -240,6 +241,38 @@ impl VersionSet {
 
     pub fn current(&self) -> &Version {
         &self.current
+    }
+
+    pub fn pending_compaction_bytes(&self, picker: &CompactionPicker) -> u64 {
+        let levels = &self.current.levels;
+        if levels.is_empty() {
+            return 0;
+        }
+
+        // 1. L0 层: Version.levels[0] 为 push 追加 (升序, 最老在前)
+        // 注: 与 self.sstables[0] (运行时 reader, 降序, 最新在前) 顺序相反!
+        let l0_files = &levels[0];
+        let mut pending_l0 = 0u64;
+        let excess = l0_files
+            .len()
+            .saturating_sub(picker.level0_compaction_trigger());
+        if excess > 0 {
+            // 最老文件在索引 0, 直接零分配切片取前 excess 个文件求和
+            pending_l0 = l0_files[..excess].iter().map(|f| f.file_size).sum();
+        }
+
+        // 2. L1+ 层: 复用 picker.target_size_for_level 杜绝公式漂移
+        let mut pending_levels = 0u64;
+        let num_levels = levels.len();
+        if num_levels > 2 {
+            for (level, level_files) in levels.iter().enumerate().take(num_levels - 1).skip(1) {
+                let actual: u64 = level_files.iter().map(|f| f.file_size).sum();
+                let target = picker.target_size_for_level(level);
+                pending_levels = pending_levels.saturating_add(actual.saturating_sub(target));
+            }
+        }
+
+        pending_l0.saturating_add(pending_levels)
     }
 
     pub fn manifest_path(&self) -> &Path {

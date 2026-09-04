@@ -231,7 +231,8 @@ impl DB {
 
         stats.sequence.store(last_sequence, AtomicOrdering::Relaxed);
         stats.block_cache_size.store(0, AtomicOrdering::Relaxed);
-        update_sstable_metrics(&sstables, &stats);
+        let pending = version_set.pending_compaction_bytes(&compaction_picker);
+        update_sstable_metrics(&sstables, &stats, pending);
         #[cfg(feature = "monitoring")]
         {
             crate::metrics::init();
@@ -393,6 +394,13 @@ impl DB {
         self.sstables.read()[0].len()
     }
 
+    /// 待 Compaction 积压量 (Pending Bytes) 纯内存现算.
+    pub fn pending_compaction_bytes(&self) -> u64 {
+        self.version_set
+            .read()
+            .pending_compaction_bytes(&self.compaction_picker)
+    }
+
     /// Block cache 统计快照.
     pub fn cache_stats(&self) -> CacheStats {
         self.block_cache.stats()
@@ -533,7 +541,11 @@ fn max_sequence_in_sstables(sstables: &[Vec<Arc<SSTableReader>>]) -> u64 {
     max
 }
 
-pub(crate) fn update_sstable_metrics(sstables: &[Vec<Arc<SSTableReader>>], stats: &Statistics) {
+pub(crate) fn update_sstable_metrics(
+    sstables: &[Vec<Arc<SSTableReader>>],
+    stats: &Statistics,
+    pending_bytes: u64,
+) {
     for (level, readers) in sstables.iter().enumerate() {
         if level < stats.sstable_count.len() {
             let total: u64 = readers.iter().map(|r| r.file_size()).sum();
@@ -541,6 +553,9 @@ pub(crate) fn update_sstable_metrics(sstables: &[Vec<Arc<SSTableReader>>], stats
             stats.sstable_size_bytes[level].store(total, AtomicOrdering::Relaxed);
         }
     }
+    stats
+        .compaction_pending_bytes
+        .store(pending_bytes, AtomicOrdering::Relaxed);
 }
 
 impl Drop for DB {

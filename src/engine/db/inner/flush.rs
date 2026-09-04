@@ -128,7 +128,8 @@ impl DB {
                 largest_key: reader.largest_key().to_vec(),
             })?;
         }
-        update_sstable_metrics(&self.sstables.read(), &self.stats);
+        let pending = self.pending_compaction_bytes();
+        update_sstable_metrics(&self.sstables.read(), &self.stats, pending);
         tracing::info!(target: "db", file_number, file_size, "db.flush.complete");
         self.stats
             .flush_duration
