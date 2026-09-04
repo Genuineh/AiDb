@@ -57,8 +57,11 @@ impl MultiRaftNode {
 
     fn start_lifecycle_impl(
         &self,
-        lifecycle_config: Option<LifecycleConfig>,
+        mut lifecycle_config: Option<LifecycleConfig>,
     ) -> watch::Receiver<bool> {
+        if let Some(ref mut cfg) = lifecycle_config {
+            self.inject_shared_statistics(cfg);
+        }
         let (tx, rx) = watch::channel(false);
         *self.shutdown_tx.lock() = Some(tx);
         let lifecycle = self.lifecycle.clone();
@@ -66,6 +69,7 @@ impl MultiRaftNode {
         let storages = self.storages.clone();
         let dispatcher = self.grpc_dispatcher.clone();
         let node_id = self.node_id;
+        let stats = Arc::clone(&self.stats);
         // 复用 self.network_factory (而非每次启动 lifecycle 都新建一个孤立实例),
         // 使 get_key_from_group_remote/read_migration_tip 的远程 fallback 能
         // 拿到与本地 group 对等 raft 通信同一份 (node_id -> addr) 缓存 (FIX-0056-A1).
@@ -85,7 +89,13 @@ impl MultiRaftNode {
                 .map_or(RaftNodeConfig::default().grpc_max_message_size, |c| {
                     c.raft_node_config.grpc_max_message_size
                 });
-            *net_factory.write() = RaftNetworkClientFactory::new(node_id, 0, rpc_timeout, msg_size);
+            *net_factory.write() = RaftNetworkClientFactory::new_with_stats(
+                node_id,
+                0,
+                rpc_timeout,
+                msg_size,
+                Some(Arc::clone(&stats)),
+            );
 
             let mut next_delay = std::time::Duration::ZERO;
             loop {
@@ -363,8 +373,11 @@ impl MultiRaftNode {
         }
 
         for (group_id, reason) in fatal_groups {
-            #[cfg(feature = "monitoring")]
-            crate::cluster::metrics::record_raft_group_fatal(group_id);
+            if let Some(stats) = &cfg.options.statistics {
+                stats
+                    .raft_group_fatal
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
 
             let should_attempt = {
                 let mut state = restart_state.write();
@@ -410,15 +423,21 @@ impl MultiRaftNode {
 
             if groups.read().contains_key(&group_id) {
                 tracing::warn!(group_id, "raft group self-heal restart succeeded");
-                #[cfg(feature = "monitoring")]
-                crate::cluster::metrics::record_raft_group_restart(group_id, "success");
+                if let Some(stats) = &cfg.options.statistics {
+                    stats.raft_group_restart
+                        [crate::statistics::RaftRestartOutcome::Success as usize]
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
             } else {
                 tracing::error!(
                     group_id,
                     "raft group self-heal restart failed to reopen, will retry with backoff"
                 );
-                #[cfg(feature = "monitoring")]
-                crate::cluster::metrics::record_raft_group_restart(group_id, "failure");
+                if let Some(stats) = &cfg.options.statistics {
+                    stats.raft_group_restart
+                        [crate::statistics::RaftRestartOutcome::Failure as usize]
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
             }
         }
     }

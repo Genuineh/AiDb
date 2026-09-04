@@ -9,8 +9,6 @@ pub mod membership_coordinator;
 pub mod meta_raft_node;
 pub mod meta_state_machine;
 pub mod meta_types;
-#[cfg(feature = "monitoring")]
-pub mod metrics;
 pub mod migration_oplog;
 pub mod multi_raft_node;
 pub mod network;
@@ -35,7 +33,7 @@ pub use meta_types::{
     ReplicaInfo, SlotMigrationState, SlotStatus, SlotTable, METARAFT_GROUP_ID, SLOT_COUNT,
 };
 pub use migration_oplog::{decode_tip, decode_tombstone, encode_tip, encode_tombstone, MigOp};
-pub use multi_raft_node::MultiRaftNode;
+pub use multi_raft_node::{LifecycleConfig, MultiRaftNode};
 pub use network::{
     RaftNetworkClient, RaftNetworkClientFactory, RaftServiceDispatcher, RaftServiceImpl,
 };

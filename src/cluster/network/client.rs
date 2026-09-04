@@ -4,6 +4,7 @@ use super::{
     RaftNetworkV2, RaftServiceClient, Request, Response, Result, SnapshotResponse, TonicRequest,
     TypeConfig, Unreachable, VoteRequest, VoteResponse,
 };
+use crate::statistics::{RaftRpcDirection, RaftRpcType, Statistics};
 
 pub struct RaftNetworkClient {
     #[cfg_attr(not(feature = "cluster-test-util"), allow(dead_code))]
@@ -18,6 +19,7 @@ pub struct RaftNetworkClient {
     request_timeout: Duration,
     group_id: u64,
     max_message_size: usize,
+    stats: Option<Arc<Statistics>>,
 }
 
 impl RaftNetworkClient {
@@ -31,6 +33,7 @@ impl RaftNetworkClient {
         max_message_size: u64,
         channel: Option<RaftServiceClient<tonic::transport::Channel>>,
         channels: Option<Arc<DashMap<NodeId, RaftServiceClient<tonic::transport::Channel>>>>,
+        stats: Option<Arc<Statistics>>,
     ) -> Self {
         Self {
             node_id,
@@ -41,6 +44,7 @@ impl RaftNetworkClient {
             request_timeout: Duration::from_millis(rpc_timeout_ms),
             group_id,
             max_message_size: max_message_size as usize,
+            stats,
         }
     }
 
@@ -292,8 +296,11 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                 "blackhole",
             )));
         }
-        #[cfg(feature = "monitoring")]
-        crate::cluster::metrics::record_raft_rpc("append_entries", "outgoing");
+        if let Some(stats) = &self.stats {
+            stats.raft_rpc[RaftRpcType::AppendEntries as usize]
+                [RaftRpcDirection::Outgoing as usize]
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
         let client = match self.get_client().await {
@@ -496,8 +503,10 @@ impl RaftNetworkV2<TypeConfig> for RaftNetworkClient {
                 "blackhole",
             )));
         }
-        #[cfg(feature = "monitoring")]
-        crate::cluster::metrics::record_raft_rpc("vote", "outgoing");
+        if let Some(stats) = &self.stats {
+            stats.raft_rpc[RaftRpcType::Vote as usize][RaftRpcDirection::Outgoing as usize]
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         let req_timeout = self.request_timeout;
         let group_id = self.group_id;
         let client = match self.get_client().await {

@@ -30,8 +30,6 @@ const ATTR_RAFT_RPC_TYPE: &str = "aidb.raft.rpc.type";
 #[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_DIRECTION: &str = "aidb.raft.rpc.direction";
 #[cfg(all(feature = "monitoring", feature = "cluster"))]
-const ATTR_RAFT_GROUP_ID: &str = "aidb.raft.group.id";
-#[cfg(all(feature = "monitoring", feature = "cluster"))]
 const ATTR_RAFT_RESTART_OUTCOME: &str = "aidb.raft.group.restart.outcome";
 #[cfg(feature = "monitoring")]
 const ATTR_DB_SYSTEM: &str = "db.system";
@@ -489,62 +487,6 @@ pub fn sync_to_otel(stats: &crate::statistics::Statistics) {
     // 8. 推进基线
     *baseline = current;
 }
-
-#[cfg(all(feature = "monitoring", feature = "cluster"))]
-pub fn record_raft_rpc(rpc_type: &str, direction: &str) {
-    if let Some(m) = metrics() {
-        m.raft_rpc_total.add(
-            1,
-            &[
-                kv(ATTR_RAFT_RPC_TYPE, rpc_type),
-                kv(ATTR_RAFT_DIRECTION, direction),
-            ],
-        );
-    }
-}
-
-#[cfg(all(feature = "monitoring", feature = "cluster"))]
-pub fn record_raft_log_entries(count: u64) {
-    if count > 0 {
-        if let Some(m) = metrics() {
-            m.raft_log_entries_total.add(count, &[]);
-        }
-    }
-}
-
-#[cfg(all(feature = "monitoring", feature = "cluster"))]
-pub fn record_raft_group_fatal(group_id: u64) {
-    if let Some(m) = metrics() {
-        m.raft_group_fatal_total
-            .add(1, &[kv(ATTR_RAFT_GROUP_ID, group_id.to_string())]);
-    }
-}
-
-/// `outcome`: "success" | "failure" | "skipped_backoff".
-#[cfg(all(feature = "monitoring", feature = "cluster"))]
-pub fn record_raft_group_restart(group_id: u64, outcome: &str) {
-    if let Some(m) = metrics() {
-        m.raft_group_restart_total.add(
-            1,
-            &[
-                kv(ATTR_RAFT_GROUP_ID, group_id.to_string()),
-                kv(ATTR_RAFT_RESTART_OUTCOME, outcome),
-            ],
-        );
-    }
-}
-
-#[cfg(not(feature = "monitoring"))]
-pub fn record_raft_rpc(_rpc_type: &str, _direction: &str) {}
-
-#[cfg(not(feature = "monitoring"))]
-pub fn record_raft_log_entries(_count: u64) {}
-
-#[cfg(all(not(feature = "monitoring"), feature = "cluster"))]
-pub fn record_raft_group_fatal(_group_id: u64) {}
-
-#[cfg(all(not(feature = "monitoring"), feature = "cluster"))]
-pub fn record_raft_group_restart(_group_id: u64, _outcome: &str) {}
 
 #[cfg(feature = "monitoring")]
 pub mod testutil {

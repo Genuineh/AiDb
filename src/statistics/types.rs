@@ -102,3 +102,71 @@ pub enum WriteStallKind {
     LevelSizeStop = 5,
 }
 pub const NUM_WRITE_STALL_KINDS: usize = 6;
+
+/// Raft RPC 类型枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum RaftRpcType {
+    AppendEntries = 0,
+    Vote = 1,
+    InstallSnapshot = 2,
+}
+pub const NUM_RAFT_RPC_TYPES: usize = 3;
+
+impl RaftRpcType {
+    pub const ALL: [RaftRpcType; NUM_RAFT_RPC_TYPES] = [
+        RaftRpcType::AppendEntries,
+        RaftRpcType::Vote,
+        RaftRpcType::InstallSnapshot,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RaftRpcType::AppendEntries => "append_entries",
+            RaftRpcType::Vote => "vote",
+            RaftRpcType::InstallSnapshot => "install_snapshot",
+        }
+    }
+}
+
+/// Raft RPC 方向枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum RaftRpcDirection {
+    Incoming = 0,
+    Outgoing = 1,
+}
+pub const NUM_RAFT_RPC_DIRECTIONS: usize = 2;
+
+impl RaftRpcDirection {
+    pub const ALL: [RaftRpcDirection; NUM_RAFT_RPC_DIRECTIONS] =
+        [RaftRpcDirection::Incoming, RaftRpcDirection::Outgoing];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RaftRpcDirection::Incoming => "incoming",
+            RaftRpcDirection::Outgoing => "outgoing",
+        }
+    }
+}
+
+/// Raft 重启结果枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum RaftRestartOutcome {
+    Success = 0,
+    Failure = 1,
+}
+pub const NUM_RAFT_RESTART_OUTCOMES: usize = 2;
+
+impl RaftRestartOutcome {
+    pub const ALL: [RaftRestartOutcome; NUM_RAFT_RESTART_OUTCOMES] =
+        [RaftRestartOutcome::Success, RaftRestartOutcome::Failure];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RaftRestartOutcome::Success => "success",
+            RaftRestartOutcome::Failure => "failure",
+        }
+    }
+}

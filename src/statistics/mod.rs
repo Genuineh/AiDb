@@ -14,8 +14,9 @@ pub use histogram::{
 };
 pub use snapshot::StatsSnapshot;
 pub use types::{
-    BackupOp, CompactionPhase, DbOp, WriteStallKind, NUM_BACKUP_OPS, NUM_COMPACTION_PHASES,
-    NUM_DB_OPS, NUM_WRITE_STALL_KINDS,
+    BackupOp, CompactionPhase, DbOp, RaftRestartOutcome, RaftRpcDirection, RaftRpcType,
+    WriteStallKind, NUM_BACKUP_OPS, NUM_COMPACTION_PHASES, NUM_DB_OPS, NUM_RAFT_RESTART_OUTCOMES,
+    NUM_RAFT_RPC_DIRECTIONS, NUM_RAFT_RPC_TYPES, NUM_WRITE_STALL_KINDS,
 };
 
 /// 引擎无锁原子统计集合 (实例级持有)
